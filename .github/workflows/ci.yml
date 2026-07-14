@@ -113,11 +113,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Deploy to Streamlit
-        uses: streamlit/actions@v0.0.3
-        with:
-          app-path: app.py
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          streamlit-config: |
-            [server]
-            headless = true
-            port = 8501
+        run: |
+          echo "Streamlit Cloud deployment should be configured through Streamlit Cloud web interface"
+          echo "Connect this repository to Streamlit Cloud at: https://share.streamlit.io"
+          echo "No GitHub Action is needed - Streamlit Cloud auto-deploys on push"
