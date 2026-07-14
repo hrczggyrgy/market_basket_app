@@ -1,0 +1,147 @@
+"""Analytics module initialization."""
+
+from .addon import (
+    get_addon_by_category,
+    get_addon_recommendations,
+    get_anchor_addon_matrix,
+)
+from .cdt_behavioral import (
+    build_behavioral_matrices,
+    compute_brand_switching_matrix,
+    compute_bundling_matrix,
+    detect_brand_switching,
+    get_substitution_matrix,
+    get_top_bundling_pairs,
+    get_top_substitution_pairs,
+    get_top_switching_paths,
+)
+from .cdt_clustering import (
+    compute_cluster_quality,
+    compute_unconstrained_baseline,
+    find_optimal_clusters,
+    get_cluster_assignments,
+    get_dendrogram_data,
+    perform_hierarchical_clustering,
+)
+from .cdt_similarity import (
+    build_copurchase_tables,
+    build_customer_sequences,
+    build_similarity_matrix,
+    compute_jaccard,
+    compute_switching_matrix_from_sequences,
+    compute_yules_q,
+    detect_switches,
+)
+from .cdt_tree_builder import (
+    TreeNode,
+    build_cdt,
+    extract_product_attributes,
+    score_tree,
+    tree_to_dataframe,
+    tree_to_json,
+)
+from .cohort import (
+    cohort_comparison_summary,
+    compute_cohort_sizes,
+    compute_cohorts,
+    period_over_period_comparison,
+    year_over_year_comparison,
+)
+from .copurchase import (
+    compute_affinity_matrix,
+    get_product_affinity_profile,
+    get_top_affinity_pairs,
+)
+from .product_performance import (
+    compute_product_metrics,
+    cross_sell_opportunity_matrix,
+    price_elasticity_analysis,
+    product_affinity_score,
+    product_lifecycle_stage,
+    product_seasonality,
+)
+from .promotional import (
+    calculate_incremental_revenue,
+    calculate_promotional_lift,
+    detect_promotions,
+    halo_effect_analysis,
+    promotion_roi_analysis,
+    promotion_timing_analysis,
+)
+from .segmentation import (
+    behavioral_segmentation,
+    compute_rfm_features,
+    get_segment_profiles,
+    rfm_segmentation,
+    value_based_segmentation,
+)
+from .switching import (
+    compute_switching_matrix,
+    get_customer_loyalty_metrics,
+    get_switching_heatmap_data,
+)
+
+__all__ = [
+    "compute_affinity_matrix",
+    "get_top_affinity_pairs",
+    "get_product_affinity_profile",
+    "get_addon_recommendations",
+    "get_anchor_addon_matrix",
+    "get_addon_by_category",
+    "compute_switching_matrix",
+    "get_customer_loyalty_metrics",
+    "detect_brand_switching",
+    "get_top_switching_paths",
+    "get_switching_heatmap_data",
+    "compute_rfm_features",
+    "rfm_segmentation",
+    "behavioral_segmentation",
+    "value_based_segmentation",
+    "get_segment_profiles",
+    "compute_product_metrics",
+    "product_lifecycle_stage",
+    "product_seasonality",
+    "product_affinity_score",
+    "cross_sell_opportunity_matrix",
+    "price_elasticity_analysis",
+    "compute_cohorts",
+    "compute_cohort_sizes",
+    "period_over_period_comparison",
+    "year_over_year_comparison",
+    "cohort_comparison_summary",
+    "detect_promotions",
+    "calculate_promotional_lift",
+    "calculate_incremental_revenue",
+    "promotion_roi_analysis",
+    "halo_effect_analysis",
+    "promotion_timing_analysis",
+    # CDT modules
+    "build_customer_sequences",
+    "detect_switches",
+    "build_copurchase_tables",
+    "compute_yules_q",
+    "compute_jaccard",
+    "build_similarity_matrix",
+    "compute_switching_matrix_from_sequences",
+    "perform_hierarchical_clustering",
+    "find_optimal_clusters",
+    "get_cluster_assignments",
+    "compute_cluster_quality",
+    "get_dendrogram_data",
+    "compute_unconstrained_baseline",
+    "TreeNode",
+    "build_cdt",
+    "score_tree",
+    "tree_to_dataframe",
+    "tree_to_json",
+    "extract_product_attributes",
+    "compute_switching_matrix",
+    "get_substitution_matrix",
+    "compute_bundling_matrix",
+    "build_behavioral_matrices",
+    "get_top_substitution_pairs",
+    "get_top_bundling_pairs",
+    "get_top_switching_paths",
+    "detect_brand_switching",
+    "compute_brand_switching_matrix",
+]
