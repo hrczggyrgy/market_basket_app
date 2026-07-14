@@ -2,6 +2,7 @@
 
 from typing import List
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -121,8 +122,10 @@ def create_affinity_heatmap(
     if affinity_matrix.empty:
         return _empty_figure("No affinity data")
 
-    # Select top products by total affinity
-    total_affinity = affinity_matrix.sum(axis=1)
+    # Select top products by total affinity (exclude diagonal)
+    affinity_no_diag = affinity_matrix.values.copy()
+    np.fill_diagonal(affinity_no_diag, 0.0)
+    total_affinity = pd.Series(affinity_no_diag.sum(axis=1), index=affinity_matrix.index)
     top_products = total_affinity.nlargest(max_products).index.tolist()
 
     matrix = affinity_matrix.loc[top_products, top_products].copy()
@@ -201,6 +204,8 @@ def create_metric_comparison_heatmap(
         col_min = data[col].min()
         if col_max > col_min:
             data[col] = (data[col] - col_min) / (col_max - col_min)
+        # Clip extreme values that can arise from conviction
+        data[col] = data[col].clip(0, 1).fillna(0)
 
     # Format rule labels
     rule_labels = rules.apply(

@@ -61,7 +61,7 @@ def compute_affinity_matrix(
                 affinity.loc[b, a] = lift
 
     # Set diagonal to 1 (self-affinity)
-    np.fill_diagonal(affinity.to_numpy(copy=True), 1.0)
+    np.fill_diagonal(affinity.values, 1.0)
 
     return affinity
 
@@ -92,10 +92,12 @@ def get_top_affinity_pairs(
                 "product_a",
                 "product_b",
                 "support",
-                "confidence",
+                "confidence_a_to_b",
+                "confidence_b_to_a",
                 "lift",
                 "leverage",
-                "conviction",
+                "conviction_a_to_b",
+                "conviction_b_to_a",
             ]
         )
 
@@ -106,10 +108,12 @@ def get_top_affinity_pairs(
                 "product_a",
                 "product_b",
                 "support",
-                "confidence",
+                "confidence_a_to_b",
+                "confidence_b_to_a",
                 "lift",
                 "leverage",
-                "conviction",
+                "conviction_a_to_b",
+                "conviction_b_to_a",
             ]
         )
 
@@ -129,7 +133,8 @@ def get_top_affinity_pairs(
 
             if lift >= min_lift:
                 leverage = support - (p_a * p_b)
-                conviction = (1 - p_b) / (1 - support / p_a) if support / p_a < 1 else np.inf
+                conv_a_to_b = (1 - p_b) / (1 - support / p_a) if support / p_a < 1 else 1e6
+                conv_b_to_a = (1 - p_a) / (1 - support / p_b) if support / p_b < 1 else 1e6
 
                 results.append(
                     {
@@ -140,7 +145,8 @@ def get_top_affinity_pairs(
                         "confidence_b_to_a": support / p_b,
                         "lift": lift,
                         "leverage": leverage,
-                        "conviction": conviction,
+                        "conviction_a_to_b": conv_a_to_b,
+                        "conviction_b_to_a": conv_b_to_a,
                     }
                 )
 
@@ -150,10 +156,12 @@ def get_top_affinity_pairs(
                 "product_a",
                 "product_b",
                 "support",
-                "confidence",
+                "confidence_a_to_b",
+                "confidence_b_to_a",
                 "lift",
                 "leverage",
-                "conviction",
+                "conviction_a_to_b",
+                "conviction_b_to_a",
             ]
         )
 

@@ -9,7 +9,11 @@ import pandas as pd
 def compute_product_metrics(
     transactions_df: pd.DataFrame, snapshot_date: Optional[pd.Timestamp] = None
 ) -> pd.DataFrame:
-    """Compute comprehensive product performance metrics."""
+    """Compute comprehensive product performance metrics.
+
+    Note: avg_price is pulled down by promotions; use median_price for
+    baseline pricing decisions.
+    """
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
@@ -137,28 +141,36 @@ def xyz_analysis(
     # Period-level demand per product
     demand = df.groupby(["stockcode", "period"])["quantity"].sum().unstack(fill_value=0)
 
-    # Coefficient of variation
-    demand_mean = demand.mean(axis=1)
-    demand_std = demand.std(axis=1)
-    cv = demand_std / demand_mean.replace(0, np.nan)
+    # CV over active periods only (exclude zero-filled periods for intermittent products)
+    def _active_cv(row):
+        active = row[row > 0]
+        if len(active) < 2:
+            return np.nan
+        return active.std() / active.mean() if active.mean() > 0 else np.nan
+
+    cv = demand.apply(_active_cv, axis=1)
 
     xyz = pd.DataFrame(
         {
             "stockcode": demand.index,
-            "avg_demand": demand_mean,
-            "demand_std": demand_std,
+            "avg_demand": demand.mean(axis=1),
+            "demand_std": demand.std(axis=1),
             "cv": cv,
             "n_periods_active": (demand > 0).sum(axis=1),
         }
     ).reset_index(drop=True)
 
-    # Classify
+    # Classify: intermittent products (few active periods) get separate label
+    total_periods = demand.shape[1]
+    intermittent = xyz["n_periods_active"] < total_periods * 0.5
+
     conditions = [
-        xyz["cv"] <= 0.5,
-        xyz["cv"] <= 1.0,
+        ~intermittent & (xyz["cv"].fillna(1) <= 0.5),
+        ~intermittent & (xyz["cv"].fillna(1) <= 1.0),
     ]
     choices = ["X", "Y"]
     xyz["xyz_class"] = np.select(conditions, choices, default="Z")
+    xyz.loc[intermittent & (xyz["xyz_class"] == "Z"), "xyz_class"] = "I"
 
     return xyz
 
@@ -202,28 +214,27 @@ def product_lifecycle_stage(
             )
             continue
 
-        # Calculate growth trend
-        x = np.arange(len(rev_series))
-        y = rev_series.values
+        # Calculate growth trend from recent months (last 3 or 25%)
+        n_recent = max(3, int(len(rev_series) * 0.25))
+        recent = rev_series.tail(n_recent)
+        x = np.arange(len(recent))
+        y = recent.values
         slope, intercept = np.polyfit(x, y, 1)
-        corr_matrix = np.corrcoef(x, y)
-        r_value = corr_matrix[0, 1]
+        if len(x) > 1:
+            corr_matrix = np.corrcoef(x, y)
+            r_value = corr_matrix[0, 1] if not np.isnan(corr_matrix[0, 1]) else 0
+        else:
+            r_value = 0
 
         growth_rate = slope / max(np.mean(y), 1e-10) if np.mean(y) > 0 else 0
 
-        # Peak detection
-        peak_idx = np.argmax(y)
-        peak_period = peak_idx / len(y)
-
-        # Stage classification
-        if peak_period < 0.3 and growth_rate > 0.05:
-            stage = "Introduction"
-        elif growth_rate > 0.05:
+        # Stage classification based on recent trend
+        if growth_rate > 0.05:
             stage = "Growth"
-        elif abs(growth_rate) <= 0.05:
-            stage = "Maturity"
-        else:
+        elif growth_rate < -0.05:
             stage = "Decline"
+        else:
+            stage = "Maturity"
 
         lifecycle.append(
             {
@@ -232,7 +243,7 @@ def product_lifecycle_stage(
                 "trend": "Growing" if growth_rate > 0 else "Declining",
                 "growth_rate": growth_rate,
                 "r_squared": r_value**2,
-                "peak_period": peak_period,
+                "peak_period": None,
                 "months_active": len(rev_series),
             }
         )
@@ -258,9 +269,13 @@ def product_seasonality(transactions_df: pd.DataFrame, product_id: str) -> Dict:
     if len(monthly) < 12:
         return {"has_seasonality": False, "message": "Less than 12 months of data"}
 
-    # Simple seasonality detection: month-over-month pattern
-    monthly.index = monthly.index.month
-    month_avg = monthly.groupby(monthly.index).mean()
+    # Detrend: divide each month by the annual mean to remove trend before averaging
+    monthly_df = monthly.to_frame("qty")
+    monthly_df["year"] = monthly_df.index.year
+    annual_mean = monthly_df.groupby("year")["qty"].transform("mean").replace(0, np.nan)
+    monthly_df["detrended"] = monthly_df["qty"] / annual_mean
+    monthly_df["month"] = monthly_df.index.month
+    month_avg = monthly_df.groupby("month")["detrended"].mean()
 
     # Coefficient of variation across months
     cv = month_avg.std() / month_avg.mean() if month_avg.mean() > 0 else 0
@@ -350,23 +365,22 @@ def cross_sell_opportunity_matrix(transactions_df: pd.DataFrame, top_n: int = 50
     product_freq = basket.mean().sort_values(ascending=False)
     top_products = product_freq.head(top_n).index.tolist()
 
+    # Precompute marginals once
+    marginals = basket.mean()
+
     # Create matrix
     matrix = pd.DataFrame(index=top_products, columns=top_products, dtype=float)
 
-    for i, prod_a in enumerate(top_products):
+    for prod_a in top_products:
+        p_a = marginals[prod_a]
         for prod_b in top_products:
             if prod_a == prod_b:
                 matrix.loc[prod_a, prod_b] = 1.0
             else:
-                p_a = basket[prod_a].mean()
-                p_b = basket[prod_b].mean()
+                p_b = marginals[prod_b]
                 p_both = ((basket[prod_a] == 1) & (basket[prod_b] == 1)).mean()
-
-                if p_a > 0 and p_b > 0:
-                    lift = p_both / (p_a * p_b)
-                    matrix.loc[prod_a, prod_b] = lift
-                else:
-                    matrix.loc[prod_a, prod_b] = 0
+                lift = p_both / (p_a * p_b) if p_a > 0 and p_b > 0 else 0
+                matrix.loc[prod_a, prod_b] = lift
 
     return matrix.astype(float)
 
@@ -410,12 +424,12 @@ def price_elasticity_analysis(
     # Interpretation
     if elasticity < -1:
         interpretation = "Elastic (demand sensitive to price)"
-    elif elasticity < 0:
+    elif elasticity < -0.05:
         interpretation = "Inelastic (demand not very sensitive)"
-    elif elasticity == 0:
-        interpretation = "Unit elastic"
+    elif abs(elasticity) <= 0.05:
+        interpretation = "Unit elastic (quantity changes proportionally to price)"
     else:
-        interpretation = "Positive elasticity (unusual for normal goods)"
+        interpretation = "Positive elasticity — likely omitted variable bias (promotions raise both price and recorded quantity)"
 
     return {
         "elasticity": elasticity,

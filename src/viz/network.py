@@ -38,13 +38,15 @@ def create_network_graph(
     # Get unique items from top rules
     top_rules = filtered.nlargest(max_edges, edge_width_metric)
 
-    # Extract all unique items
-    all_items = set()
+    # Rank items by degree (how many rules they appear in)
+    item_degree = {}
     for _, row in top_rules.iterrows():
-        all_items.update(row["antecedents"])
-        all_items.update(row["consequents"])
+        for item in row["antecedents"]:
+            item_degree[item] = item_degree.get(item, 0) + 1
+        for item in row["consequents"]:
+            item_degree[item] = item_degree.get(item, 0) + 1
 
-    items = list(all_items)[:max_nodes]
+    items = sorted(item_degree, key=item_degree.get, reverse=True)[:max_nodes]
 
     # Build graph
     G = nx.DiGraph()
@@ -138,7 +140,7 @@ def create_network_graph(
 
         edge_x.extend([x0, x1, None])
         edge_y.extend([y0, y1, None])
-        edge_hover.append(hover_text)
+        edge_hover.extend([hover_text, hover_text, ""])
 
     # Single edge trace for all edges
     edge_traces = [
@@ -227,7 +229,7 @@ def create_bipartite_network(
     if filtered.empty:
         return _empty_figure(f"No rules with lift >= {min_lift}")
 
-    G = nx.Graph()
+    G = nx.DiGraph()
 
     # Add nodes with bipartite attribute
     antecedents = set()
@@ -355,16 +357,16 @@ def create_sankey_from_matrix(
     if not values:
         return _empty_figure("No strong relationships")
 
-    labels = [
-        (
-            product_lookup.get(p, p)[:20] + "..."
-            if len(product_lookup.get(p, p)) > 20
-            else product_lookup.get(p, p)
-        )
-        if product_lookup
-        else (p[:20] + "..." if len(p) > 20 else p)
-        for p in products
-    ]
+    def _label(p):
+        if product_lookup:
+            name = product_lookup.get(p, p)
+            if not isinstance(name, str):
+                name = str(name)
+        else:
+            name = str(p)
+        return name[:20] + "..." if len(name) > 20 else name
+
+    labels = [_label(p) for p in products]
 
     fig = go.Figure(
         data=[

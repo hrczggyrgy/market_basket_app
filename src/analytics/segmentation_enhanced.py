@@ -1,6 +1,5 @@
 """Enhanced Customer Segmentation with CLV Prediction, Survival Analysis, and Ensemble Methods."""
 
-import warnings
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -11,8 +10,6 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.mixture import GaussianMixture
 from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.preprocessing import RobustScaler, StandardScaler
-
-warnings.filterwarnings("ignore")
 
 # Optional imports
 try:
@@ -48,6 +45,7 @@ def compute_rfm_features(
     if snapshot_date is None:
         snapshot_date = df["date"].max() + pd.Timedelta(days=1)
 
+    cat_col_rfm = "category" if "category" in df.columns else "stockcode"
     rfm = (
         df.groupby("customer_id")
         .agg(
@@ -58,9 +56,7 @@ def compute_rfm_features(
             max_order_value=("revenue", "max"),
             n_items=("quantity", "sum"),
             n_unique_products=("stockcode", "nunique"),
-            n_unique_categories=(
-                ("category", "nunique") if "category" in df.columns else ("stockcode", "nunique")
-            ),
+            n_unique_categories=(cat_col_rfm, "nunique"),
             first_purchase=("date", "min"),
             last_purchase=("date", "max"),
             avg_price_paid=("price", "mean"),
@@ -128,45 +124,52 @@ def rfm_segmentation(
             + df["monetary_score"].astype(str)
         )
 
-        # Segment mapping
-        segment_map = {
-            "444": "Champions",
-            "443": "Champions",
-            "434": "Champions",
-            "344": "Champions",
-            "442": "Loyal",
-            "433": "Loyal",
-            "432": "Loyal",
-            "343": "Loyal",
-            "334": "Loyal",
-            "424": "Potential Loyalists",
-            "423": "Potential Loyalists",
-            "333": "Potential Loyalists",
-            "324": "Potential Loyalists",
-            "441": "New Customers",
-            "431": "New Customers",
-            "422": "New Customers",
-            "342": "New Customers",
-            "421": "Promising",
-            "332": "Promising",
-            "323": "Promising",
-            "322": "Need Attention",
-            "233": "Need Attention",
-            "232": "Need Attention",
-            "223": "About to Sleep",
-            "222": "About to Sleep",
-            "133": "About to Sleep",
-            "221": "At Risk",
-            "212": "At Risk",
-            "123": "At Risk",
-            "122": "At Risk",
-            "211": "Cannot Lose Them",
-            "113": "Cannot Lose Them",
-            "112": "Cannot Lose Them",
-            "111": "Lost",
-        }
+        # Segment mapping — full 4x4x4 = 64 combinations via weighted score
+        r = df["recency_days_score"].astype(int)
+        f = df["frequency_score"].astype(int)
+        m = df["monetary_score"].astype(int)
 
-        df["segment"] = df["rfm_score"].map(segment_map).fillna("Other")
+        conditions = [
+            (r >= 3) & (f >= 3) & (m >= 3),  # 333-444
+            (r >= 3) & (f >= 3) & (m == 2),  # 33x
+            (r >= 3) & (f == 2) & (m >= 3),  # 32x
+            (r >= 3) & (f >= 2) & (m >= 2),  # 322-432 except above
+            (r >= 3) & (f == 2) & (m == 1),  # 321
+            (r == 2) & (f >= 3) & (m >= 3),  # 23x
+            (r == 2) & (f == 3) & (m == 2),  # 232
+            (r == 2) & (f == 2) & (m >= 3),  # 223
+            (r == 2) & (f >= 2) & (m == 2),  # 222, 322(already)
+            (r == 2) & (f == 2) & (m == 1),  # 221
+            (r == 2) & (f == 1) & (m >= 3),  # 213
+            (r == 2) & (f == 1) & (m == 2),  # 212
+            (r == 2) & (f == 1) & (m == 1),  # 211
+            (r == 1) & (f >= 3) & (m >= 3),  # 133
+            (r == 1) & (f >= 2) & (m >= 2),  # 122-132
+            (r == 1) & (f >= 2) & (m == 1),  # 121
+            (r == 1) & (f == 1) & (m >= 2),  # 112
+            (r == 1) & (f == 1) & (m == 1),  # 111
+        ]
+        choices = [
+            "Champions",
+            "Loyal",
+            "Potential Loyalists",
+            "Promising",
+            "New Customers",
+            "Need Attention",
+            "Need Attention",
+            "Potential Loyalists",
+            "Regular",
+            "At Risk",
+            "Need Attention",
+            "At Risk",
+            "Cannot Lose Them",
+            "About to Sleep",
+            "About to Sleep",
+            "About to Sleep",
+            "Cannot Lose Them",
+            "Lost",
+        ]
+        df["segment"] = np.select(conditions, choices, default="Other")
 
     elif method == "kmeans":
         # K-means clustering on RFM
@@ -250,6 +253,8 @@ def behavioral_segmentation(
     df["revenue"] = df["price"] * df["quantity"]
 
     # Build behavioral features
+    cat_col_behav = "category" if "category" in df.columns else "stockcode"
+
     behavioral = (
         df.groupby("customer_id")
         .agg(
@@ -266,9 +271,7 @@ def behavioral_segmentation(
             revenue_std=("revenue", "std"),
             # Product
             n_products=("stockcode", "nunique"),
-            n_categories=(
-                ("category", "nunique") if "category" in df.columns else ("stockcode", "nunique")
-            ),
+            n_categories=(cat_col_behav, "nunique"),
             # Basket
             avg_basket_size=("quantity", "mean"),
             max_basket_size=("quantity", "max"),
@@ -277,10 +280,6 @@ def behavioral_segmentation(
             price_cv=("price", lambda x: x.std() / x.mean() if x.mean() > 0 else 0),
             # Temporal patterns
             weekend_ratio=("date", lambda x: (x.dt.dayofweek >= 5).mean()),
-            night_ratio=(
-                "date",
-                lambda x: (x.dt.hour >= 18).mean() if x.dt.hour.nunique() > 1 else 0,
-            ),
         )
         .reset_index()
     )
@@ -363,6 +362,8 @@ def predict_clv(
     hist = df[df["date"] < cutoff_date]
     future = df[df["date"] >= cutoff_date]
 
+    cat_col_hist = "category" if "category" in hist.columns else "stockcode"
+
     # Historical features
     features = (
         hist.groupby("customer_id")
@@ -372,9 +373,7 @@ def predict_clv(
             monetary=("revenue", "sum"),
             avg_order=("revenue", "mean"),
             n_products=("stockcode", "nunique"),
-            n_categories=(
-                ("category", "nunique") if "category" in hist.columns else ("stockcode", "nunique")
-            ),
+            n_categories=(cat_col_hist, "nunique"),
             avg_items_per_order=("quantity", "mean"),
             avg_price_paid=("price", "mean"),
             price_std=("price", "std"),
@@ -500,10 +499,13 @@ def predict_clv(
     else:
         feature_importance = pd.DataFrame()
 
-    # Cross-validation
+    # Cross-validation (CV re-fits internally, so model state is unchanged)
     cv_scores = cross_val_score(model, X, y, cv=5, scoring="neg_mean_absolute_error", n_jobs=-1)
     metrics["cv_mae_mean"] = -cv_scores.mean()
     metrics["cv_mae_std"] = cv_scores.std()
+
+    # Refit on all data for final predictions (avoids mixing in/out-of-sample)
+    model.fit(X, y)
 
     # Full predictions
     features["predicted_clv"] = model.predict(X)
@@ -658,7 +660,9 @@ def ensemble_segmentation(
     def consensus_segment(row):
         votes = row[segment_cols].value_counts()
         if len(votes) > 0:
-            return votes.index[0]
+            max_count = votes.max()
+            top = votes[votes == max_count]
+            return top.index[0] if len(top) == 1 else top.sort_index().index[0]
         return "Unknown"
 
     ensemble["ensemble_segment"] = ensemble.apply(consensus_segment, axis=1)
@@ -702,13 +706,10 @@ def value_based_segmentation(
 
     features["recency"] = pd.to_numeric(features["recency"], errors="coerce").fillna(0).astype(int)
 
-    features["predicted_clv"] = (
-        features["monetary"]
-        / features["frequency"].replace(0, 1)
-        * features["frequency"]
-        * (365 / features["lifetime_days"].replace(0, 1))
-        * 2
-    )
+    # CLV = AOV * annual_purchases * 2-year projection (simple heuristic)
+    aov = features["monetary"] / features["frequency"].replace(0, 1)
+    annual_purchases = features["frequency"] / features["lifetime_days"].replace(0, 1) * 365
+    features["predicted_clv"] = aov * annual_purchases * 2
 
     future_rev = future.groupby("customer_id")["revenue"].sum().reset_index()
     future_rev.columns = ["customer_id", "future_revenue"]
@@ -750,10 +751,6 @@ def get_segment_profiles(
             total_revenue=("revenue", "sum"),
             avg_order_value=("revenue", "mean"),
             avg_items_per_order=("quantity", "mean"),
-            avg_products_per_customer=(
-                "stockcode",
-                lambda x: x.nunique() / df[df[segment_col] == x.name]["customer_id"].nunique(),
-            ),
             top_category=(
                 "category",
                 lambda x: (
@@ -766,18 +763,13 @@ def get_segment_profiles(
                     x.mode().iloc[0] if "brand" in df.columns and not x.mode().empty else "N/A"
                 ),
             ),
-            repeat_rate=(
-                "transaction_id",
-                lambda x: (
-                    (x.nunique() / df[df[segment_col] == x.name]["customer_id"].nunique())
-                    if df[df[segment_col] == x.name]["customer_id"].nunique() > 0
-                    else 0
-                ),
-            ),
         )
         .reset_index()
     )
 
+    # Compute ratios after groupby (avoids x.name scope bug with lambdas)
+    profiles["avg_products_per_customer"] = profiles["n_transactions"] / profiles["n_customers"]
+    profiles["repeat_rate"] = profiles["n_transactions"] / profiles["n_customers"]
     profiles["revenue_per_customer"] = profiles["total_revenue"] / profiles["n_customers"]
     profiles["revenue_share"] = profiles["total_revenue"] / profiles["total_revenue"].sum()
     profiles["customer_share"] = profiles["n_customers"] / profiles["n_customers"].sum()
