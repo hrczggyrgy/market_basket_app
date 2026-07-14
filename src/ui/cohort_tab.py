@@ -171,9 +171,9 @@ def render_cohort_tab(transactions_df: pd.DataFrame, product_lookup: dict, param
     if not cohort_matrix.empty:
         # Prepare data for line chart
         line_data = cohort_matrix.reset_index().melt(
-            id_vars="index", var_name="Period", value_name=metric
+            id_vars="cohort", var_name="Period", value_name=metric
         )
-        line_data = line_data.rename(columns={"index": "Cohort"})
+        line_data = line_data.rename(columns={"cohort": "Cohort"})
         line_data["Period_Num"] = line_data["Period"].str.extract(r"(\d+)").astype(int)
 
         fig = px.line(

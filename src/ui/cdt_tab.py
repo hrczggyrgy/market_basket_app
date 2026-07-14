@@ -2,7 +2,7 @@
 
 This tab implements the unsupervised CDT pipeline:
 1. Build customer purchase sequences
-2. Compute similarity matrix (Yule's Q / Jaccard)
+2. Compute similarity matrix (Phi / Jaccard)
 3. Hierarchical clustering + optimal k selection
 4. Bottom-up tree construction with attribute enrichment
 5. Behavioral matrices: switching, substitution, bundling
@@ -156,7 +156,7 @@ def render_cdt_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: 
         ordered_labels = st.session_state["cdt_ordered_labels"]
         silhouette_scores = st.session_state["cdt_silhouette_scores"]
         optimal_k = st.session_state["cdt_optimal_k"]
-        similarity_method = st.session_state.get("cdt_similarity_method", "yules_q")
+        similarity_method = st.session_state.get("cdt_similarity_method", "phi")
         product_lookup = st.session_state.get("cdt_product_lookup", product_lookup)
 
         # Add a button to clear results and reconfigure
@@ -203,9 +203,9 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
             st.subheader("Similarity")
             similarity_method = st.selectbox(
                 "Similarity Method",
-                ["yules_q", "jaccard"],
+                ["phi", "jaccard"],
                 index=0,
-                help="Yule's Q (-style, [-1,1]) or Jaccard ([0,1])",
+                help="Phi coefficient ([-1,1]) or Jaccard ([0,1])",
             )
             min_cooccurrence = st.slider(
                 "Min Co-occurrence",
@@ -455,7 +455,7 @@ def _render_cdt_results_tabs(
     silhouette_scores: dict[int, float],
     optimal_k: int,
     product_lookup: dict,
-    similarity_method: str = "yules_q",
+    similarity_method: str = "phi",
 ):
     """Render the CDT results tabs."""
 
@@ -584,7 +584,7 @@ def _render_cdt_results_tabs(
     with tabs[5]:
         st.subheader("Substitution Analysis")
         st.caption(
-            "High similarity = high substitutability. Derived from co-purchase patterns (Yule's Q)."
+            "High similarity = high substitutability. Derived from co-purchase patterns (Phi coefficient)."
         )
 
         if not substitution_df.empty:

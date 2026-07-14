@@ -214,7 +214,7 @@ def render_sidebar() -> Config:
     elif analysis_mode == "Decision Tree & Patterns":
         st.sidebar.markdown("**Similarity**")
         analysis_params["similarity_method"] = st.sidebar.selectbox(
-            "Similarity Method", ["yules_q", "jaccard"], index=0, key="cdt_similarity"
+            "Similarity Method", ["phi", "jaccard"], index=0, key="cdt_similarity"
         )
         analysis_params["min_cooccurrence"] = st.sidebar.slider(
             "Min Co-occurrence", 2, 20, 5, key="cdt_min_cooc"

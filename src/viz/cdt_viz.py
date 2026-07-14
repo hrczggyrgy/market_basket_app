@@ -444,7 +444,7 @@ def plot_treemap(
 def plot_similarity_heatmap(
     similarity_matrix: pd.DataFrame,
     top_n: int = 50,
-    title: str = "Product Similarity Matrix (Yule's Q)",
+    title: str = "Product Similarity Matrix (Phi)",
     height: int = 600,
     colorscale: str = "RdBu",
 ) -> go.Figure:

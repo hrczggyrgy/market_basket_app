@@ -19,6 +19,8 @@ def compute_rfm_features(
     if snapshot_date is None:
         snapshot_date = df["date"].max() + pd.Timedelta(days=1)
 
+    cat_col = "category" if "category" in df.columns else "stockcode"
+
     rfm = (
         df.groupby("customer_id")
         .agg(
@@ -29,9 +31,7 @@ def compute_rfm_features(
             max_order_value=("revenue", "max"),
             n_items=("quantity", "sum"),
             n_unique_products=("stockcode", "nunique"),
-            n_unique_categories=(
-                ("category", "nunique") if "category" in df.columns else ("stockcode", "nunique")
-            ),
+            n_unique_categories=(cat_col, "nunique"),
             first_purchase=("date", "min"),
             last_purchase=("date", "max"),
             avg_price_paid=("price", "mean"),
@@ -147,6 +147,10 @@ def rfm_segmentation(
     elif method == "kmeans":
         # K-means clustering on RFM
         features = ["recency_days", "frequency", "monetary"]
+        if len(df) < n_segments:
+            df["cluster"] = 0
+            df["segment"] = "Other"
+            return df
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(df[features])
 
@@ -193,6 +197,8 @@ def behavioral_segmentation(transactions_df: pd.DataFrame, n_clusters: int = 6) 
     df["revenue"] = df["price"] * df["quantity"]
 
     # Build behavioral features
+    cat_col_behav = "category" if "category" in df.columns else "stockcode"
+
     behavioral = (
         df.groupby("customer_id")
         .agg(
@@ -209,9 +215,7 @@ def behavioral_segmentation(transactions_df: pd.DataFrame, n_clusters: int = 6) 
             revenue_std=("revenue", "std"),
             # Product
             n_products=("stockcode", "nunique"),
-            n_categories=(
-                ("category", "nunique") if "category" in df.columns else ("stockcode", "nunique")
-            ),
+            n_categories=(cat_col_behav, "nunique"),
             # Basket
             avg_basket_size=("quantity", "mean"),
             max_basket_size=("quantity", "max"),
@@ -229,28 +233,44 @@ def behavioral_segmentation(transactions_df: pd.DataFrame, n_clusters: int = 6) 
 
     # Features for clustering
     feature_cols = [c for c in behavioral.columns if c != "customer_id"]
+    if len(behavioral) < n_clusters:
+        behavioral["cluster"] = 0
+        behavioral["segment"] = "Other"
+        return behavioral
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(behavioral[feature_cols])
 
     kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
     behavioral["cluster"] = kmeans.fit_predict(X_scaled)
 
-    # Label clusters
+    # Label clusters by ranking them relative to each other
     cluster_profiles = behavioral.groupby("cluster")[feature_cols].mean()
 
+    rev_rank = cluster_profiles["total_revenue"].rank(ascending=False)
+    freq_rank = cluster_profiles["purchase_frequency"].rank(ascending=False)
+    days_rank = cluster_profiles["avg_days_between"].rank()
+    prod_rank = cluster_profiles["n_products"].rank(ascending=False)
+    weekend_ratio = cluster_profiles["weekend_ratio"]
+
+    composite = rev_rank + freq_rank + prod_rank - days_rank
+
     labels = {}
+    best = composite.idxmin()
+    labels[best] = "High Value"
+
     for c in range(n_clusters):
-        profile = cluster_profiles.loc[c]
-        if profile["total_revenue"] > cluster_profiles["total_revenue"].quantile(0.75):
-            labels[c] = "High Value"
-        elif profile["purchase_frequency"] > cluster_profiles["purchase_frequency"].quantile(0.75):
+        if c in labels:
+            continue
+        if rev_rank[c] == rev_rank.min():
+            labels[c] = "Top Revenue"
+        elif freq_rank[c] == freq_rank.min():
             labels[c] = "Frequent Buyers"
-        elif profile["avg_days_between"] < cluster_profiles["avg_days_between"].quantile(0.25):
-            labels[c] = "Regular Shoppers"
-        elif profile["n_products"] > cluster_profiles["n_products"].quantile(0.75):
+        elif prod_rank[c] == prod_rank.min():
             labels[c] = "Variety Seekers"
-        elif profile["weekend_ratio"] > 0.5:
+        elif weekend_ratio[c] > 0.5:
             labels[c] = "Weekend Shoppers"
+        elif days_rank[c] == days_rank.min():
+            labels[c] = "Regular Shoppers"
         else:
             labels[c] = f"Segment {c}"
 
@@ -273,6 +293,12 @@ def value_based_segmentation(
     # Historical (before cutoff) and future (after cutoff)
     hist = df[df["date"] < cutoff_date]
     future = df[df["date"] >= cutoff_date]
+
+    if hist.empty:
+        raise ValueError(
+            f"No historical data before cutoff ({cutoff_date.date()}). "
+            f"Reduce prediction_horizon_days (currently {prediction_horizon_days})."
+        )
 
     # Historical features
     features = (
@@ -315,9 +341,11 @@ def value_based_segmentation(
     # Segments — first matching condition wins (priority: high CLV + recent > loyal > new > churned)
     conditions = [
         (features["predicted_clv"] > features["predicted_clv"].quantile(0.8))
-        & (features["recency"] < 30),
+        & (features["recency"] < 30)
+        & (features["frequency"] > 1),
         (features["predicted_clv"] > features["predicted_clv"].quantile(0.6))
-        & (features["recency"] < 60),
+        & (features["recency"] < 60)
+        & (features["frequency"] > 1),
         (features["frequency"] > 5) & (features["recency"] < 90),
         (features["frequency"] == 1) & (features["recency"] < 30),
         (features["recency"] > 180),

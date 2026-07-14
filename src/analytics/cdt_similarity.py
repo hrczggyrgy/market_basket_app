@@ -1,7 +1,7 @@
 """Customer Decision Tree: Similarity Engine.
 
 Builds pairwise product similarity from customer purchase sequences using
-Yule's Q coefficient derived from co-purchase patterns.
+the Phi coefficient derived from co-purchase patterns.
 """
 
 import hashlib
@@ -34,7 +34,21 @@ def build_customer_sequences(
     df[date_col] = pd.to_datetime(df[date_col])
     df = df.sort_values([customer_col, date_col])
 
-    sequences = df.groupby(customer_col)[product_col].apply(list).to_dict()
+    # Group by transaction to avoid within-basket consecutive pairs
+    if "transaction_id" in df.columns:
+        baskets = (
+            df.groupby([customer_col, "transaction_id", date_col])[product_col]
+            .apply(list)
+            .reset_index()
+        )
+        baskets = baskets.sort_values([customer_col, date_col])
+        sequences = (
+            baskets.groupby(customer_col)[product_col]
+            .apply(lambda x: [p for items in x for p in items])
+            .to_dict()
+        )
+    else:
+        sequences = df.groupby(customer_col)[product_col].apply(list).to_dict()
     return sequences
 
 
@@ -175,11 +189,11 @@ def build_copurchase_tables(
     return tables
 
 
-def compute_yules_q(table: Dict[str, int]) -> float:
+def compute_phi_coefficient(table: Dict[str, int]) -> float:
     """
-    Compute Yule's Q coefficient from 2x2 co-purchase table.
+    Compute Phi coefficient from 2x2 co-purchase table.
 
-    Q = (ad - bc) / (ad + bc) where:
+    φ = (ad - bc) / sqrt((a+b)(a+c)(b+d)(c+d)) where:
     - a = both, b = a_only, c = b_only, d = neither
     - Range: [-1, 1], where 1 = perfect association, -1 = perfect dissociation
 
@@ -187,7 +201,7 @@ def compute_yules_q(table: Dict[str, int]) -> float:
         table: Dict with keys 'both', 'a_only', 'b_only', 'neither'
 
     Returns:
-        Yule's Q coefficient in [-1, 1]
+        Phi coefficient in [-1, 1]
     """
     a = table["both"]
     b = table["a_only"]
@@ -195,7 +209,7 @@ def compute_yules_q(table: Dict[str, int]) -> float:
     d = table["neither"]
 
     numerator = a * d - b * c
-    denominator = a * d + b * c
+    denominator = np.sqrt((a + b) * (a + c) * (b + d) * (c + d))
 
     if denominator == 0:
         return 0.0
@@ -230,7 +244,7 @@ def _build_similarity_matrix_vectorized(
     transactions_df: pd.DataFrame,
     customer_col: str = "customer_id",
     product_col: str = "stockcode",
-    method: str = "yules_q",
+    method: str = "phi",
     min_cooccurrence: int = 5,
     min_product_support: int = 2,
 ) -> pd.DataFrame:
@@ -265,11 +279,11 @@ def _build_similarity_matrix_vectorized(
     # neither[i,j] = customers who bought neither
     neither = n_customers - (product_counts[:, np.newaxis] + product_counts[np.newaxis, :] - both)
 
-    if method == "yules_q":
-        ad = both * neither
-        bc = a_only * b_only
-        numerator = ad - bc
-        denominator = ad + bc
+    if method == "phi":
+        numerator = both * neither - a_only * b_only
+        denominator = np.sqrt(
+            (both + a_only) * (both + b_only) * (a_only + neither) * (b_only + neither)
+        )
         sim = np.divide(
             numerator,
             denominator,
@@ -292,7 +306,7 @@ def build_similarity_matrix(
     transactions_df: pd.DataFrame,
     customer_col: str = "customer_id",
     product_col: str = "stockcode",
-    method: str = "yules_q",
+    method: str = "phi",
     min_cooccurrence: int = 5,
     min_product_support: int = 2,
 ) -> pd.DataFrame:
@@ -303,13 +317,13 @@ def build_similarity_matrix(
         transactions_df: Transaction DataFrame
         customer_col: Customer identifier column
         product_col: Product identifier column
-        method: 'yules_q' or 'jaccard'
+        method: 'phi' or 'jaccard'
         min_cooccurrence: Minimum co-purchase count to compute similarity
         min_product_support: Minimum customers buying a product to include it
 
     Returns:
         Square DataFrame (products x products) with similarity scores.
-        Diagonal = 1.0. Values in [-1, 1] for Yule's Q, [0, 1] for Jaccard.
+        Diagonal = 1.0. Values in [-1, 1] for Phi, [0, 1] for Jaccard.
     """
     return _build_similarity_matrix_vectorized(
         transactions_df,

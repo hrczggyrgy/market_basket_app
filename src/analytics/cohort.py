@@ -47,35 +47,30 @@ def compute_cohorts(
         cohort_data = df.groupby(["cohort", "period_number"])["customer_id"].nunique().reset_index()
         cohort_data.columns = ["cohort", "period_number", "customers"]
 
-        # Get cohort sizes (period 0)
-        cohort_sizes = cohort_data[cohort_data["period_number"] == 0].set_index("cohort")[
-            "customers"
-        ]
-
-        # Calculate retention rate
-        cohort_data["retention_rate"] = cohort_data.apply(
-            lambda row: (
-                row["customers"] / cohort_sizes[row["cohort"]]
-                if row["cohort"] in cohort_sizes.index
-                else 0
-            ),
-            axis=1,
-        )
+        # Get cohort sizes (period 0) — vectorized merge
+        cohort_sizes = cohort_data[cohort_data["period_number"] == 0][
+            ["cohort", "customers"]
+        ].rename(columns={"customers": "cohort_size"})
+        cohort_data = cohort_data.merge(cohort_sizes, on="cohort", how="left")
+        cohort_data["retention_rate"] = (
+            cohort_data["customers"] / cohort_data["cohort_size"]
+        ).fillna(0)
 
         # Pivot to matrix
         matrix = cohort_data.pivot(index="cohort", columns="period_number", values="retention_rate")
 
     elif metric == "revenue":
         cohort_data = df.groupby(["cohort", "period_number"])["revenue"].sum().reset_index()
-        cohort_sizes = df[df["period_number"] == 0].groupby("cohort")["customer_id"].nunique()
-        cohort_data["revenue_per_customer"] = cohort_data.apply(
-            lambda row: (
-                row["revenue"] / cohort_sizes[row["cohort"]]
-                if row["cohort"] in cohort_sizes.index
-                else 0
-            ),
-            axis=1,
+        cohort_sizes = (
+            df[df["period_number"] == 0]
+            .groupby("cohort")["customer_id"]
+            .nunique()
+            .rename("cohort_size")
         )
+        cohort_data = cohort_data.merge(cohort_sizes, on="cohort", how="left")
+        cohort_data["revenue_per_customer"] = (
+            cohort_data["revenue"] / cohort_data["cohort_size"]
+        ).fillna(0)
         matrix = cohort_data.pivot(
             index="cohort", columns="period_number", values="revenue_per_customer"
         )
@@ -85,15 +80,16 @@ def compute_cohorts(
             df.groupby(["cohort", "period_number"])["transaction_id"].nunique().reset_index()
         )
         cohort_data.columns = ["cohort", "period_number", "orders"]
-        cohort_sizes = df[df["period_number"] == 0].groupby("cohort")["customer_id"].nunique()
-        cohort_data["orders_per_customer"] = cohort_data.apply(
-            lambda row: (
-                row["orders"] / cohort_sizes[row["cohort"]]
-                if row["cohort"] in cohort_sizes.index
-                else 0
-            ),
-            axis=1,
+        cohort_sizes = (
+            df[df["period_number"] == 0]
+            .groupby("cohort")["customer_id"]
+            .nunique()
+            .rename("cohort_size")
         )
+        cohort_data = cohort_data.merge(cohort_sizes, on="cohort", how="left")
+        cohort_data["orders_per_customer"] = (
+            cohort_data["orders"] / cohort_data["cohort_size"]
+        ).fillna(0)
         matrix = cohort_data.pivot(
             index="cohort", columns="period_number", values="orders_per_customer"
         )
@@ -265,9 +261,9 @@ def year_over_year_comparison(
                 if f"{metric}_{prev}" in result.columns and f"{metric}_{curr}" in result.columns:
                     result[f"{metric}_yoy_pct_{curr}_vs_{prev}"] = (
                         (result[f"{metric}_{curr}"] - result[f"{metric}_{prev}"])
-                        / result[f"{metric}_{prev}"]
+                        / result[f"{metric}_{prev}"].replace(0, np.nan)
                         * 100
-                    )
+                    ).fillna(0)
         return result
 
     return pd.DataFrame()

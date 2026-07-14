@@ -16,18 +16,18 @@ from sklearn.metrics import silhouette_score
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-def similarity_to_distance(similarity_matrix: pd.DataFrame, method: str = "yules_q") -> np.ndarray:
+def similarity_to_distance(similarity_matrix: pd.DataFrame, method: str = "phi") -> np.ndarray:
     """
     Convert similarity matrix to distance matrix for clustering.
 
-    For Yule's Q (range [-1, 1]): distance = 1 - similarity
+    For Phi coefficient (range [-1, 1]): distance = 1 - similarity
     For Jaccard (range [0, 1]): distance = 1 - similarity
 
-    Both map to [0, 2] for Yule's Q, [0, 1] for Jaccard.
+    Both map to [0, 2] for Phi, [0, 1] for Jaccard.
     """
     sim_vals = similarity_matrix.values.copy()
-    if method == "yules_q":
-        # Yule's Q: 1 = identical, -1 = perfectly dissimilar
+    if method == "phi":
+        # Phi: 1 = identical, -1 = perfectly dissimilar
         # Map to distance: 0 = identical, 2 = perfectly dissimilar
         dist_vals = 1 - sim_vals
     else:
@@ -46,7 +46,7 @@ def similarity_to_distance(similarity_matrix: pd.DataFrame, method: str = "yules
 def perform_hierarchical_clustering(
     similarity_matrix: pd.DataFrame,
     linkage_method: str = "average",
-    distance_method: str = "yules_q",
+    distance_method: str = "phi",
 ) -> Tuple[np.ndarray, List[str]]:
     """
     Perform agglomerative hierarchical clustering.
@@ -54,7 +54,7 @@ def perform_hierarchical_clustering(
     Args:
         similarity_matrix: Square similarity matrix (products x products)
         linkage_method: 'single', 'complete', 'average', 'ward'
-        distance_method: 'yules_q' or 'jaccard' for distance conversion
+        distance_method: 'phi' or 'jaccard' for distance conversion
 
     Returns:
         (linkage_matrix, ordered_product_labels)
@@ -84,7 +84,7 @@ def perform_hierarchical_clustering(
 def find_optimal_clusters(
     linkage_matrix: np.ndarray,
     similarity_matrix: pd.DataFrame,
-    distance_method: str = "yules_q",
+    distance_method: str = "phi",
     min_clusters: int = 2,
     max_clusters: int = 20,
     metric: str = "silhouette",
@@ -229,7 +229,7 @@ def cut_dendrogram_at_k(linkage_matrix: np.ndarray, k: int) -> np.ndarray:
 def compute_cophenetic_correlation(
     linkage_matrix: np.ndarray,
     similarity_matrix: pd.DataFrame,
-    distance_method: str = "yules_q",
+    distance_method: str = "phi",
 ) -> float:
     """
     Compute cophenetic correlation coefficient.
@@ -281,7 +281,7 @@ def compute_weighted_within_similarity(
 def compute_unconstrained_baseline(
     similarity_matrix: pd.DataFrame,
     linkage_method: str = "average",
-    distance_method: str = "yules_q",
+    distance_method: str = "phi",
 ) -> float:
     """
     Compute quality of unconstrained (optimal) clustering as baseline.

@@ -124,7 +124,7 @@ def get_substitution_matrix(
     """
     Get substitution scores directly from similarity matrix.
 
-    In CDT, substitution score = similarity coefficient (Yule's Q).
+    In CDT, substitution score = similarity coefficient (Phi).
     High similarity = high substitutability.
 
     Args:
@@ -176,7 +176,7 @@ def compute_bundling_matrix(
                 # Normalized bundle score: high lift, low substitution
                 # Scale lift (typically 1-10+) to [0,1] via log
                 lift_score = np.log1p(lift) / np.log1p(affinity_matrix.values.max())
-                sub_penalty = 1 - sub  # sub in [-1,1] for Yule's Q, so 1-sub in [0,2]
+                sub_penalty = 1 - sub  # sub in [-1,1] for Phi, so 1-sub in [0,2]
                 bundle_score = lift_score * sub_penalty
 
                 rows.append(

@@ -28,8 +28,8 @@ from .cdt_similarity import (
     build_customer_sequences,
     build_similarity_matrix,
     compute_jaccard,
+    compute_phi_coefficient,
     compute_switching_matrix_from_sequences,
-    compute_yules_q,
     detect_switches,
 )
 from .cdt_tree_builder import (
@@ -119,7 +119,7 @@ __all__ = [
     "build_customer_sequences",
     "detect_switches",
     "build_copurchase_tables",
-    "compute_yules_q",
+    "compute_phi_coefficient",
     "compute_jaccard",
     "build_similarity_matrix",
     "compute_switching_matrix_from_sequences",
