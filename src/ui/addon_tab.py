@@ -1,6 +1,8 @@
 """Add-on analysis tab."""
 
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from src.analytics.addon import get_addon_recommendations, get_anchor_addon_matrix
@@ -20,6 +22,7 @@ def render_addon_tab(transactions_df: pd.DataFrame, product_lookup: dict, params
         "Analysis Mode",
         ["Single Anchor Product", "Multiple Anchors (Top Products)"],
         horizontal=True,
+        key="addon_mode_radio",
     )
 
     if mode == "Single Anchor Product":
@@ -71,7 +74,6 @@ def render_single_addon(transactions_df: pd.DataFrame, product_lookup: dict, par
 
             # Visualization
             st.subheader("Add-on Lift vs Confidence")
-            import plotly.express as px
 
             fig = px.scatter(
                 addons,
@@ -92,11 +94,14 @@ def render_multi_addon(transactions_df: pd.DataFrame, product_lookup: dict, para
     """Multiple anchor products add-on matrix."""
     st.subheader("Add-on Matrix for Top Products")
 
+    @st.cache_data
+    def get_addon_matrix_cached(df, min_lift, top_n):
+        return get_anchor_addon_matrix(df, min_lift=min_lift, top_n_per_anchor=top_n)
     with st.spinner("Computing add-on matrix..."):
-        addon_matrix = get_anchor_addon_matrix(
+        addon_matrix = get_addon_matrix_cached(
             transactions_df,
-            min_lift=params.get("min_lift", 1.2),
-            top_n_per_anchor=params.get("top_n", 5),
+            params.get("min_lift", 1.2),
+            params.get("top_n", 5),
         )
 
     if not addon_matrix.empty:
@@ -109,7 +114,6 @@ def render_multi_addon(transactions_df: pd.DataFrame, product_lookup: dict, para
         )
 
         st.subheader("Add-on Lift Heatmap")
-        import plotly.graph_objects as go
 
         fig = go.Figure(
             data=go.Heatmap(

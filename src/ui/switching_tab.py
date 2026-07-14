@@ -28,14 +28,14 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
         col1, col2 = st.columns(2)
         with col1:
             window_days = st.slider(
-                "Analysis Window (days)", 30, 365, params.get("window_days", 90)
+                "Analysis Window (days)", 30, 365, params.get("window_days", 90), key="switch_tab_window_days"
             )
             min_transactions = st.slider(
-                "Min Customer Transactions", 2, 10, params.get("min_transactions", 3)
+                "Min Customer Transactions", 2, 10, params.get("min_transactions", 3), key="switch_tab_min_transactions"
             )
         with col2:
-            top_n_products = st.slider("Top Products for Heatmap", 10, 50, 30)
-            min_switches = st.number_input("Min Switch Count", 1, 50, params.get("min_switches", 2))
+            top_n_products = st.slider("Top Products for Heatmap", 10, 50, 30, key="switch_tab_top_n_products")
+            min_switches = st.number_input("Min Switch Count", 1, 50, params.get("min_switches", 2), key="switch_tab_min_switches")
 
     with st.spinner("Computing switching patterns..."):
         # Compute switching matrix
@@ -43,11 +43,17 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
             transactions_df, window_days=window_days, min_transactions=min_transactions
         )
 
-        # Customer loyalty metrics
-        loyalty = get_customer_loyalty_metrics(transactions_df)
+    # Customer loyalty metrics (cached)
+    @st.cache_data
+    def get_loyalty_cached(df):
+        return get_customer_loyalty_metrics(df)
+    loyalty = get_loyalty_cached(transactions_df)
 
-        # Top switching paths
-        top_paths = get_top_switching_paths(transactions_df, min_switches=min_switches)
+    # Top switching paths (cached)
+    @st.cache_data
+    def get_top_paths_cached(df, min_sw):
+        return get_top_switching_paths(df, min_switches=min_sw)
+    top_paths = get_top_paths_cached(transactions_df, min_switches)
 
     # Overview metrics
     st.subheader("Switching Overview")
@@ -110,7 +116,10 @@ def _render_heatmap_tab(
     """Render the switching heatmap tab."""
     st.subheader("Product Switching Heatmap")
 
-    heatmap_data = get_switching_heatmap_data(transactions_df, top_n_products=top_n_products)
+    @st.cache_data
+    def get_heatmap_data_cached(df, top_n):
+        return get_switching_heatmap_data(df, top_n_products=top_n)
+    heatmap_data = get_heatmap_data_cached(transactions_df, top_n_products)
 
     if not heatmap_data.empty:
         fig = go.Figure(
@@ -145,6 +154,7 @@ def _render_top_paths_tab(top_paths: pd.DataFrame, product_lookup: dict):
 
     if not top_paths.empty:
         # Add product names
+        top_paths = top_paths.copy()
         top_paths["From Product"] = top_paths["from_product"].map(product_lookup)
         top_paths["To Product"] = top_paths["to_product"].map(product_lookup)
 
@@ -196,8 +206,8 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
         )
         product_to_idx = {p: i for i, p in enumerate(all_products)}
 
-        sources = [product_to_idx[row["from_product"]] for _, row in top_switches.iterrows()]
-        targets = [product_to_idx[row["to_product"]] for _, row in top_switches.iterrows()]
+        sources = top_switches["from_product"].map(product_to_idx).tolist()
+        targets = top_switches["to_product"].map(product_to_idx).tolist()
         values = top_switches["switch_count"].tolist()
 
         labels = [product_lookup.get(p, p) if product_lookup else p for p in all_products]
@@ -266,17 +276,18 @@ def _render_loyalty_tab(loyalty: pd.DataFrame):
         st.write("**Top Customers by Loyalty**")
         top_loyal = loyalty[loyalty["loyalty_segment"] == "Loyal"].nlargest(20, "repeat_rate")
         if not top_loyal.empty:
+            # Only display columns that exist
+            available_cols = [
+                "transaction_count",
+                "unique_products",
+                "repeat_rate",
+                "favorite_product",
+                "concentration_hhi",
+                "customer_lifespan_days",
+            ]
+            display_cols = [c for c in available_cols if c in top_loyal.columns]
             st.dataframe(
-                top_loyal[
-                    [
-                        "transaction_count",
-                        "unique_products",
-                        "repeat_rate",
-                        "favorite_product",
-                        "concentration_hhi",
-                        "customer_lifespan_days",
-                    ]
-                ].round(2),
+                top_loyal[display_cols].round(2),
                 width="stretch",
             )
 

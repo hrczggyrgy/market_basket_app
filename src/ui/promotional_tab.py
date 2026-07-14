@@ -23,13 +23,21 @@ def render_promotional_tab(transactions_df: pd.DataFrame, product_lookup: dict, 
         "💡 This analysis requires promotional period data. Using simulated promotions based on price drops and volume spikes."
     )
 
-    # Detect promotions
+    # Detect promotions (cached)
+    @st.cache_data
+    def detect_promos_cached(df, price_thresh, min_dur, max_dur):
+        return detect_promotions(
+            df,
+            price_change_threshold=price_thresh,
+            min_duration_days=min_dur,
+            max_duration_days=max_dur,
+        )
     with st.spinner("Detecting promotional periods..."):
-        promo_periods = detect_promotions(
+        promo_periods = detect_promos_cached(
             transactions_df,
-            price_change_threshold=params.get("price_change_threshold", 0.15),
-            min_duration_days=params.get("min_duration_days", 3),
-            max_duration_days=params.get("max_duration_days", 30),
+            params.get("price_change_threshold", 0.15),
+            params.get("min_duration_days", 3),
+            params.get("max_duration_days", 30),
         )
 
     if promo_periods.empty:
@@ -67,7 +75,7 @@ def render_promotional_tab(transactions_df: pd.DataFrame, product_lookup: dict, 
     promo_tabs = [
         "📈 Promotional Lift",
         "💰 Incremental Revenue",
-        "💰 ROI Analysis",
+        "� ROI Analysis",
         "🌟 Halo Effect",
         "📅 Timing Analysis",
         "📊 Period Comparison",
@@ -106,12 +114,14 @@ def render_promotional_lift_tab(
         st.warning(f"Could not calculate promotional lift: {lift_results['error']}")
         return
 
-    if not isinstance(lift_results, pd.DataFrame) or "product_lifts" not in lift_results:
+    if isinstance(lift_results, dict) and "product_lifts" in lift_results:
+        product_lifts = lift_results["product_lifts"]
+    elif isinstance(lift_results, pd.DataFrame):
+        product_lifts = lift_results
+    else:
         st.warning("Unexpected lift results format")
         st.write(lift_results)
         return
-
-    product_lifts = lift_results["product_lifts"]
 
     if product_lifts.empty:
         st.warning("No lift data available")
@@ -462,73 +472,77 @@ def render_timing_analysis_tab(
 
     with col1:
         st.subheader("By Day of Week")
-        dow_data = timing["by_day_of_week"]
+        dow_data = timing.get("by_day_of_week")
+        if dow_data is None or dow_data.empty:
+            st.info("No day-of-week data available")
+        else:
+            fig = px.bar(
+                dow_data,
+                x="day_name",
+                y="revenue_lift",
+                color="revenue_lift",
+                color_continuous_scale="RdYlGn",
+                title="Revenue Lift by Day of Week",
+                labels={"day_name": "Day", "revenue_lift": "Revenue Lift (%)"},
+            )
+            st.plotly_chart(fig, width="stretch")
 
-        fig = px.bar(
-            dow_data,
-            x="day_name",
-            y="revenue_lift",
-            color="revenue_lift",
-            color_continuous_scale="RdYlGn",
-            title="Revenue Lift by Day of Week",
-            labels={"day_name": "Day", "revenue_lift": "Revenue Lift (%)"},
-        )
-        st.plotly_chart(fig, width="stretch")
-
-        st.dataframe(
-            dow_data[
-                [
-                    "day_name",
-                    "promo_revenue",
-                    "base_revenue",
-                    "revenue_lift",
-                    "promo_orders",
-                    "base_orders",
-                ]
-            ].style.format(
-                {
-                    "promo_revenue": "${:,.2f}",
-                    "base_revenue": "${:,.2f}",
-                    "revenue_lift": "{:.1f}%",
-                }
-            ),
-            width="stretch",
-        )
+            st.dataframe(
+                dow_data[
+                    [
+                        "day_name",
+                        "promo_revenue",
+                        "base_revenue",
+                        "revenue_lift",
+                        "promo_orders",
+                        "base_orders",
+                    ]
+                ].style.format(
+                    {
+                        "promo_revenue": "${:,.2f}",
+                        "base_revenue": "${:,.2f}",
+                        "revenue_lift": "{:.1f}%",
+                    }
+                ),
+                width="stretch",
+            )
 
     with col2:
         st.subheader("By Month")
-        month_data = timing["by_month"]
+        month_data = timing.get("by_month")
+        if month_data is None or month_data.empty:
+            st.info("No monthly data available")
+        else:
+            fig = px.bar(
+                month_data,
+                x="month",
+                y="revenue_lift",
+                color="revenue_lift",
+                color_continuous_scale="RdYlGn",
+                title="Revenue Lift by Month",
+                labels={"month": "Month", "revenue_lift": "Revenue Lift (%)"},
+            )
+            st.plotly_chart(fig, width="stretch")
 
-        fig = px.bar(
-            month_data,
-            x="month",
-            y="revenue_lift",
-            color="revenue_lift",
-            color_continuous_scale="RdYlGn",
-            title="Revenue Lift by Month",
-            labels={"month": "Month", "revenue_lift": "Revenue Lift (%)"},
-        )
-        st.plotly_chart(fig, width="stretch")
-
-        st.dataframe(
-            month_data[
-                [
-                    "month",
-                    "promo_revenue",
-                    "base_revenue",
-                    "revenue_lift",
-                    "promo_orders",
-                    "base_orders",
-                ]
-            ].style.format(
-                {
-                    "promo_revenue": "${:,.2f}",
-                    "base_revenue": "${:,.2f}",
-                    "revenue_lift": "{:.1f}%",
-                }
-            ),
-            width="stretch",
-        )
+            st.dataframe(
+                month_data[
+                    [
+                        "month",
+                        "promo_revenue",
+                        "base_revenue",
+                        "revenue_lift",
+                        "promo_orders",
+                        "base_orders",
+                    ]
+                ].style.format(
+                    {
+                        "promo_revenue": "${:,.2f}",
+                        "base_revenue": "${:,.2f}",
+                        "revenue_lift": "{:.1f}%",
+                    }
+                ),
+                width="stretch",
+            )
 
 
 def render_period_comparison_tab(
@@ -541,6 +555,7 @@ def render_period_comparison_tab(
         "Comparison Type",
         ["Period-over-Period (PoP)", "Year-over-Year (YoY)"],
         horizontal=True,
+        key="promo_comparison_type",
     )
 
     if "Period-over-Period" in comparison_type:
