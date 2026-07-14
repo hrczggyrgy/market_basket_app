@@ -1,5 +1,6 @@
 """Product switching / brand switching analysis."""
 
+import numpy as np
 import pandas as pd
 
 
@@ -33,10 +34,17 @@ def compute_switching_matrix(
         group = group.sort_values(date_col)
         products = group[product_col].values
         dates = pd.to_datetime(group[date_col]).values
+        txn_ids = group["transaction_id"].values if "transaction_id" in group.columns else None
 
         for i in range(len(products) - 1):
             days_diff = (pd.Timestamp(dates[i + 1]) - pd.Timestamp(dates[i])).days
-            if days_diff <= window_days and products[i] != products[i + 1]:
+            same_basket = (
+                txn_ids is not None
+                and txn_ids[i] is not None
+                and txn_ids[i + 1] is not None
+                and txn_ids[i] == txn_ids[i + 1]
+            )
+            if days_diff <= window_days and products[i] != products[i + 1] and not same_basket:
                 switches.append(
                     {
                         "from_product": products[i],
@@ -125,8 +133,18 @@ def get_customer_loyalty_metrics(
         shares = product_counts.values / n_purchases
         concentration_hhi = (shares**2).sum()
 
-        # Switching count
-        switches = sum(1 for i in range(n_purchases - 1) if products[i] != products[i + 1])
+        # Switching count (exclude same-basket consecutive items)
+        txn_ids = group["transaction_id"].values if "transaction_id" in group.columns else None
+        switches = 0
+        for i in range(n_purchases - 1):
+            same_basket = (
+                txn_ids is not None
+                and txn_ids[i] is not None
+                and txn_ids[i + 1] is not None
+                and txn_ids[i] == txn_ids[i + 1]
+            )
+            if products[i] != products[i + 1] and not same_basket:
+                switches += 1
 
         # Purchase frequency
         days_span = (group[date_col].max() - group[date_col].min()).days
@@ -155,21 +173,20 @@ def get_customer_loyalty_metrics(
     repeat_quantiles = loyalty_df["repeat_rate"].quantile([0.33, 0.66])
     freq_quantiles = loyalty_df["purchase_frequency_per_month"].quantile([0.33, 0.66])
 
-    def assign_segment(row):
-        if row["repeat_rate"] >= repeat_quantiles.get(0.66, 0.5) and row[
-            "purchase_frequency_per_month"
-        ] >= freq_quantiles.get(0.66, 1):
-            return "Loyal"
-        elif row["repeat_rate"] >= repeat_quantiles.get(0.33, 0.25) or row[
-            "purchase_frequency_per_month"
-        ] >= freq_quantiles.get(0.33, 0.5):
-            return "Regular"
-        elif row["repeat_rate"] == 0 and row["transaction_count"] == 1:
-            return "New"
-        else:
-            return "At Risk"
+    repeat_66 = repeat_quantiles.iloc[1] if len(repeat_quantiles) > 1 else 0.5
+    repeat_33 = repeat_quantiles.iloc[0] if len(repeat_quantiles) > 0 else 0.25
+    freq_66 = freq_quantiles.iloc[1] if len(freq_quantiles) > 1 else 1.0
+    freq_33 = freq_quantiles.iloc[0] if len(freq_quantiles) > 0 else 0.5
 
-    loyalty_df["loyalty_segment"] = loyalty_df.apply(assign_segment, axis=1)
+    conditions = [
+        (loyalty_df["repeat_rate"] >= repeat_66)
+        & (loyalty_df["purchase_frequency_per_month"] >= freq_66),
+        (loyalty_df["repeat_rate"] >= repeat_33)
+        | (loyalty_df["purchase_frequency_per_month"] >= freq_33),
+        (loyalty_df["repeat_rate"] == 0) & (loyalty_df["transaction_count"] == 1),
+    ]
+    choices = ["Loyal", "Regular", "New"]
+    loyalty_df["loyalty_segment"] = np.select(conditions, choices, default="At Risk")
 
     return loyalty_df
 
@@ -206,35 +223,54 @@ def detect_brand_switching(
     df[date_col] = pd.to_datetime(df[date_col])
     df = df.sort_values([customer_col, date_col])
 
-    switches = []
+    # Vectorised brand switching detection
+    df["next_date"] = df.groupby(customer_col)[date_col].shift(-1)
+    df["next_brand"] = df.groupby(customer_col)[brand_col].shift(-1)
+    df["next_category"] = df.groupby(customer_col)[category_col].shift(-1)
+    df["days_between"] = (df["next_date"] - df[date_col]).dt.days
 
-    for customer, group in df.groupby(customer_col):
-        group = group.sort_values(date_col)
+    switched = (
+        (df["days_between"] <= window_days)
+        & (df[category_col] == df["next_category"])
+        & (df[brand_col] != df["next_brand"])
+        & df["next_date"].notna()
+    )
 
-        for i in range(len(group) - 1):
-            curr = group.iloc[i]
-            nxt = group.iloc[i + 1]
+    result = df[switched].copy()
+    if result.empty:
+        return pd.DataFrame(
+            columns=[
+                "customer_id",
+                "category",
+                "from_brand",
+                "to_brand",
+                "from_date",
+                "to_date",
+                "days_between",
+            ]
+        )
 
-            days_diff = (nxt[date_col] - curr[date_col]).days
-
-            if (
-                days_diff <= window_days
-                and curr[category_col] == nxt[category_col]
-                and curr[brand_col] != nxt[brand_col]
-            ):
-                switches.append(
-                    {
-                        "customer_id": customer,
-                        "category": curr[category_col],
-                        "from_brand": curr[brand_col],
-                        "to_brand": nxt[brand_col],
-                        "from_date": curr[date_col],
-                        "to_date": nxt[date_col],
-                        "days_between": days_diff,
-                    }
-                )
-
-    return pd.DataFrame(switches)
+    result = result.rename(
+        columns={
+            customer_col: "customer_id",
+            category_col: "category",
+            brand_col: "from_brand",
+            "next_brand": "to_brand",
+            date_col: "from_date",
+            "next_date": "to_date",
+        }
+    )
+    return result[
+        [
+            "customer_id",
+            "category",
+            "from_brand",
+            "to_brand",
+            "from_date",
+            "to_date",
+            "days_between",
+        ]
+    ]
 
 
 def get_top_switching_paths(
@@ -259,11 +295,11 @@ def get_switching_heatmap_data(
     if switch_matrix.empty:
         return pd.DataFrame()
 
-    # Filter to top products
-    all_products = set(
-        switch_matrix["from_product"].tolist() + switch_matrix["to_product"].tolist()
-    )
-    top_products = list(all_products)[:top_n_products]
+    # Filter to top products by total switch involvement
+    from_counts = switch_matrix.groupby("from_product")["switch_count"].sum()
+    to_counts = switch_matrix.groupby("to_product")["switch_count"].sum()
+    total_counts = from_counts.add(to_counts, fill_value=0)
+    top_products = total_counts.nlargest(top_n_products).index.tolist()
 
     switch_matrix = switch_matrix[
         switch_matrix["from_product"].isin(top_products)

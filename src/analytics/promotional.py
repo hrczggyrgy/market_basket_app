@@ -1,13 +1,10 @@
 """Promotional Lift Analysis - Measure impact of promotions on sales and customer behavior."""
 
-import warnings
 from typing import Dict, List
 
 import numpy as np
 import pandas as pd
-from scipy.stats import ttest_ind
-
-warnings.filterwarnings("ignore")
+from scipy.stats import mannwhitneyu
 
 
 def detect_promotions(
@@ -15,6 +12,7 @@ def detect_promotions(
     price_change_threshold: float = 0.15,
     min_duration_days: int = 3,
     max_duration_days: int = 30,
+    gap_threshold_days: int = 1,
 ) -> pd.DataFrame:
     """
     Detect promotional periods based on price drops.
@@ -24,6 +22,7 @@ def detect_promotions(
         price_change_threshold: Minimum price drop to consider as promotion (e.g., 0.15 = 15%)
         min_duration_days: Minimum days for a promotion
         max_duration_days: Maximum days for a promotion
+        gap_threshold_days: Max gap between transactions to merge into same promo period (default 1)
 
     Returns:
         DataFrame with detected promotions
@@ -32,8 +31,8 @@ def detect_promotions(
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
 
-    # Calculate baseline price per product (median price)
-    baseline_prices = df.groupby("stockcode")["price"].median().to_dict()
+    # Calculate baseline price per product (90th percentile — robust regular price)
+    baseline_prices = df.groupby("stockcode")["price"].quantile(0.9).to_dict()
     df["baseline_price"] = df["stockcode"].map(baseline_prices)
     df["price_drop_pct"] = (df["baseline_price"] - df["price"]) / df["baseline_price"]
 
@@ -53,7 +52,9 @@ def detect_promotions(
         # Find contiguous promo periods
         prod_df = prod_df.copy()
         prod_df["date_diff"] = prod_df["date"].diff().dt.days
-        prod_df["new_period"] = (prod_df["date_diff"] > 1) | (prod_df["date_diff"].isna())
+        prod_df["new_period"] = (prod_df["date_diff"] > gap_threshold_days) | (
+            prod_df["date_diff"].isna()
+        )
         prod_df["promo_group"] = prod_df["new_period"].cumsum()
 
         for group_id, group in prod_df.groupby("promo_group"):
@@ -81,17 +82,16 @@ def detect_promotions(
                     baseline_sales["price"].mean() if len(baseline_sales) > 0 else 0
                 )
 
-                # Calculate lift
-                if baseline_qty > 0:
-                    qty_lift = (promo_qty / duration) / (
-                        baseline_qty / max(1, (df["date"].max() - df["date"].min()).days)
-                    ) - 1
+                # Calculate lift against non-promo daily rate (excludes promo days)
+                non_promo_days = df[~df["is_promo"]]["date"].nunique()
+                if baseline_qty > 0 and non_promo_days > 0:
+                    qty_lift = (promo_qty / duration) / (baseline_qty / non_promo_days) - 1
                 else:
                     qty_lift = 0
 
-                if baseline_revenue > 0:
+                if baseline_revenue > 0 and non_promo_days > 0:
                     revenue_lift = (promo_revenue / duration) / (
-                        baseline_revenue / max(1, (df["date"].max() - df["date"].min()).days)
+                        baseline_revenue / non_promo_days
                     ) - 1
                 else:
                     revenue_lift = 0
@@ -218,16 +218,18 @@ def calculate_promotional_lift(
     else:
         results["qty_lift_pct"] = 0
 
-    # Statistical significance test
+    # Statistical significance test (customer-level, Mann-Whitney U — no normality/independence assumption)
     if len(promo_trans) > 10 and len(non_promo_trans) > 10:
-        # Revenue per transaction
-        promo_rev_per_txn = promo_trans.groupby("transaction_id")["revenue"].sum()
-        non_promo_rev_per_txn = non_promo_trans.groupby("transaction_id")["revenue"].sum()
+        promo_per_customer = promo_trans.groupby("customer_id")["revenue"].sum()
+        non_promo_per_customer = non_promo_trans.groupby("customer_id")["revenue"].sum()
 
-        t_stat, p_val = ttest_ind(promo_rev_per_txn, non_promo_rev_per_txn, equal_var=False)
-        results["t_statistic"] = t_stat
-        results["p_value"] = p_val
-        results["significant"] = p_val < 0.05
+        if len(promo_per_customer) > 1 and len(non_promo_per_customer) > 1:
+            u_stat, p_val = mannwhitneyu(
+                promo_per_customer, non_promo_per_customer, alternative="two-sided"
+            )
+            results["u_statistic"] = u_stat
+            results["p_value"] = p_val
+            results["significant"] = p_val < 0.05
 
     # Product-level lift
     product_lifts = []
@@ -344,6 +346,8 @@ def promotion_roi_analysis(
     transactions_df: pd.DataFrame,
     promo_periods: pd.DataFrame,
     promo_costs: Dict[str, float] = None,
+    margin_pct: float = 0.3,
+    promo_cost_pct: float = 0.15,
 ) -> pd.DataFrame:
     """
     Calculate ROI of promotions.
@@ -352,6 +356,8 @@ def promotion_roi_analysis(
         transactions_df: Transaction data
         promo_periods: Detected promotional periods
         promo_costs: Dict mapping product to promotional cost (e.g., marketing spend, margin loss)
+        margin_pct: Assumed profit margin (e.g., 0.3 = 30%)
+        promo_cost_pct: Promotional cost as fraction of revenue (e.g., 0.15 = 15%)
 
     Returns:
         DataFrame with ROI metrics per promotion
@@ -369,21 +375,20 @@ def promotion_roi_analysis(
 
         # Estimate promo cost if not provided
         if promo_costs and product in promo_costs:
-            cost = promo_costs[product]
+            promo_cost = promo_costs[product]
         else:
-            # Estimate as margin loss on promo units
-            # Simplified: assume 30% margin, cost = revenue * 0.3 * discount_pct
-            cost = 0  # noqa: F841
+            promo_cost = row["incremental_revenue"] * promo_cost_pct
 
-        # Simplified ROI calculation
-        incremental_profit = row["incremental_revenue"] * 0.3  # Assume 30% margin
-        # Promo cost would be passed in or estimated
+        incremental_profit = row["incremental_revenue"] * margin_pct - promo_cost
+        roi_pct = (incremental_profit / promo_cost * 100) if promo_cost > 0 else 0.0
 
         results.append(
             {
                 "stockcode": row["stockcode"],
                 "incremental_revenue": row["incremental_revenue"],
                 "incremental_profit": incremental_profit,
+                "promo_cost": promo_cost,
+                "roi_pct": roi_pct,
                 "revenue_lift_pct": row["revenue_lift_pct"],
             }
         )
@@ -442,11 +447,19 @@ def halo_effect_analysis(
             & (transactions_df["stockcode"] != promo_product)
         ]
 
-        # Compare to baseline
-        baseline_trans = transactions_df[
-            (transactions_df["stockcode"] != promo_product)
-            & (transactions_df["date"] >= start - pd.Timedelta(days=30))
-            & (transactions_df["date"] < start)
+        # Baseline: same basket co-occurrence filter in the 30 days before promo
+        baseline_start = start - pd.Timedelta(days=window_days * 4)
+        baseline_end = start - pd.Timedelta(days=1)
+        pre_promo_products = transactions_df[
+            (transactions_df["stockcode"] == promo_product)
+            & (transactions_df["date"] >= baseline_start)
+            & (transactions_df["date"] <= baseline_end)
+        ]
+        pre_promo_txn_ids = pre_promo_products["transaction_id"].unique()
+
+        baseline_basket_trans = transactions_df[
+            (transactions_df["transaction_id"].isin(pre_promo_txn_ids))
+            & (transactions_df["stockcode"] != promo_product)
         ]
 
         halo_products = (
@@ -460,7 +473,7 @@ def halo_effect_analysis(
         )
 
         baseline_products = (
-            baseline_trans.groupby("stockcode")
+            baseline_basket_trans.groupby("stockcode")
             .agg(
                 base_revenue=("revenue", "sum"),
                 base_qty=("quantity", "sum"),
@@ -490,11 +503,12 @@ def halo_effect_analysis(
     return pd.DataFrame(halo_results)
 
 
-def promotion_timing_analysis(
-    transactions_df: pd.DataFrame, promo_periods: pd.DataFrame
-) -> pd.DataFrame:
+def promotion_timing_analysis(transactions_df: pd.DataFrame, promo_periods: pd.DataFrame) -> Dict:
     """
     Analyze optimal timing for promotions (day of week, month, etc.)
+
+    Returns:
+        Dict with keys 'by_day_of_week' and 'by_month', each a DataFrame
     """
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])

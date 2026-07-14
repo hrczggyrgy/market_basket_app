@@ -2,7 +2,6 @@
 
 from typing import List, Optional
 
-import numpy as np
 import pandas as pd
 
 from src.algorithms.fpgrowth import create_basket_matrix
@@ -58,7 +57,7 @@ def get_addon_recommendations(
             confidence = p_both / p_anchor  # P(Addon | Anchor)
             lift = p_both / (p_anchor * p_addon)
             leverage = p_both - (p_anchor * p_addon)
-            conviction = (1 - p_addon) / (1 - confidence) if confidence < 1 else np.inf
+            conviction = (1 - p_addon) / (1 - confidence) if confidence < 1 else 1e6
 
             if lift >= min_lift and p_both >= min_support:
                 # Revenue uplift estimate
@@ -117,13 +116,21 @@ def get_anchor_addon_matrix(
         # Use top 20 products by frequency
         anchor_products = transactions_df["stockcode"].value_counts().head(20).index.tolist()
 
+    basket = create_basket_matrix(transactions_df)
+
     all_results = []
 
     for anchor in anchor_products:
+        if anchor not in basket.columns:
+            continue
+        anchor_transactions = basket[basket[anchor] == 1]
+        if len(anchor_transactions) == 0:
+            continue
         recs = get_addon_recommendations(
             transactions_df, anchor, min_lift=min_lift, top_n=top_n_per_anchor
         )
-        all_results.append(recs)
+        if not recs.empty:
+            all_results.append(recs)
 
     if not all_results:
         return pd.DataFrame()
