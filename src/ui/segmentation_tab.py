@@ -301,7 +301,7 @@ def _render_rfm_profiles_table(rfm_scored: pd.DataFrame):
     if mode == "Indexed to average (100 = avg)":
         display_df = _normalize_metrics(seg_rev, method="index", invert_recency=True)
         st.dataframe(
-            display_df.style.format("{:.1f}").background_gradient(
+            display_df.style.format("{:.1f}", subset=display_df.columns[1:]).background_gradient(
                 cmap="RdYlGn", axis=0, subset=display_df.columns[1:]
             ),
             width="stretch",
@@ -393,7 +393,7 @@ def _render_kmeans_revenue_analysis(rfm_clustered: pd.DataFrame):
     if mode == "Indexed to average (100 = avg)":
         display_df = _normalize_metrics(cluster_profiles, method="index", invert_recency=True)
         st.dataframe(
-            display_df.style.format("{:.1f}").background_gradient(
+            display_df.style.format("{:.1f}", subset=display_df.columns[1:]).background_gradient(
                 cmap="RdYlGn", axis=0, subset=display_df.columns[1:]
             ),
             width="stretch",
