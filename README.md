@@ -1,4 +1,4 @@
-# 🛒 Market Basket Analysis — Customer Decision Intelligence
+# Market Basket Analysis — Customer Decision Intelligence
 
 > **A full-featured Streamlit application for market basket analysis, customer choice modeling, and Customer Decision Tree (CDT) construction.**
 
@@ -9,7 +9,7 @@
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Python 3.10+
@@ -60,7 +60,7 @@ print(f'Quality: {meta[\"quality_ratio\"]:.1%} vs baseline')
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 market_basket_app/
@@ -110,7 +110,7 @@ market_basket_app/
 
 ---
 
-## ✨ Features
+## Features
 
 | Category | Module | Description |
 |----------|--------|-------------|
@@ -127,7 +127,7 @@ market_basket_app/
 
 ---
 
-## 📊 Data Requirements
+## Data Requirements
 
 ### Required CSV Columns
 
@@ -168,7 +168,7 @@ date,transaction_id,stockcode,product,customer_id,price,quantity,category,brand
 
 ---
 
-## ⚙️ Configuration Reference
+## Configuration Reference
 
 ### Global FP-Growth Parameters (Sidebar)
 
@@ -196,7 +196,7 @@ date,transaction_id,stockcode,product,customer_id,price,quantity,category,brand
 
 ---
 
-## 🎯 Analysis Modes Walkthrough
+## Analysis Modes Walkthrough
 
 ### 1. Association Rules
 Classic market basket analysis. FP-Growth finds frequent itemsets → association rules with lift/confidence. Visualizations: network graph, heatmap, parallel coordinates, rule table with filters.
@@ -213,7 +213,7 @@ Tracks customer brand/product transitions over time. Sankey diagrams show flow; 
 ### 5. Customer Choice Modelling (Supervised)
 Trains a decision tree to predict **next product choice** from customer history (RFM, favorite categories, recency). Outputs: tree visualization, feature importance, prediction accuracy.
 
-### 6. Decision Tree & Patterns — **Customer Decision Tree (CDT)** ⭐
+### 6. Decision Tree & Patterns — **Customer Decision Tree (CDT)**
 **Enterprise-grade unsupervised hierarchy:**
 1. **Similarity Matrix** — Yule's Q / Jaccard on co-purchase
 2. **Hierarchical Clustering** — Agglomerative with silhouette optimization
@@ -248,24 +248,24 @@ Trains a decision tree to predict **next product choice** from customer history 
 
 ---
 
-## 🖥️ UI Overview
+## UI Overview
 
 ### Sidebar Layout
 ```
-📁 Data Upload
+Data Upload
   ├── File uploader (CSV)
   ├── Column auto-detection / manual mapping
   └── Use Sample Data checkbox
 
-⚙️ FP-Growth Parameters
+FP-Growth Parameters
   ├── Min Support, Min Confidence, Max Itemset Length, Min Lift
 
-📊 Analysis Options
+Analysis Options
   ├── Analysis Category (6 categories)
   │   └── Analysis Mode (sub-modes per category)
   └── Mode-specific parameters
 
-🚀 Run Analysis Button
+Run Analysis Button
 ```
 
 ### Main Tabs (Dynamic)
@@ -276,7 +276,7 @@ Tabs render based on selected analysis mode. Each tab includes:
 
 ---
 
-## 📤 Export Capabilities
+## Export Capabilities
 
 | Format | Use Case |
 |--------|----------|
@@ -287,7 +287,7 @@ Tabs render based on selected analysis mode. Each tab includes:
 
 ---
 
-## 🧪 Testing & Development
+## Testing & Development
 
 ### Run Tests (if available)
 ```bash
@@ -319,7 +319,7 @@ df.to_csv("data/my_sample.csv", index=False)
 
 ---
 
-## 🐛 Troubleshooting / FAQ
+## Troubleshooting / FAQ
 
 ### Common Issues
 
@@ -357,7 +357,7 @@ print(f"Avg basket size: {summary['avg_basket_size']:.1f}")
 
 ---
 
-## 📚 Methodology References
+## Methodology References
 
 | Method | Reference |
 |--------|-----------|
@@ -372,7 +372,7 @@ print(f"Avg basket size: {summary['avg_basket_size']:.1f}")
 
 ---
 
-## 🔧 Extending the App
+## Extending the App
 
 ### Add a New Analysis Tab
 
@@ -399,7 +399,7 @@ def my_similarity(matrix: pd.DataFrame) -> pd.DataFrame:
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create feature branch: `git checkout -b feature/amazing-feature`
@@ -415,13 +415,13 @@ def my_similarity(matrix: pd.DataFrame) -> pd.DataFrame:
 
 ---
 
-## 📄 License
+## License
 
 MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - **SciPy / scikit-learn** — Clustering, metrics, tree algorithms
 - **Plotly** — Interactive visualizations
@@ -431,7 +431,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-## 📞 Support
+## Support
 
 - **Issues**: GitHub Issues for bugs & feature requests
 - **Discussions**: GitHub Discussions for questions
