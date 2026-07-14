@@ -71,7 +71,7 @@ def main():
         if config["use_sample"]:
             with st.spinner("Generating sample data..."):
                 transactions_df = generate_transactions(
-                    n_transactions=1000, n_customers=200, n_products=100
+                    n_customers=200, seed=42
                 )
         elif config["uploaded_file"] is not None:
             with st.spinner("Loading transaction data..."):
