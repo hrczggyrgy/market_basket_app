@@ -229,29 +229,41 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
         targets = top_switches["to_product"].map(product_to_idx).tolist()
         values = top_switches["switch_count"].tolist()
 
-        labels = [product_lookup.get(p, p) if product_lookup else p for p in all_products]
+        labels = [
+            (product_lookup.get(p, p)[:20] + "..." if len(product_lookup.get(p, p)) > 20 else product_lookup.get(p, p))
+            if product_lookup
+            else (p[:20] + "..." if len(p) > 20 else p)
+            for p in all_products
+        ]
 
         fig = go.Figure(
             data=[
                 go.Sankey(
                     node=dict(
-                        pad=15,
+                        pad=20,
                         thickness=20,
                         line=dict(color="black", width=0.5),
                         label=labels,
                         color="lightblue",
+                        hovertemplate="%{label}<extra></extra>",
                     ),
                     link=dict(
                         source=sources,
                         target=targets,
                         value=values,
                         color="rgba(100, 100, 100, 0.3)",
+                        hovertemplate="%{source.label} → %{target.label}: %{value} switches<extra></extra>",
                     ),
                 )
             ]
         )
 
-        fig.update_layout(title_text="Product Switching Flow", font_size=10, height=500)
+        fig.update_layout(
+            title_text="Product Switching Flow",
+            font=dict(size=13, family="Arial, sans-serif"),
+            height=600,
+            margin=dict(l=150, r=50, t=50, b=50),
+        )
         st.plotly_chart(fig, width="stretch")
     else:
         st.info("No switching data for Sankey diagram")

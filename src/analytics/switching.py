@@ -107,6 +107,7 @@ def get_customer_loyalty_metrics(
     for customer, group in df.groupby(customer_col):
         group = group.sort_values(date_col)
         products = group[product_col].values
+        n_purchases = len(products)
 
         # Unique products purchased
         unique_products = len(set(products))
@@ -118,31 +119,55 @@ def get_customer_loyalty_metrics(
 
         # Most purchased product
         top_product = product_counts.index[0] if len(product_counts) > 0 else None
-        top_product_share = product_counts.iloc[0] / len(products) if len(product_counts) > 0 else 0
+        top_product_share = product_counts.iloc[0] / n_purchases if n_purchases > 0 else 0
+
+        # Brand concentration (HHI) — how concentrated purchases are across products
+        shares = product_counts.values / n_purchases
+        concentration_hhi = (shares ** 2).sum()
 
         # Switching count
-        switches = sum(1 for i in range(len(products) - 1) if products[i] != products[i + 1])
+        switches = sum(1 for i in range(n_purchases - 1) if products[i] != products[i + 1])
 
         # Purchase frequency
         days_span = (group[date_col].max() - group[date_col].min()).days
-        freq = len(products) / max(days_span, 1) * 30  # per month
+        lifespan_days = max(days_span, 1)
+        freq = n_purchases / lifespan_days * 30  # per month
 
         metrics.append(
             {
                 "customer_id": customer,
-                "total_purchases": len(products),
+                "transaction_count": n_purchases,
                 "unique_products": unique_products,
                 "repeat_rate": repeat_rate,
-                "top_product": top_product,
-                "top_product_share": top_product_share,
+                "favorite_product": top_product,
+                "favorite_share": top_product_share,
+                "concentration_hhi": concentration_hhi,
                 "switch_count": switches,
-                "switch_rate": (switches / (len(products) - 1) if len(products) > 1 else 0),
+                "switch_rate": (switches / (n_purchases - 1) if n_purchases > 1 else 0),
                 "purchase_frequency_per_month": freq,
-                "days_span": days_span,
+                "customer_lifespan_days": lifespan_days,
             }
         )
 
-    return pd.DataFrame(metrics)
+    loyalty_df = pd.DataFrame(metrics)
+
+    # Derive loyalty segments
+    repeat_quantiles = loyalty_df["repeat_rate"].quantile([0.33, 0.66])
+    freq_quantiles = loyalty_df["purchase_frequency_per_month"].quantile([0.33, 0.66])
+
+    def assign_segment(row):
+        if row["repeat_rate"] >= repeat_quantiles.get(0.66, 0.5) and row["purchase_frequency_per_month"] >= freq_quantiles.get(0.66, 1):
+            return "Loyal"
+        elif row["repeat_rate"] >= repeat_quantiles.get(0.33, 0.25) or row["purchase_frequency_per_month"] >= freq_quantiles.get(0.33, 0.5):
+            return "Regular"
+        elif row["repeat_rate"] == 0 and row["transaction_count"] == 1:
+            return "New"
+        else:
+            return "At Risk"
+
+    loyalty_df["loyalty_segment"] = loyalty_df.apply(assign_segment, axis=1)
+
+    return loyalty_df
 
 
 def detect_brand_switching(
