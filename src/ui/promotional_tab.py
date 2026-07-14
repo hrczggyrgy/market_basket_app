@@ -12,7 +12,7 @@ from src.ui.tabs import persistent_tabs
 
 def render_promotional_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render promotional analytics tab with persistent sub-tabs."""
-    st.header("📢 Promotional Analytics")
+    st.header(" Promotional Analytics")
 
     if transactions_df.empty:
         st.warning("No transaction data available")
@@ -20,7 +20,7 @@ def render_promotional_tab(transactions_df: pd.DataFrame, product_lookup: dict, 
 
     # Check if we have promotional data (or simulate)
     st.info(
-        "💡 This analysis requires promotional period data. Using simulated promotions based on price drops and volume spikes."
+        " This analysis requires promotional period data. Using simulated promotions based on price drops and volume spikes."
     )
 
     # Detect promotions (cached)
@@ -74,12 +74,12 @@ def render_promotional_tab(transactions_df: pd.DataFrame, product_lookup: dict, 
 
     # Persistent sub-tabs
     promo_tabs = [
-        "📈 Promotional Lift",
-        "💰 Incremental Revenue",
-        "� ROI Analysis",
-        "🌟 Halo Effect",
-        "📅 Timing Analysis",
-        "📊 Period Comparison",
+        " Promotional Lift",
+        " Incremental Revenue",
+        " ROI Analysis",
+        " Halo Effect",
+        " Timing Analysis",
+        " Period Comparison",
     ]
     selected = persistent_tabs(promo_tabs, "promo_main_tabs", default_tab=0)
 

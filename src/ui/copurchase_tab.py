@@ -41,7 +41,7 @@ def _cached_get_product_affinity_profile(transactions_df, target_product, min_li
 
 def render_copurchase_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render co-purchase/affinity analysis tab with persistent sub-tabs."""
-    st.header("🤝 Co-purchase / Affinity Analysis")
+    st.header(" Co-purchase / Affinity Analysis")
 
     if transactions_df.empty:
         st.warning("No transaction data available")
@@ -70,7 +70,7 @@ def render_copurchase_tab(transactions_df: pd.DataFrame, product_lookup: dict, p
     top_pairs["Product B Name"] = top_pairs["product_b"].map(product_lookup)
 
     # Persistent tabs for different views
-    tab_labels = ["📊 Top Pairs", "🔥 Affinity Heatmap", "🔗 Sankey Flow", "🎯 Product Profile"]
+    tab_labels = [" Top Pairs", " Affinity Heatmap", " Sankey Flow", " Product Profile"]
     selected_tab = persistent_tabs(tab_labels, "copurchase_view_tabs", default_tab=0)
 
     if selected_tab == 0:

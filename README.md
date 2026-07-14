@@ -366,7 +366,7 @@ print(f"Avg basket size: {summary['avg_basket_size']:.1f}")
 | **Hierarchical Clustering** | SciPy `linkage(metric='precomputed')` |
 | **Silhouette Analysis** | Rousseeuw, "Silhouettes" (1987) |
 | **Mutual Information Splits** | Quinlan, "Induction of Decision Trees" (1986) |
-| **Oracle CDT** | Oracle Retail Customer Decision Tree Science (public docs) |
+| **CDT** | Customer Decision Tree Science (public docs) |
 | **RFM** | Hughes, "Strategic Database Marketing" (1994) |
 | **BG/NBD CLV** | Fader et al., "Counting Your Customers" (2005) |
 
@@ -439,4 +439,4 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-*Built for category managers, data scientists, and retail analysts who need Oracle-grade decision intelligence without the Oracle price tag.*
+*Built for category managers, data scientists, and retail analysts who need advanced decision intelligence.*

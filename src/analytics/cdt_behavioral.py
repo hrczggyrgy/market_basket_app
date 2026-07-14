@@ -124,7 +124,7 @@ def get_substitution_matrix(
     """
     Get substitution scores directly from similarity matrix.
 
-    In Oracle CDT, substitution score = similarity coefficient (Yule's Q).
+    In CDT, substitution score = similarity coefficient (Yule's Q).
     High similarity = high substitutability.
 
     Args:

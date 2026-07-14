@@ -14,7 +14,7 @@ def render_product_performance_tab(
     transactions_df: pd.DataFrame, product_lookup: dict, params: dict
 ):
     """Render product performance analytics tab with persistent sub-tabs."""
-    st.header("📦 Product Performance Analytics")
+    st.header(" Product Performance Analytics")
 
     if transactions_df.empty:
         st.warning("No transaction data available")
@@ -22,12 +22,12 @@ def render_product_performance_tab(
 
     # Persistent sub-tabs
     tab_labels = [
-        "📊 Product Dashboard",
-        "🔄 Lifecycle Analysis",
-        "📅 Seasonality",
-        "🔗 Affinity & Cross-sell",
-        "💰 Price Elasticity",
-        "📈 Performance Comparison",
+        " Product Dashboard",
+        " Lifecycle Analysis",
+        " Seasonality",
+        " Affinity & Cross-sell",
+        " Price Elasticity",
+        " Performance Comparison",
     ]
     selected = persistent_tabs(tab_labels, "product_perf_main_tabs", default_tab=0)
 
@@ -410,17 +410,17 @@ def render_seasonality_analysis(transactions_df: pd.DataFrame, product_lookup: d
         st.subheader("Interpretation")
         if seasonality["seasonal_strength"] > 0.6:
             st.success(
-                f"🔍 Strong seasonality detected! Peak demand in month {seasonality['peak_month']} "
+                f" Strong seasonality detected! Peak demand in month {seasonality['peak_month']} "
                 f"({['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][seasonality['peak_month'] - 1]}). "
                 f"Plan inventory and promotions accordingly."
             )
         elif seasonality["seasonal_strength"] > 0.3:
             st.info(
-                f"📊 Moderate seasonality. Peak in month {seasonality['peak_month']}. "
+                f" Moderate seasonality. Peak in month {seasonality['peak_month']}. "
                 f"Consider seasonal adjustments."
             )
         else:
-            st.info("📊 Weak seasonality. Demand relatively stable across months.")
+            st.info(" Weak seasonality. Demand relatively stable across months.")
 
 
 def render_affinity_analysis(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
@@ -616,15 +616,15 @@ def render_price_elasticity(transactions_df: pd.DataFrame, product_lookup: dict,
                 # Elasticity interpretation
                 if elasticity["elasticity"] < -1:
                     st.success(
-                        "💡 **Pricing Opportunity**: Demand is elastic. Price reductions could increase revenue."
+                        " **Pricing Opportunity**: Demand is elastic. Price reductions could increase revenue."
                     )
                 elif elasticity["elasticity"] < 0:
                     st.info(
-                        "📊 **Stable Pricing**: Demand is inelastic. Price increases may increase revenue without losing much volume."
+                        " **Stable Pricing**: Demand is inelastic. Price increases may increase revenue without losing much volume."
                     )
                 else:
                     st.warning(
-                        "⚠️ **Unusual Pattern**: Positive elasticity detected. Investigate data quality."
+                        " **Unusual Pattern**: Positive elasticity detected. Investigate data quality."
                     )
 
 

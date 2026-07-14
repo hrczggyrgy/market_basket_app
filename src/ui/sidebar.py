@@ -10,7 +10,7 @@ from src.config import Config
 
 def render_sidebar() -> Config:
     """Render sidebar with file upload and analysis parameters."""
-    st.sidebar.header("📁 Data Upload")
+    st.sidebar.header(" Data Upload")
 
     uploaded_file = st.sidebar.file_uploader(
         "Upload Transaction CSV",
@@ -77,7 +77,7 @@ def render_sidebar() -> Config:
         column_mapping = {}
 
     st.sidebar.divider()
-    st.sidebar.header("⚙️ FP-Growth Parameters")
+    st.sidebar.header(" FP-Growth Parameters")
 
     min_support = st.sidebar.slider(
         "Min Support",
@@ -119,7 +119,7 @@ def render_sidebar() -> Config:
     )
 
     st.sidebar.divider()
-    st.sidebar.header("📊 Analysis Options")
+    st.sidebar.header(" Analysis Options")
 
     # Main analysis category
     analysis_category = st.sidebar.radio(
@@ -315,7 +315,7 @@ def render_sidebar() -> Config:
         st.session_state.run_analysis_triggered = False
 
     run_analysis_clicked = st.sidebar.button(
-        "🚀 Run Analysis", type="primary", width="stretch", key="run_analysis_btn"
+        " Run Analysis", type="primary", width="stretch", key="run_analysis_btn"
     )
 
     if run_analysis_clicked:
@@ -339,7 +339,7 @@ def render_sidebar() -> Config:
 
 def render_data_info(df: pd.DataFrame):
     """Display data summary in sidebar."""
-    with st.sidebar.expander("📈 Data Summary", expanded=False):
+    with st.sidebar.expander(" Data Summary", expanded=False):
         st.write(f"**Transactions:** {df['transaction_id'].nunique():,}")
         st.write(f"**Customers:** {df['customer_id'].nunique():,}")
         st.write(f"**Products:** {df['stockcode'].nunique():,}")

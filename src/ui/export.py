@@ -29,7 +29,7 @@ def render_export_buttons(
     # CSV export
     csv = export_df.to_csv(index=False)
     col1.download_button(
-        label="📥 Download CSV",
+        label=" Download CSV",
         data=csv,
         file_name="association_rules.csv",
         mime="text/csv",
@@ -40,7 +40,7 @@ def render_export_buttons(
     # JSON export
     json_str = export_df.to_json(orient="records", indent=2)
     col2.download_button(
-        label="📥 Download JSON",
+        label=" Download JSON",
         data=json_str,
         file_name="association_rules.json",
         mime="application/json",
@@ -56,7 +56,7 @@ def render_export_buttons(
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
             export_df.to_excel(writer, index=False, sheet_name="Rules")
         col3.download_button(
-            label="📥 Download Excel",
+            label=" Download Excel",
             data=buffer.getvalue(),
             file_name="association_rules.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -76,7 +76,7 @@ def render_analytics_export(df: pd.DataFrame, name: str, prefix: str = "analytic
 
     csv = df.to_csv(index=False)
     col1.download_button(
-        f"📥 {name} (CSV)",
+        f" {name} (CSV)",
         data=csv,
         file_name=f"{name.lower().replace(' ', '_')}.csv",
         mime="text/csv",
@@ -86,7 +86,7 @@ def render_analytics_export(df: pd.DataFrame, name: str, prefix: str = "analytic
 
     json_str = df.to_json(orient="records", indent=2)
     col2.download_button(
-        f"📥 {name} (JSON)",
+        f" {name} (JSON)",
         data=json_str,
         file_name=f"{name.lower().replace(' ', '_')}.json",
         mime="application/json",

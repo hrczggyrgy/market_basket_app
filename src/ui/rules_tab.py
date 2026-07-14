@@ -13,14 +13,14 @@ from src.viz.network import create_network_graph
 
 def render_rules_tab(rules: pd.DataFrame, product_lookup: dict, params: dict):
     """Render association rules analysis tab with persistent sub-tabs."""
-    st.header("📋 Association Rules")
+    st.header(" Association Rules")
 
     if rules.empty:
         st.warning("No rules generated. Try lowering min_support or min_confidence.")
         return
 
     # Filter controls
-    with st.expander("🔍 Filter Rules", expanded=True):
+    with st.expander(" Filter Rules", expanded=True):
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
@@ -79,7 +79,7 @@ def render_rules_tab(rules: pd.DataFrame, product_lookup: dict, params: dict):
     display_rules = format_rules_for_display(filtered, product_lookup)
 
     # Persistent sub-tabs for different views
-    tab_labels = ["📊 Table", "🕸️ Network", "🔥 Heatmap", "📈 Scatter", "📉 3D"]
+    tab_labels = [" Table", " Network", " Heatmap", " Scatter", " 3D"]
     selected = persistent_tabs(tab_labels, "rules_view_tabs", default_tab=0)
 
     if selected == 0:

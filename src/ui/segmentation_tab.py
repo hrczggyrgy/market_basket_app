@@ -43,14 +43,14 @@ def render_segmentation_tab(transactions_df: pd.DataFrame, product_lookup: dict,
     """Render customer segmentation analysis tab with persistent sub-tabs."""
     # product_lookup is available but not used in segmentation analysis
     # Kept for consistency with other tab functions
-    st.header("👥 Customer Segmentation")
+    st.header(" Customer Segmentation")
 
     if transactions_df.empty:
         st.warning("No transaction data available")
         return
 
     # Persistent sub-tabs for different segmentation methods
-    tab_labels = ["📊 RFM Segmentation", "🧠 Behavioral", "💰 Value-Based (CLV)"]
+    tab_labels = [" RFM Segmentation", " Behavioral", " Value-Based (CLV)"]
     selected = persistent_tabs(tab_labels, "segmentation_main_tabs", default_tab=0)
 
     if selected == 0:
@@ -87,10 +87,10 @@ def render_rfm_segmentation(transactions_df: pd.DataFrame, params: dict):
 
     # Persistent sub-tabs for RFM methods
     rfm_tabs = [
-        "📊 Segment Distribution",
-        "📈 Revenue Analysis",
-        "🎯 3D Visualization",
-        "📋 Profiles",
+        " Segment Distribution",
+        " Revenue Analysis",
+        " 3D Visualization",
+        " Profiles",
     ]
     rfm_selected = persistent_tabs(rfm_tabs, "rfm_view_tabs", default_tab=0)
 
@@ -397,7 +397,7 @@ def render_behavioral_segmentation(transactions_df: pd.DataFrame, params: dict):
         behavioral = _cached_behavioral_segmentation(transactions_df, n_clusters=n_clusters)
 
     # Persistent sub-tabs
-    behav_tabs = ["📊 Profiles", "🎯 Radar Chart", "📦 Box Plots", "📈 Revenue"]
+    behav_tabs = [" Profiles", " Radar Chart", " Box Plots", " Revenue"]
     behav_selected = persistent_tabs(behav_tabs, "behavioral_view_tabs", default_tab=0)
 
     # Feature columns
@@ -519,7 +519,7 @@ def render_value_segmentation(transactions_df: pd.DataFrame, params: dict):
         value_segments = _cached_value_based_segmentation(transactions_df, horizon)
 
     # Persistent sub-tabs
-    value_tabs = ["📊 Distribution", "💰 Revenue", "📋 Profiles", "🎯 CLV Accuracy"]
+    value_tabs = [" Distribution", " Revenue", " Profiles", " CLV Accuracy"]
     value_selected = persistent_tabs(value_tabs, "value_view_tabs", default_tab=0)
 
     if value_selected == 0:

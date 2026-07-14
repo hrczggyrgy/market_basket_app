@@ -46,7 +46,7 @@ def _cached_generate_rules(freq_items, metric, min_threshold):
 # Page config
 st.set_page_config(
     page_title="Market Basket Analysis",
-    page_icon="🛒",
+    page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -54,7 +54,7 @@ st.set_page_config(
 
 def main():
     # Header
-    st.title("🛒 Market Basket Analysis")
+    st.title("Market Basket Analysis")
     st.caption(
         "Association Rules • Co-purchase • Add-ons • Switching • Customer Choice Modelling • "
         "Customer Segmentation • Product Performance • Cohort Analysis • Promotional Analytics"
@@ -84,7 +84,7 @@ def main():
             product_lookup = get_product_lookup(transactions_df)
 
             # Show data summary
-            with st.expander("📊 Data Summary", expanded=False):
+            with st.expander(" Data Summary", expanded=False):
                 summary = get_data_summary(transactions_df)
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
@@ -100,7 +100,7 @@ def main():
             if config["run_analysis"]:
                 run_analysis(transactions_df, product_lookup, config)
             else:
-                st.info("👈 Configure parameters in sidebar and click **Run Analysis** to start")
+                st.info(" Configure parameters in sidebar and click **Run Analysis** to start")
 
     except Exception as e:
         st.error(f"Error: {str(e)}")
@@ -197,7 +197,7 @@ def render_rules_analysis(transactions_df: pd.DataFrame, product_lookup: dict, p
 
     # Create tabs for different views
     tab1, tab2, tab3, tab4 = st.tabs(
-        ["📋 Rules Table", "🕸️ Network Graph", "🔥 Heatmap", "📊 Scatter Plot"]
+        [" Rules Table", " Network Graph", " Heatmap", " Scatter Plot"]
     )
 
     with tab1:

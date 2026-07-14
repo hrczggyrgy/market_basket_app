@@ -1,4 +1,4 @@
-"""Oracle-style CDT: Visualization Module.
+"""CDT: Visualization Module.
 
 Provides Plotly visualizations for:
 - Dendrogram (cluster hierarchy)

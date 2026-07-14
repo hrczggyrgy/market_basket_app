@@ -33,7 +33,7 @@ def render_cohort_tab(transactions_df: pd.DataFrame, product_lookup: dict, param
     """Render cohort analysis tab."""
     # product_lookup is available but not used in cohort analysis
     # Kept for consistency with other tab functions
-    st.header("📊 Cohort Analysis")
+    st.header(" Cohort Analysis")
 
     if transactions_df.empty:
         st.warning("No transaction data available")

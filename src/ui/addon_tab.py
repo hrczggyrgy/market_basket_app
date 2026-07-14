@@ -11,7 +11,7 @@ from src.ui.export import render_analytics_export
 
 def render_addon_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render add-on analysis tab."""
-    st.header("➕ Add-on / Complementary Products")
+    st.header(" Add-on / Complementary Products")
 
     if transactions_df.empty:
         st.warning("No transaction data available")

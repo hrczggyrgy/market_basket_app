@@ -17,14 +17,14 @@ from src.ui.tabs import persistent_tabs
 
 def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render product switching analysis tab with persistent sub-tabs."""
-    st.header("🔄 Product Switching Analysis")
+    st.header(" Product Switching Analysis")
 
     if transactions_df.empty:
         st.warning("No transaction data available")
         return
 
     # Parameters
-    with st.expander("⚙️ Switching Parameters", expanded=False):
+    with st.expander(" Switching Parameters", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
             window_days = st.slider(
@@ -108,10 +108,10 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
 
     # Persistent tabs
     tab_labels = [
-        "🔥 Switching Heatmap",
-        "📊 Top Switch Paths",
-        "📈 Sankey Flow",
-        "👥 Customer Loyalty",
+        " Switching Heatmap",
+        " Top Switch Paths",
+        " Sankey Flow",
+        " Customer Loyalty",
     ]
     selected = persistent_tabs(tab_labels, "switching_view_tabs", default_tab=0)
 

@@ -1,4 +1,4 @@
-"""Oracle-style Customer Decision Tree (CDT) - Streamlit UI Tab.
+"""Customer Decision Tree (CDT) - Streamlit UI Tab.
 
 This tab implements the unsupervised CDT pipeline:
 1. Build customer purchase sequences
@@ -133,7 +133,7 @@ def _cached_get_top_switching_paths(switching_matrix, top_n):
 def render_cdt_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render Customer Decision Tree & Patterns tab."""
 
-    st.header("🌳 Customer Decision Tree & Patterns (Oracle-Style CDT)")
+    st.header(" Customer Decision Tree & Patterns (CDT)")
 
     if transactions_df.empty:
         st.warning("No transaction data available")
@@ -160,7 +160,7 @@ def render_cdt_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: 
         product_lookup = st.session_state.get("cdt_product_lookup", product_lookup)
 
         # Add a button to clear results and reconfigure
-        if st.button("🔄 Reconfigure & Rebuild", type="secondary"):
+        if st.button(" Reconfigure & Rebuild", type="secondary"):
             # Clear session state
             for key in list(st.session_state.keys()):
                 if key.startswith("cdt_"):
@@ -196,7 +196,7 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
     # ============================================================
     # CONFIGURATION PANEL
     # ============================================================
-    with st.expander("⚙️ CDT Configuration", expanded=True):
+    with st.expander(" CDT Configuration", expanded=True):
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
@@ -205,7 +205,7 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
                 "Similarity Method",
                 ["yules_q", "jaccard"],
                 index=0,
-                help="Yule's Q (Oracle-style, [-1,1]) or Jaccard ([0,1])",
+                help="Yule's Q (-style, [-1,1]) or Jaccard ([0,1])",
             )
             min_cooccurrence = st.slider(
                 "Min Co-occurrence",
@@ -221,7 +221,7 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
                 "Linkage Method",
                 ["average", "complete", "single"],
                 index=0,
-                help="Average = Oracle default",
+                help="Average = default",
             )
             min_k = st.slider("Min Clusters (k)", 2, 10, params.get("min_k", 2))
             max_k = st.slider("Max Clusters (k)", 3, 20, params.get("max_k", 15))
@@ -241,7 +241,7 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
                     40,
                     80,
                     params.get("quality_threshold", 60),
-                    help="Tree quality vs unconstrained baseline (Oracle: 60%)",
+                    help="Tree quality vs unconstrained baseline (: 60%)",
                 )
                 / 100.0
             )
@@ -261,7 +261,7 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
     # Detect attribute columns
     attribute_cols = detect_attribute_columns(transactions_df)
     if attribute_cols:
-        st.info(f"📋 Detected attribute columns: {', '.join(attribute_cols)}")
+        st.info(f" Detected attribute columns: {', '.join(attribute_cols)}")
         selected_attrs = st.multiselect(
             "Attributes for Tree Enrichment",
             attribute_cols,
@@ -289,7 +289,7 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
     # ============================================================
     # RUN PIPELINE
     # ============================================================
-    run_button = st.button("🚀 Build Customer Decision Tree", type="primary", width="stretch")
+    run_button = st.button(" Build Customer Decision Tree", type="primary", width="stretch")
 
     if not run_button:
         st.info("Configure parameters above and click **Build Customer Decision Tree** to start.")
@@ -418,7 +418,7 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
 
         # Clear progress
         progress_bar.progress(100)
-        status_text.text("✅ Complete!")
+        status_text.text(" Complete!")
 
         # Store in session for export
         st.session_state["cdt_root"] = root
@@ -465,14 +465,14 @@ def _render_cdt_results_tabs(
     # Main tabs
     tabs = st.tabs(
         [
-            "🌳 CDT Sunburst",
-            "📦 CDT Treemap",
-            "🌲 Dendrogram & Clusters",
-            "🔥 Similarity Heatmap",
-            "🔄 Switching Analysis",
-            "🔁 Substitution Analysis",
-            "🎁 Bundling Opportunities",
-            "📤 Export",
+            " CDT Sunburst",
+            " CDT Treemap",
+            " Dendrogram & Clusters",
+            " Similarity Heatmap",
+            " Switching Analysis",
+            " Substitution Analysis",
+            " Bundling Opportunities",
+            " Export",
         ]
     )
 
@@ -771,12 +771,12 @@ def render_quality_summary(metadata: dict):
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        delta = "✅ Pass" if metadata["passed_threshold"] else "❌ Fail"
+        delta = " Pass" if metadata["passed_threshold"] else " Fail"
         st.metric(
             "Tree Quality vs Baseline",
             f"{metadata['quality_ratio']:.1%}",
             delta=delta,
-            help="Oracle CDT threshold: 60%",
+            help="CDT threshold: 60%",
         )
 
     with col2:
@@ -790,7 +790,7 @@ def render_quality_summary(metadata: dict):
 
     if not metadata["passed_threshold"]:
         st.warning(
-            f"⚠️ Tree quality ({metadata['quality_ratio']:.1%}) is below the "
+            f" Tree quality ({metadata['quality_ratio']:.1%}) is below the "
             f"{metadata['quality_threshold']:.0%} threshold. "
             f"Consider: lowering min_cluster_size, adding more attributes, "
             f"or using a different similarity method."

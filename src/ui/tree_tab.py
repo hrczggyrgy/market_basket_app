@@ -20,7 +20,7 @@ from src.viz.decision_tree import (
 
 def render_tree_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render customer choice modelling analysis tab with persistent sub-tabs."""
-    st.header("🌳 Customer Choice Modelling - Product Purchase Prediction")
+    st.header(" Customer Choice Modelling - Product Purchase Prediction")
 
     if transactions_df.empty:
         st.warning("No transaction data available")
@@ -120,7 +120,7 @@ def render_tree_tab(transactions_df: pd.DataFrame, product_lookup: dict, params:
     st.plotly_chart(fig_imp, width="stretch")
 
     # Persistent tabs for different views
-    tab_labels = ["🌲 Decision Tree", "📝 Extracted Rules", "🎯 Customer Predictions"]
+    tab_labels = [" Decision Tree", " Extracted Rules", " Customer Predictions"]
     selected = persistent_tabs(tab_labels, "tree_view_tabs", default_tab=0)
 
     if selected == 0:
