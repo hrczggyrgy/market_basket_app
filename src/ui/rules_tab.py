@@ -244,13 +244,13 @@ def _create_3d_scatter(rules: pd.DataFrame) -> go.Figure:
                 y=plot_rules["confidence"],
                 z=plot_rules["lift"],
                 mode="markers",
-                marker=dict(
-                    size=5,
-                    color=plot_rules["lift"],
-                    colorscale="Viridis",
-                    opacity=0.7,
-                    colorbar=dict(title="Lift"),
-                ),
+                marker={
+                    "size": 5,
+                    "color": plot_rules["lift"],
+                    "colorscale": "Viridis",
+                    "opacity": 0.7,
+                    "colorbar": {"title": "Lift"},
+                },
                 text=hover_text,
                 hoverinfo="text",
             )
@@ -259,9 +259,9 @@ def _create_3d_scatter(rules: pd.DataFrame) -> go.Figure:
 
     fig.update_layout(
         title="3D Rule Space: Support × Confidence × Lift",
-        scene=dict(xaxis_title="Support", yaxis_title="Confidence", zaxis_title="Lift"),
+        scene={"xaxis_title": "Support", "yaxis_title": "Confidence", "zaxis_title": "Lift"},
         height=600,
-        margin=dict(l=0, r=0, t=40, b=0),
+        margin={"l": 0, "r": 0, "t": 40, "b": 0},
     )
 
     return fig

@@ -145,7 +145,7 @@ def render_cohort_tab(
             x=cohort_matrix.columns,
             y=cohort_matrix.index,
             color_continuous_scale="RdYlGn",
-            labels=dict(x="Period", y="Cohort", color=metric),
+            labels={"x": "Period", "y": "Cohort", "color": metric},
             title=f"Cohort {metric.capitalize()} Heatmap",
             aspect="auto",
         )

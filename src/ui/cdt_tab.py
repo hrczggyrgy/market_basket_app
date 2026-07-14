@@ -8,8 +8,6 @@ This tab implements the unsupervised CDT pipeline:
 5. Behavioral matrices: switching, substitution, bundling
 """
 
-from typing import Dict, List
-
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -420,14 +418,14 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
 
 def _render_cdt_results_tabs(
     root,
-    metadata: Dict,
+    metadata: dict,
     similarity_matrix: pd.DataFrame,
     switching_df: pd.DataFrame,
     substitution_df: pd.DataFrame,
     bundling_df: pd.DataFrame,
     linkage_matrix: np.ndarray,
-    ordered_labels: List[str],
-    silhouette_scores: Dict[int, float],
+    ordered_labels: list[str],
+    silhouette_scores: dict[int, float],
     optimal_k: int,
     product_lookup: dict,
     similarity_method: str = "yules_q",
@@ -639,17 +637,17 @@ def _render_cdt_results_tabs(
                     x=bundling_df["substitution"],
                     y=bundling_df["lift"],
                     mode="markers",
-                    marker=dict(
-                        size=8,
-                        color=bundling_df["bundle_score"],
-                        colorscale="Viridis",
-                        showscale=True,
-                        colorbar=dict(title="Bundle Score"),
-                    ),
+                    marker={
+                        "size": 8,
+                        "color": bundling_df["bundle_score"],
+                        "colorscale": "Viridis",
+                        "showscale": True,
+                        "colorbar": {"title": "Bundle Score"},
+                    },
                     text=[
                         f"{product_lookup.get(a, a)} × {product_lookup.get(b, b)}"
                         for a, b in zip(
-                            bundling_df["product_a"], bundling_df["product_b"]
+                            bundling_df["product_a"], bundling_df["product_b"], strict=False
                         )
                     ],
                     hovertemplate="%{text}<br>Substitution: %{x:.3f}<br>Lift: %{y:.3f}<extra></extra>",
@@ -729,7 +727,7 @@ def _render_cdt_results_tabs(
                 )
 
 
-def detect_attribute_columns(df: pd.DataFrame) -> List[str]:
+def detect_attribute_columns(df: pd.DataFrame) -> list[str]:
     """Detect common product attribute columns."""
     candidates = [
         "category",
@@ -759,7 +757,7 @@ def detect_attribute_columns(df: pd.DataFrame) -> List[str]:
     return [c for c in candidates if c in df.columns]
 
 
-def render_quality_summary(metadata: Dict):
+def render_quality_summary(metadata: dict):
     """Render CDT quality metrics at top of results."""
     col1, col2, col3, col4 = st.columns(4)
 

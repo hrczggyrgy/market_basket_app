@@ -456,9 +456,9 @@ def _render_behavioral_radar(profiles: pd.DataFrame, key_features: list):
                 )
             )
         fig.update_layout(
-            polar=dict(
-                radialaxis=dict(visible=True, range=[0, radar_data.max().max()])
-            ),
+            polar={
+                "radialaxis": {"visible": True, "range": [0, radar_data.max().max()]}
+            },
             showlegend=True,
             title="Segment Comparison (Normalized Metrics)",
         )
@@ -670,7 +670,7 @@ def _render_value_clv_accuracy(value_segments: pd.DataFrame):
                 y=[0, max_val],
                 mode="lines",
                 name="Perfect Prediction",
-                line=dict(dash="dash", color="gray"),
+                line={"dash": "dash", "color": "gray"},
             )
         )
         st.plotly_chart(fig, width="stretch")

@@ -212,5 +212,5 @@ def _render_product_profile_tab(
             st.plotly_chart(fig, width="stretch")
         else:
             st.info(
-                f"No strong co-purchases found for {product_lookup.get(selected, selected)}"
+                f"No strong co-purchases found for {product_lookup.get(selected_product, selected_product)}"
             )

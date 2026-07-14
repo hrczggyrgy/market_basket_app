@@ -28,6 +28,8 @@ from src.ui.segmentation_tab import render_segmentation_tab
 from src.ui.sidebar import render_sidebar
 from src.ui.switching_tab import render_switching_tab
 from src.ui.tree_tab import render_tree_tab
+from src.viz.heatmap import create_heatmap, create_scatter_heatmap
+from src.viz.network import create_network_graph
 
 
 # Bug 1: Cached wrappers for heavy computations in rules analysis
@@ -39,8 +41,7 @@ def _cached_run_fpgrowth(basket, min_support, max_len):
 @st.cache_data
 def _cached_generate_rules(freq_items, metric, min_threshold):
     return generate_rules(freq_items, metric=metric, min_threshold=min_threshold)
-from src.viz.heatmap import create_heatmap, create_scatter_heatmap
-from src.viz.network import create_network_graph
+
 
 # Page config
 st.set_page_config(
