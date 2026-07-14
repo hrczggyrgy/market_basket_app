@@ -54,7 +54,7 @@ def persistent_tabs_container(
     labels: List[str],
     key: str,
     default_tab: int = 0,
-) -> List[st.container]:
+) -> tuple[int, List[st.container]]:
     """
     Create persistent tabs that return containers for each tab.
     
@@ -67,14 +67,14 @@ def persistent_tabs_container(
         default_tab: Default tab index (0-based)
     
     Returns:
-        List of containers (one per tab)
+        Tuple of (selected_index, List of containers - one per tab)
     """
-    persistent_tabs(labels, key, default_tab)
+    selected = persistent_tabs(labels, key, default_tab)
     
     # Create containers for all tabs
     containers = [st.container() for _ in labels]
     
-    return containers
+    return selected, containers
 
 
 def tabbed_view(

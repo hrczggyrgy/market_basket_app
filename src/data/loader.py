@@ -3,6 +3,7 @@
 from typing import Optional
 
 import pandas as pd
+import streamlit as st
 
 REQUIRED_COLUMNS = [
     "date",
@@ -78,8 +79,15 @@ def validate_and_clean(df: pd.DataFrame) -> pd.DataFrame:
     if len(df) < initial_len:
         print(f"Dropped {initial_len - len(df)} rows with missing/invalid data")
 
-    # Remove negative/zero prices and quantities
+    # BUG 4 FIX: Warn about dropped returns/refunds (negative/zero prices and quantities)
+    before_filter = len(df)
     df = df[(df["price"] > 0) & (df["quantity"] > 0)]
+    dropped_returns = before_filter - len(df)
+    if dropped_returns > 0:
+        st.warning(
+            f"Dropped {dropped_returns} rows with zero/negative price or quantity "
+            "(likely returns/refunds). This may affect revenue and retention calculations."
+        )
 
     # Sort by date
     df = df.sort_values("date").reset_index(drop=True)
@@ -89,16 +97,19 @@ def validate_and_clean(df: pd.DataFrame) -> pd.DataFrame:
 
 def get_data_summary(df: pd.DataFrame) -> dict:
     """Get summary statistics of transaction data."""
+    # BUG 7 FIX: Vectorized approach instead of groupby().apply()
+    df_revenue = df["price"] * df["quantity"]
+    basket_revenue = df.groupby("transaction_id")["revenue"].sum()
+    basket_size = df.groupby("transaction_id")["quantity"].sum()
+    
     return {
         "n_transactions": df["transaction_id"].nunique(),
         "n_customers": df["customer_id"].nunique(),
         "n_products": df["stockcode"].nunique(),
         "date_range": (df["date"].min(), df["date"].max()),
-        "total_revenue": (df["price"] * df["quantity"]).sum(),
-        "avg_basket_size": df.groupby("transaction_id")["quantity"].sum().mean(),
-        "avg_basket_value": df.groupby("transaction_id")
-        .apply(lambda x: (x["price"] * x["quantity"]).sum())
-        .mean(),
+        "total_revenue": df_revenue.sum(),
+        "avg_basket_size": basket_size.mean(),
+        "avg_basket_value": basket_revenue.mean(),
     }
 
 
@@ -123,9 +134,8 @@ def filter_top_products(
     if by == "frequency":
         top_products = df["stockcode"].value_counts().head(n).index
     elif by == "revenue":
-        revenue = df.groupby("stockcode").apply(
-            lambda x: (x["price"] * x["quantity"]).sum()
-        )
+        df_revenue = df["price"] * df["quantity"]
+        revenue = df.groupby("stockcode")["revenue"].sum()
         top_products = revenue.nlargest(n).index
     else:
         raise ValueError("by must be 'frequency' or 'revenue'")
@@ -170,12 +180,16 @@ def add_rfm_features(
     if snapshot_date is None:
         snapshot_date = df["date"].max() + pd.Timedelta(days=1)
 
+    # BUG 3 FIX: Compute revenue column first instead of using broken lambda
+    df_with_revenue = df.copy()
+    df_with_revenue["revenue"] = df_with_revenue["price"] * df_with_revenue["quantity"]
+
     rfm = (
-        df.groupby("customer_id")
+        df_with_revenue.groupby("customer_id")
         .agg(
             recency=("date", lambda x: (snapshot_date - x.max()).days),
             frequency=("transaction_id", "nunique"),
-            monetary=("price", lambda x: (x * df.loc[x.index, "quantity"]).sum()),
+            monetary=("revenue", "sum"),  # Now uses precomputed revenue column
         )
         .reset_index()
     )

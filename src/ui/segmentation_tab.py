@@ -349,10 +349,10 @@ def _render_kmeans_segment_details(rfm_clustered: pd.DataFrame):
     with col4:
         st.metric("Avg Monetary", f"${segment_data['monetary'].mean():,.2f}")
 
-    col3, col4 = st.columns(2)
-    with col3:
+    col5, col6 = st.columns(2)
+    with col5:
         st.metric("Total Revenue", f"${segment_data['monetary'].sum():,.2f}")
-    with col4:
+    with col6:
         st.metric(
             "Revenue Share",
             f"{segment_data['monetary'].sum() / rfm_clustered['monetary'].sum() * 100:.1f}%",

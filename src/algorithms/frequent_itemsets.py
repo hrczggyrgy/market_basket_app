@@ -6,6 +6,19 @@ import pandas as pd
 from mlxtend.frequent_patterns import apriori, fpgrowth
 
 
+def _postprocess_itemsets(freq_items: pd.DataFrame) -> pd.DataFrame:
+    """Common postprocessing for frequent itemset results.
+    
+    BUG 10 FIX: Extracted duplicate code into helper function.
+    """
+    if freq_items.empty:
+        return pd.DataFrame(columns=["support", "itemsets"])
+    
+    freq_items["length"] = freq_items["itemsets"].apply(len)
+    freq_items = freq_items.sort_values("support", ascending=False).reset_index(drop=True)
+    return freq_items
+
+
 def run_fpgrowth(
     basket_df: pd.DataFrame,
     min_support: float = 0.01,
@@ -37,13 +50,7 @@ def run_fpgrowth(
         verbose=verbose,
     )
 
-    if freq_items.empty:
-        return pd.DataFrame(columns=["support", "itemsets"])
-
-    freq_items["length"] = freq_items["itemsets"].apply(len)
-    freq_items = freq_items.sort_values("support", ascending=False).reset_index(drop=True)
-
-    return freq_items
+    return _postprocess_itemsets(freq_items)
 
 
 def run_apriori(
@@ -80,13 +87,7 @@ def run_apriori(
         verbose=verbose,
     )
 
-    if freq_items.empty:
-        return pd.DataFrame(columns=["support", "itemsets"])
-
-    freq_items["length"] = freq_items["itemsets"].apply(len)
-    freq_items = freq_items.sort_values("support", ascending=False).reset_index(drop=True)
-
-    return freq_items
+    return _postprocess_itemsets(freq_items)
 
 
 def run_eclat(
@@ -226,8 +227,13 @@ def get_product_lookup(
     code_col: str = "stockcode",
     name_col: str = "product",
 ) -> dict:
-    """Create lookup dictionary from stockcode to product name."""
-    return dict(zip(transactions_df[code_col].astype(str), transactions_df[name_col]))
+    """Create lookup dictionary from stockcode to product name.
+    
+    BUG 14 FIX: Deduplicate on stockcode - first value wins (silent deduplication)
+    """
+    # Deduplicate on code_col, keeping first occurrence
+    deduped = transactions_df.drop_duplicates(subset=[code_col])
+    return dict(zip(deduped[code_col].astype(str), deduped[name_col]))
 
 
 def compare_algorithms(
@@ -237,6 +243,8 @@ def compare_algorithms(
 ) -> pd.DataFrame:
     """
     Compare results from all three algorithms.
+    
+    BUG 11 FIX: Ensure consistent schema - use NaN for failed algorithms instead of error dict
     
     Returns:
         DataFrame with comparison metrics
@@ -251,8 +259,15 @@ def compare_algorithms(
                 "max_support": freq["support"].max() if not freq.empty else 0,
                 "avg_support": freq["support"].mean() if not freq.empty else 0,
                 "max_length": freq["length"].max() if not freq.empty else 0,
+                "error": None,
             }
         except Exception as e:
-            results[algo] = {"error": str(e)}
+            results[algo] = {
+                "n_itemsets": 0,
+                "max_support": 0,
+                "avg_support": 0,
+                "max_length": 0,
+                "error": str(e),
+            }
     
     return pd.DataFrame(results).T

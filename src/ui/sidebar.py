@@ -86,6 +86,7 @@ def render_sidebar() -> Config:
         0.002,
         0.0005,
         help="Minimum support threshold (fraction of transactions)",
+        key="sidebar_min_support",
     )
 
     min_confidence = st.sidebar.slider(
@@ -95,6 +96,7 @@ def render_sidebar() -> Config:
         0.1,
         0.01,
         help="Minimum confidence for association rules (typical range: 0.05-0.3)",
+        key="sidebar_min_confidence",
     )
 
     max_itemset_len = st.sidebar.slider(
@@ -103,10 +105,12 @@ def render_sidebar() -> Config:
         6,
         3,
         help="Maximum number of items in frequent itemsets",
+        key="sidebar_max_itemset_len",
     )
 
     min_lift = st.sidebar.slider(
-        "Min Lift", 0.5, 5.0, 1.2, 0.1, help="Minimum lift threshold for rules"
+        "Min Lift", 0.5, 5.0, 1.2, 0.1, help="Minimum lift threshold for rules",
+        key="sidebar_min_lift",
     )
 
     st.sidebar.divider()
@@ -124,6 +128,7 @@ def render_sidebar() -> Config:
             "Promotional Analytics",
         ],
         index=0,
+        key="sidebar_analysis_category",
     )
 
     # Sub-modes within each category
@@ -137,6 +142,7 @@ def render_sidebar() -> Config:
                 "Switching",  # product switching
             ],
             index=0,
+            key="sidebar_analysis_mode_assoc",
         )
     elif analysis_category == "Decision Intelligence":
         analysis_mode = st.sidebar.radio(
@@ -146,6 +152,7 @@ def render_sidebar() -> Config:
                 "Decision Tree & Patterns",  # unsupervised CDT (new)
             ],
             index=0,
+            key="sidebar_analysis_mode_dt",
         )
     elif analysis_category == "Customer Segmentation":
         analysis_mode = "Customer Segmentation"
@@ -163,66 +170,66 @@ def render_sidebar() -> Config:
 
     if analysis_mode == "Co-purchase":
         analysis_params["top_n_products"] = st.sidebar.slider(
-            "Top N Products", 10, 200, 50
+            "Top N Products", 10, 200, 50, key="copurchase_top_n"
         )
-        analysis_params["min_lift"] = st.sidebar.slider("Min Lift", 1.0, 3.0, 1.5, 0.1)
+        analysis_params["min_lift"] = st.sidebar.slider("Min Lift", 1.0, 3.0, 1.5, 0.1, key="copurchase_min_lift")
 
     elif analysis_mode == "Add-on":
         analysis_params["min_support"] = st.sidebar.slider(
-            "Min Support", 0.0005, 0.01, 0.002, 0.0005
+            "Min Support", 0.0005, 0.01, 0.002, 0.0005, key="addon_min_support"
         )
-        analysis_params["min_lift"] = st.sidebar.slider("Min Lift", 1.0, 3.0, 1.2, 0.1)
-        analysis_params["top_n"] = st.sidebar.slider("Top N Recommendations", 5, 20, 10)
+        analysis_params["min_lift"] = st.sidebar.slider("Min Lift", 1.0, 3.0, 1.2, 0.1, key="addon_min_lift")
+        analysis_params["top_n"] = st.sidebar.slider("Top N Recommendations", 5, 20, 10, key="addon_top_n")
 
     elif analysis_mode == "Switching":
-        analysis_params["window_days"] = st.sidebar.slider("Window (days)", 30, 365, 90)
+        analysis_params["window_days"] = st.sidebar.slider("Window (days)", 30, 365, 90, key="switching_window")
         analysis_params["min_transactions"] = st.sidebar.slider(
-            "Min Customer Transactions", 2, 10, 3
+            "Min Customer Transactions", 2, 10, 3, key="switching_min_trans"
         )
 
     elif analysis_mode == "Choice Prediction Model":
-        analysis_params["max_depth"] = st.sidebar.slider("Max Tree Depth", 2, 8, 4)
+        analysis_params["max_depth"] = st.sidebar.slider("Max Tree Depth", 2, 8, 4, key="choice_max_depth")
         analysis_params["min_samples_leaf"] = st.sidebar.slider(
-            "Min Samples Leaf", 5, 50, 10
+            "Min Samples Leaf", 5, 50, 10, key="choice_min_leaf"
         )
         analysis_params["prediction_window"] = st.sidebar.slider(
-            "Prediction Window (days)", 7, 90, 30
+            "Prediction Window (days)", 7, 90, 30, key="choice_pred_window"
         )
 
     elif analysis_mode == "Decision Tree & Patterns":
         st.sidebar.markdown("**Similarity**")
         analysis_params["similarity_method"] = st.sidebar.selectbox(
-            "Similarity Method", ["yules_q", "jaccard"], index=0
+            "Similarity Method", ["yules_q", "jaccard"], index=0, key="cdt_similarity"
         )
         analysis_params["min_cooccurrence"] = st.sidebar.slider(
-            "Min Co-occurrence", 2, 20, 5
+            "Min Co-occurrence", 2, 20, 5, key="cdt_min_cooc"
         )
 
         st.sidebar.markdown("**Clustering**")
         analysis_params["linkage_method"] = st.sidebar.selectbox(
-            "Linkage Method", ["average", "complete", "single"], index=0
+            "Linkage Method", ["average", "complete", "single"], index=0, key="cdt_linkage"
         )
-        analysis_params["min_k"] = st.sidebar.slider("Min Clusters (k)", 2, 10, 2)
-        analysis_params["max_k"] = st.sidebar.slider("Max Clusters (k)", 3, 20, 15)
+        analysis_params["min_k"] = st.sidebar.slider("Min Clusters (k)", 2, 10, 2, key="cdt_min_k")
+        analysis_params["max_k"] = st.sidebar.slider("Max Clusters (k)", 3, 20, 15, key="cdt_max_k")
 
         st.sidebar.markdown("**Tree Building**")
         analysis_params["min_cluster_size"] = st.sidebar.slider(
-            "Min Cluster Size", 2, 10, 3
+            "Min Cluster Size", 2, 10, 3, key="cdt_min_cluster"
         )
         analysis_params["quality_threshold"] = st.sidebar.slider(
-            "Quality Threshold (%)", 40, 80, 60
+            "Quality Threshold (%)", 40, 80, 60, key="cdt_quality"
         )
 
         st.sidebar.markdown("**Behavioral**")
         analysis_params["top_n_products"] = st.sidebar.slider(
-            "Top N Products", 20, 200, 50
+            "Top N Products", 20, 200, 50, key="cdt_top_n"
         )
-        analysis_params["min_lift"] = st.sidebar.slider("Min Lift", 1.0, 3.0, 1.2, 0.1)
+        analysis_params["min_lift"] = st.sidebar.slider("Min Lift", 1.0, 3.0, 1.2, 0.1, key="cdt_min_lift")
         analysis_params["max_sub"] = st.sidebar.slider(
-            "Max Substitution", 0.0, 0.5, 0.3, 0.05
+            "Max Substitution", 0.0, 0.5, 0.3, 0.05, key="cdt_max_sub"
         )
 
-    elif analysis_mode == "Customer Segmentation":
+elif analysis_mode == "Customer Segmentation":
         analysis_params["rfm_method"] = st.sidebar.radio(
             "RFM Method", ["Quantile (Classic)", "K-Means"], key="sidebar_rfm_method"
         )
@@ -286,9 +293,18 @@ def render_sidebar() -> Config:
             "Promo Window (days)", 7, 30, 14, key="promo_window"
         )
 
-    run_analysis = st.sidebar.button(
-        "🚀 Run Analysis", type="primary", width="stretch"
+    # BUG 1 FIX: Store run_analysis in session_state to persist across reruns
+    if "run_analysis_triggered" not in st.session_state:
+        st.session_state.run_analysis_triggered = False
+
+    run_analysis_clicked = st.sidebar.button(
+        "🚀 Run Analysis", type="primary", width="stretch", key="run_analysis_btn"
     )
+
+    if run_analysis_clicked:
+        st.session_state.run_analysis_triggered = True
+
+    run_analysis = st.session_state.run_analysis_triggered
 
     return Config(
         uploaded_file=uploaded_file,
@@ -310,7 +326,14 @@ def render_data_info(df: pd.DataFrame):
         st.write(f"**Transactions:** {df['transaction_id'].nunique():,}")
         st.write(f"**Customers:** {df['customer_id'].nunique():,}")
         st.write(f"**Products:** {df['stockcode'].nunique():,}")
-        st.write(
-            f"**Date Range:** {df['date'].min().strftime('%Y-%m-%d')} to {df['date'].max().strftime('%Y-%m-%d')}"
-        )
+        
+        # BUG 6 FIX: Safe date formatting
+        min_date = df['date'].min()
+        max_date = df['date'].max()
+        if pd.notna(min_date) and pd.notna(max_date):
+            date_range = f"{min_date.strftime('%Y-%m-%d')} to {max_date.strftime('%Y-%m-%d')}"
+        else:
+            date_range = "N/A"
+        st.write(f"**Date Range:** {date_range}")
+        
         st.write(f"**Total Revenue:** ${(df['price'] * df['quantity']).sum():,.2f}")
