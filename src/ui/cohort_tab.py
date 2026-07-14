@@ -191,9 +191,11 @@ def render_cohort_tab(transactions_df: pd.DataFrame, product_lookup: dict, param
 
     display_cols = ["Cohort"] + period_cols[:max_periods]
 
+    fmt = "{:.2%}" if metric_internal == "retention" else "${:,.2f}"
+    fmt_cols = {col: fmt for col in display_cols if col != "Cohort"}
     st.dataframe(
         cohort_data[display_cols]
-        .style.format("{:.2%}" if metric_internal == "retention" else "${:,.2f}")
+        .style.format(fmt_cols)
         .background_gradient(cmap="RdYlGn", axis=None),
         width="stretch",
     )
