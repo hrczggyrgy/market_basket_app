@@ -403,7 +403,6 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
                         lift = row["support"] / (p_a * p_b)
                         affinity_matrix.loc[a, b] = lift
                         affinity_matrix.loc[b, a] = lift
-        np.fill_diagonal(affinity_matrix.values, 1.0)
 
         switching_df, substitution_df, bundling_df = build_behavioral_matrices(
             transactions_df,
