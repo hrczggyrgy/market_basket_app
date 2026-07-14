@@ -11,14 +11,25 @@ from sklearn.preprocessing import StandardScaler
 MIN_CLUSTER_SIZE = 5
 
 _RFM_ARCHETYPES = [
-    "Champions", "Loyal", "Big Spenders", "Frequent Buyers",
-    "Promising", "Regular", "At Risk", "Dormant",
+    "Champions",
+    "Loyal",
+    "Big Spenders",
+    "Frequent Buyers",
+    "Promising",
+    "Regular",
+    "At Risk",
+    "Dormant",
 ]
 
 _BEHAVIORAL_ARCHETYPES = [
-    "High Value", "Frequent Buyers", "Regular Shoppers",
-    "Variety Seekers", "Weekend Shoppers", "Big Spenders",
-    "At Risk", "Light Buyers",
+    "High Value",
+    "Frequent Buyers",
+    "Regular Shoppers",
+    "Variety Seekers",
+    "Weekend Shoppers",
+    "Big Spenders",
+    "At Risk",
+    "Light Buyers",
 ]
 
 
@@ -29,11 +40,13 @@ def _label_rfm_clusters(profiles: pd.DataFrame) -> dict:
     Uses the _RFM_ARCHETYPES pool, with descriptive fallbacks for >8 clusters.
     """
     n_clusters = len(profiles)
-    ranked = pd.DataFrame({
-        "rec_rank": profiles["recency_days"].rank(),
-        "freq_rank": profiles["frequency"].rank(ascending=False),
-        "mon_rank": profiles["monetary"].rank(ascending=False),
-    })
+    ranked = pd.DataFrame(
+        {
+            "rec_rank": profiles["recency_days"].rank(),
+            "freq_rank": profiles["frequency"].rank(ascending=False),
+            "mon_rank": profiles["monetary"].rank(ascending=False),
+        }
+    )
     labels = {}
     for c in profiles.index:
         r = ranked.loc[c, "rec_rank"]
@@ -56,7 +69,9 @@ def _label_rfm_clusters(profiles: pd.DataFrame) -> dict:
             labels[c] = "At Risk"
         else:
             p = profiles.loc[c]
-            labels[c] = f"Regular ({int(p['recency_days'])}d, {p['frequency']:.1f}x, ${p['monetary']:.0f})"
+            labels[c] = (
+                f"Regular ({int(p['recency_days'])}d, {p['frequency']:.1f}x, ${p['monetary']:.0f})"
+            )
     return labels
 
 

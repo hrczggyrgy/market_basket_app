@@ -45,11 +45,13 @@ MIN_CLUSTER_SIZE = 5
 
 def _label_rfm_clusters(profiles: pd.DataFrame) -> dict:
     n_clusters = len(profiles)
-    ranked = pd.DataFrame({
-        "rec_rank": profiles["recency_days"].rank(),
-        "freq_rank": profiles["frequency"].rank(ascending=False),
-        "mon_rank": profiles["monetary"].rank(ascending=False),
-    })
+    ranked = pd.DataFrame(
+        {
+            "rec_rank": profiles["recency_days"].rank(),
+            "freq_rank": profiles["frequency"].rank(ascending=False),
+            "mon_rank": profiles["monetary"].rank(ascending=False),
+        }
+    )
     labels = {}
     for c in profiles.index:
         r = ranked.loc[c, "rec_rank"]
@@ -72,7 +74,9 @@ def _label_rfm_clusters(profiles: pd.DataFrame) -> dict:
             labels[c] = "At Risk"
         else:
             p = profiles.loc[c]
-            labels[c] = f"Regular ({int(p['recency_days'])}d, {p['frequency']:.1f}x, ${p['monetary']:.0f})"
+            labels[c] = (
+                f"Regular ({int(p['recency_days'])}d, {p['frequency']:.1f}x, ${p['monetary']:.0f})"
+            )
     return labels
 
 
