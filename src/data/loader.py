@@ -98,7 +98,8 @@ def validate_and_clean(df: pd.DataFrame) -> pd.DataFrame:
 def get_data_summary(df: pd.DataFrame) -> dict:
     """Get summary statistics of transaction data."""
     # BUG 7 FIX: Vectorized approach instead of groupby().apply()
-    df_revenue = df["price"] * df["quantity"]
+    df = df.copy()
+    df["revenue"] = df["price"] * df["quantity"]
     basket_revenue = df.groupby("transaction_id")["revenue"].sum()
     basket_size = df.groupby("transaction_id")["quantity"].sum()
     
@@ -107,7 +108,7 @@ def get_data_summary(df: pd.DataFrame) -> dict:
         "n_customers": df["customer_id"].nunique(),
         "n_products": df["stockcode"].nunique(),
         "date_range": (df["date"].min(), df["date"].max()),
-        "total_revenue": df_revenue.sum(),
+        "total_revenue": df["revenue"].sum(),
         "avg_basket_size": basket_size.mean(),
         "avg_basket_value": basket_revenue.mean(),
     }
