@@ -1,18 +1,31 @@
 """Cohort Analytics - Customer acquisition cohorts, retention, revenue."""
 
-import warnings
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 
-warnings.filterwarnings("ignore")
+
+def _prepare_cohort_df(
+    transactions_df: pd.DataFrame, cohort_period: str = "M"
+) -> pd.DataFrame:
+    """Prepare DataFrame with cohort and period columns for cohort analysis."""
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["revenue"] = df["price"] * df["quantity"]
+    customer_cohorts = df.groupby("customer_id")["date"].min().dt.to_period(cohort_period)
+    df["cohort"] = df["customer_id"].map(customer_cohorts)
+    df["period"] = df["date"].dt.to_period(cohort_period)
+    df["period_number"] = (df["period"] - df["cohort"]).apply(lambda x: x.n)
+    df = df[df["period_number"] >= 0]
+    return df
 
 
 def compute_cohorts(
     transactions_df: pd.DataFrame,
-    cohort_period: str = "M",  # Monthly cohorts (use 'M' for Period, 'ME' for Grouper)
-    metric: str = "retention",  # 'retention', 'revenue', 'orders'
+    cohort_period: str = "M",
+    metric: str = "retention",
+    _prepared: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """
     Compute cohort analysis matrix.
@@ -21,24 +34,15 @@ def compute_cohorts(
         transactions_df: Transaction data with date, customer_id, etc.
         cohort_period: Period for cohort definition ('W', 'M', 'Q')
         metric: What to measure ('retention', 'revenue', 'orders', 'avg_order_value')
+        _prepared: Optional pre-prepared DataFrame (internal use, avoids re-computation)
 
     Returns:
         Cohort matrix with periods as columns, cohorts as rows
     """
-    df = transactions_df.copy()
-    df["date"] = pd.to_datetime(df["date"])
-    df["revenue"] = df["price"] * df["quantity"]
-
-    # Determine cohort for each customer (first purchase period)
-    customer_cohorts = df.groupby("customer_id")["date"].min().dt.to_period(cohort_period)
-    df["cohort"] = df["customer_id"].map(customer_cohorts)
-
-    # Determine period number for each transaction
-    df["period"] = df["date"].dt.to_period(cohort_period)
-    df["period_number"] = (df["period"] - df["cohort"]).apply(lambda x: x.n)
-
-    # Filter out period -1 (shouldn't happen but just in case)
-    df = df[df["period_number"] >= 0]
+    if _prepared is not None:
+        df = _prepared
+    else:
+        df = _prepare_cohort_df(transactions_df, cohort_period)
 
     if metric == "retention":
         # Count unique customers per cohort per period
@@ -171,17 +175,12 @@ def period_over_period_comparison(
             orders=("transaction_id", "nunique"),
             customers=("customer_id", "nunique"),
             total_items=("quantity", "sum"),
-            avg_order_value=(
-                "revenue",
-                lambda x: x.sum() / df.loc[x.index, "transaction_id"].nunique(),
-            ),
-            items_per_order=(
-                "quantity",
-                lambda x: x.sum() / df.loc[x.index, "transaction_id"].nunique(),
-            ),
         )
         .reset_index()
     )
+
+    period_stats["avg_order_value"] = period_stats["revenue"] / period_stats["orders"].replace(0, np.nan)
+    period_stats["items_per_order"] = period_stats["total_items"] / period_stats["orders"].replace(0, np.nan)
 
     period_stats["period"] = period_stats["period"].astype(str)
 
@@ -218,13 +217,11 @@ def year_over_year_comparison(
             revenue=("revenue", "sum"),
             orders=("transaction_id", "nunique"),
             customers=("customer_id", "nunique"),
-            avg_order_value=(
-                "revenue",
-                lambda x: x.sum() / x.index.map(df["transaction_id"].nunique),
-            ),
         )
         .reset_index()
     )
+
+    yoy_stats["avg_order_value"] = yoy_stats["revenue"] / yoy_stats["orders"].replace(0, np.nan)
 
     yoy_stats["period"] = (
         yoy_stats["year"].astype(str) + "-" + yoy_stats["month"].astype(str).str.zfill(2)
@@ -278,18 +275,15 @@ def cohort_comparison_summary(
     transactions_df: pd.DataFrame, cohort_period: str = "M", max_periods: int = 12
 ) -> Dict:
     """Generate summary statistics for cohort analysis."""
-    df = transactions_df.copy()
-    df["date"] = pd.to_datetime(df["date"])
-    df["revenue"] = df["price"] * df["quantity"]
+    # Prepare cohort data once, reuse for both metrics
+    prepared = _prepare_cohort_df(transactions_df, cohort_period)
 
-    # Get retention matrix
-    retention_matrix = compute_cohorts(df, cohort_period=cohort_period, metric="retention")
-    revenue_matrix = compute_cohorts(df, cohort_period=cohort_period, metric="revenue")
-
-    # Limit to max_periods
-    if len(retention_matrix.columns) > max_periods + 1:
-        retention_matrix = retention_matrix.iloc[:, : max_periods + 1]
-        revenue_matrix = revenue_matrix.iloc[:, : max_periods + 1]
+    retention_matrix = compute_cohorts(
+        transactions_df, cohort_period=cohort_period, metric="retention", _prepared=prepared
+    )
+    revenue_matrix = compute_cohorts(
+        transactions_df, cohort_period=cohort_period, metric="revenue", _prepared=prepared
+    )
 
     summary = {
         "n_cohorts": len(retention_matrix),

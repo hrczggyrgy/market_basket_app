@@ -73,10 +73,16 @@ def detect_switches(
             group = group.sort_values(date_col)
             products = group[product_col].values
             dates = group[date_col].values
+            transaction_ids = group.get("transaction_id", pd.Series([None] * len(group))).values
 
             for i in range(len(products) - 1):
                 days_diff = (pd.Timestamp(dates[i + 1]) - pd.Timestamp(dates[i])).days
-                if days_diff <= max_gap_days and products[i] != products[i + 1]:
+                same_basket = (
+                    transaction_ids[i] is not None
+                    and transaction_ids[i + 1] is not None
+                    and transaction_ids[i] == transaction_ids[i + 1]
+                )
+                if days_diff <= max_gap_days and products[i] != products[i + 1] and not same_basket:
                     switches.append(
                         {
                             "from_product": products[i],
@@ -110,6 +116,7 @@ def build_copurchase_tables(
     customer_col: str = "customer_id",
     product_col: str = "stockcode",
     min_cooccurrence: int = 5,
+    min_product_support: int = 2,
 ) -> Dict[Tuple[str, str], Dict[str, int]]:
     """
     Build 2x2 co-purchase contingency tables for all product pairs.
@@ -125,35 +132,38 @@ def build_copurchase_tables(
         customer_col: Customer identifier column
         product_col: Product identifier column
         min_cooccurrence: Minimum customers buying both to include pair
+        min_product_support: Minimum customers buying a single product to include it
 
     Returns:
         Dict mapping (prod_a, prod_b) -> {both, a_only, b_only, neither}
     """
-    # Build customer-product matrix (one-hot)
+    # Build binary customer-product matrix
     cust_product = pd.crosstab(transactions_df[customer_col], transactions_df[product_col])
     cust_product = (cust_product > 0).astype(int)
+
+    # Filter rare products
+    product_support = cust_product.sum(axis=0)
+    valid_products = product_support[product_support >= min_product_support].index
+    cust_product = cust_product[valid_products]
 
     products = cust_product.columns.tolist()
     n_customers = len(cust_product)
 
-    # Precompute customer sets for each product
-    product_customers = {
-        prod: set(cust_product.index[cust_product[prod] == 1]) for prod in products
-    }
+    # Co-occurrence via matrix multiplication (vectorized)
+    cooccurrence = cust_product.T @ cust_product
 
     tables = {}
     for i, prod_a in enumerate(products):
-        cust_a = product_customers[prod_a]
         for prod_b in products[i + 1 :]:
-            cust_b = product_customers[prod_b]
-
-            both = len(cust_a & cust_b)
+            both = cooccurrence.loc[prod_a, prod_b]
             if both < min_cooccurrence:
                 continue
 
-            a_only = len(cust_a - cust_b)
-            b_only = len(cust_b - cust_a)
-            neither = n_customers - len(cust_a | cust_b)
+            prod_a_count = product_support[prod_a]
+            prod_b_count = product_support[prod_b]
+            a_only = prod_a_count - both
+            b_only = prod_b_count - both
+            neither = n_customers - (prod_a_count + prod_b_count - both)
 
             tables[(prod_a, prod_b)] = {
                 "both": both,
@@ -216,12 +226,71 @@ def compute_jaccard(table: Dict[str, int]) -> float:
     return both / union
 
 
+def _build_similarity_matrix_vectorized(
+    transactions_df: pd.DataFrame,
+    customer_col: str = "customer_id",
+    product_col: str = "stockcode",
+    method: str = "yules_q",
+    min_cooccurrence: int = 5,
+    min_product_support: int = 2,
+) -> pd.DataFrame:
+    """
+    Build product similarity matrix using fully vectorized matrix operations.
+
+    Uses binary customer-product matrix multiplication to compute all pairwise
+    co-occurrence counts in O(n²) numpy, avoiding Python loops over pairs.
+    """
+    # Binary customer-product matrix
+    cust_product = pd.crosstab(transactions_df[customer_col], transactions_df[product_col])
+    cust_product = (cust_product > 0).astype(int)
+
+    # Filter rare products
+    product_support = cust_product.sum(axis=0)
+    valid_mask = product_support >= min_product_support
+    products = product_support.index[valid_mask].tolist()
+    cust_product = cust_product[products]
+
+    n_customers = len(cust_product)
+
+    # Co-occurrence matrix (vectorized): count of shared customers per product pair
+    cooccurrence = cust_product.T @ cust_product
+    both = cooccurrence.values
+
+    product_counts = product_support[products].values  # 1D array
+
+    # a_only[i,j] = customers who bought i but not j
+    a_only = product_counts[:, np.newaxis] - both
+    # b_only[i,j] = customers who bought j but not i
+    b_only = product_counts[np.newaxis, :] - both
+    # neither[i,j] = customers who bought neither
+    neither = n_customers - (product_counts[:, np.newaxis] + product_counts[np.newaxis, :] - both)
+
+    if method == "yules_q":
+        ad = both * neither
+        bc = a_only * b_only
+        numerator = ad - bc
+        denominator = ad + bc
+        sim = np.divide(numerator, denominator, out=np.zeros_like(numerator, dtype=float),
+                        where=denominator != 0)
+    else:
+        # Jaccard: intersection / union
+        union = both + a_only + b_only
+        sim = np.divide(both, union, out=np.zeros_like(both, dtype=float), where=union != 0)
+
+    # Apply min_cooccurrence mask: zero out pairs below threshold
+    sim[both < min_cooccurrence] = 0.0
+    np.fill_diagonal(sim, 1.0)
+
+    return pd.DataFrame(sim, index=products, columns=products)
+
+
 def build_similarity_matrix(
     transactions_df: pd.DataFrame,
     customer_col: str = "customer_id",
     product_col: str = "stockcode",
     method: str = "yules_q",
     min_cooccurrence: int = 5,
+    min_product_support: int = 2,
 ) -> pd.DataFrame:
     """
     Build symmetric product similarity matrix.
@@ -232,24 +301,15 @@ def build_similarity_matrix(
         product_col: Product identifier column
         method: 'yules_q' or 'jaccard'
         min_cooccurrence: Minimum co-purchase count to compute similarity
+        min_product_support: Minimum customers buying a product to include it
 
     Returns:
         Square DataFrame (products x products) with similarity scores.
         Diagonal = 1.0. Values in [-1, 1] for Yule's Q, [0, 1] for Jaccard.
     """
-    tables = build_copurchase_tables(transactions_df, customer_col, product_col, min_cooccurrence)
-
-    products = sorted(transactions_df[product_col].unique())
-    sim_matrix = pd.DataFrame(np.eye(len(products)), index=products, columns=products, dtype=float)
-
-    compute_fn = compute_yules_q if method == "yules_q" else compute_jaccard
-
-    for (prod_a, prod_b), table in tables.items():
-        sim = compute_fn(table)
-        sim_matrix.loc[prod_a, prod_b] = sim
-        sim_matrix.loc[prod_b, prod_a] = sim
-
-    return sim_matrix
+    return _build_similarity_matrix_vectorized(
+        transactions_df, customer_col, product_col, method, min_cooccurrence, min_product_support,
+    )
 
 
 def compute_switching_matrix_from_sequences(

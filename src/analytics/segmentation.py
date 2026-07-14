@@ -1,14 +1,11 @@
 """Customer Segmentation Analytics - RFM, Behavioral, Value-based."""
 
-import warnings
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
-
-warnings.filterwarnings("ignore")
 
 
 def compute_rfm_features(
@@ -87,7 +84,12 @@ def rfm_segmentation(
         # Classic RFM scoring (1-4 per dimension)
         for dim in ["recency_days", "frequency", "monetary"]:
             if dim == "recency_days":
-                df[f"{dim}_score"] = pd.qcut(df[dim], q=4, labels=[4, 3, 2, 1], duplicates="drop")
+                df[f"{dim}_score"] = pd.qcut(
+                    df[dim].rank(method="first"),
+                    q=4,
+                    labels=[4, 3, 2, 1],
+                    duplicates="drop",
+                )
             else:
                 df[f"{dim}_score"] = pd.qcut(
                     df[dim].rank(method="first"),
@@ -151,29 +153,33 @@ def rfm_segmentation(
         kmeans = KMeans(n_clusters=n_segments, random_state=42, n_init=10)
         df["cluster"] = kmeans.fit_predict(X_scaled)
 
-        # Label clusters by characteristics
-        cluster_labels = {}
-        for c in range(n_segments):
-            cluster_data = df[df["cluster"] == c]
-            avg_rec = cluster_data["recency_days"].mean()
-            avg_freq = cluster_data["frequency"].mean()
-            avg_mon = cluster_data["monetary"].mean()
+        # Label clusters by ranking them relative to each other
+        cluster_profiles = df.groupby("cluster")[["recency_days", "frequency", "monetary"]].mean()
 
-            if avg_rec < df["recency_days"].quantile(0.25) and avg_mon > df["monetary"].quantile(
-                0.75
-            ):
-                label = "High Value"
-            elif avg_rec < df["recency_days"].quantile(0.5) and avg_freq > df["frequency"].quantile(
-                0.5
-            ):
-                label = "Active"
-            elif avg_rec > df["recency_days"].quantile(0.75):
-                label = "Churned/At Risk"
-            elif avg_freq == 1:
-                label = "One-time Buyers"
+        recency_rank = cluster_profiles["recency_days"].rank()
+        freq_rank = cluster_profiles["frequency"].rank(ascending=False)
+        mon_rank = cluster_profiles["monetary"].rank(ascending=False)
+
+        composite = recency_rank + freq_rank + mon_rank
+
+        cluster_labels = {}
+        best_idx = composite.idxmin()
+        cluster_labels[best_idx] = "High Value"
+
+        worst_idx = composite.idxmax()
+        cluster_labels[worst_idx] = "Churned/At Risk"
+
+        for c in range(n_segments):
+            if c in cluster_labels:
+                continue
+            if mon_rank[c] == mon_rank.min():
+                cluster_labels[c] = "Big Spenders"
+            elif freq_rank[c] == freq_rank.min():
+                cluster_labels[c] = "Frequent Buyers"
+            elif recency_rank[c] == recency_rank.min():
+                cluster_labels[c] = "Recent Customers"
             else:
-                label = f"Cluster {c}"
-            cluster_labels[c] = label
+                cluster_labels[c] = f"Segment {c}"
 
         df["segment"] = df["cluster"].map(cluster_labels)
 
@@ -214,10 +220,6 @@ def behavioral_segmentation(transactions_df: pd.DataFrame, n_clusters: int = 6) 
             price_cv=("price", lambda x: x.std() / x.mean() if x.mean() > 0 else 0),
             # Temporal patterns
             weekend_ratio=("date", lambda x: (x.dt.dayofweek >= 5).mean()),
-            night_ratio=(
-                "date",
-                lambda x: (x.dt.hour >= 18).mean() if x.dt.hour.nunique() > 1 else 0,
-            ),
         )
         .reset_index()
     )
@@ -299,16 +301,17 @@ def value_based_segmentation(
         {"future_revenue": 0}
     )
 
-    # Simple CLV prediction (BG/NBD style approximation)
-    features["predicted_clv"] = (
-        features["monetary"]
-        / features["frequency"].replace(0, 1)
-        * features["frequency"]
-        * (365 / features["lifetime_days"].replace(0, 1))
-        * 2
-    )  # 2-year horizon
+    # CLV prediction with churn adjustment
+    # Annualized historical spend per customer
+    annual_value = features["monetary"] / (features["lifetime_days"].clip(lower=1) / 365)
+    # Survival probability: customers with long recency relative to lifetime likely churned
+    survival_prob = np.clip(
+        1 - features["recency"] / (features["lifetime_days"].clip(lower=1) + features["recency"]),
+        0, 1,
+    )
+    features["predicted_clv"] = annual_value * survival_prob * 2  # 2-year horizon
 
-    # Segments
+    # Segments — first matching condition wins (priority: high CLV + recent > loyal > new > churned)
     conditions = [
         (features["predicted_clv"] > features["predicted_clv"].quantile(0.8))
         & (features["recency"] < 30),
@@ -343,10 +346,7 @@ def get_segment_profiles(
             total_revenue=("revenue", "sum"),
             avg_order_value=("revenue", "mean"),
             avg_items_per_order=("quantity", "mean"),
-            avg_products_per_customer=(
-                "stockcode",
-                lambda x: x.nunique() / df[df[segment_col] == x.name]["customer_id"].nunique(),
-            ),
+            n_products=("stockcode", "nunique"),
             top_category=(
                 "category",
                 lambda x: (
@@ -359,17 +359,12 @@ def get_segment_profiles(
                     x.mode().iloc[0] if "brand" in df.columns and not x.mode().empty else "N/A"
                 ),
             ),
-            repeat_rate=(
-                "transaction_id",
-                lambda x: (
-                    (x.nunique() / df[df[segment_col] == x.name]["customer_id"].nunique())
-                    if df[df[segment_col] == x.name]["customer_id"].nunique() > 0
-                    else 0
-                ),
-            ),
         )
         .reset_index()
     )
+
+    profiles["avg_products_per_customer"] = profiles["n_products"] / profiles["n_customers"]
+    profiles["repeat_rate"] = profiles["n_transactions"] / profiles["n_customers"]
 
     profiles["revenue_per_customer"] = profiles["total_revenue"] / profiles["n_customers"]
     profiles["revenue_share"] = profiles["total_revenue"] / profiles["total_revenue"].sum()
