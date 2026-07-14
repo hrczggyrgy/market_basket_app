@@ -58,36 +58,36 @@ class TestCreateBasketMatrix:
     def test_basic_basket_matrix(self, sample_transactions):
         """Test basic basket matrix creation."""
         basket = create_basket_matrix(sample_transactions)
-        
+
         assert isinstance(basket, pd.DataFrame)
         assert basket.shape[0] == 5  # 5 transactions
         assert "A" in basket.columns
         assert "B" in basket.columns
         assert "C" in basket.columns
         assert "D" in basket.columns
-        
+
         # Check values are boolean (True/False)
         assert basket["A"].dtype == bool
-        
+
         # Transaction 1 has A, B, C (index is transaction_id = 1)
-        assert basket.loc[1, "A"] == True
-        assert basket.loc[1, "B"] == True
-        assert basket.loc[1, "C"] == True
-        assert basket.loc[1, "D"] == False
+        assert basket.loc[1, "A"]
+        assert basket.loc[1, "B"]
+        assert basket.loc[1, "C"]
+        assert not basket.loc[1, "D"]
 
     def test_basket_matrix_with_min_quantity(self, sample_transactions):
         """Test basket matrix with min_quantity parameter."""
         basket = create_basket_matrix(sample_transactions, min_quantity=2)
-        
+
         # The basket index uses transaction_id values
         # With min_quantity=2, transaction 1 (all quantities=1) gets filtered out
         # Transaction 2 has A with quantity 2
         assert 2 in basket.index
-        
+
         # Transaction 2 has A with quantity 2, so A column should exist
         assert "A" in basket.columns
-        assert basket.loc[2, "A"] == True
-        
+        assert basket.loc[2, "A"]
+
         # B column might not exist since no transaction has B with quantity >= 2
         # This is expected behavior - items that don't meet min_quantity are dropped
 
@@ -98,7 +98,7 @@ class TestGetProductLookup:
     def test_product_lookup(self, sample_transactions_with_product):
         """Test product lookup creation."""
         lookup = get_product_lookup(sample_transactions_with_product)
-        
+
         assert isinstance(lookup, dict)
         assert lookup["A"] == "Apple"
         assert lookup["B"] == "Banana"
@@ -107,7 +107,7 @@ class TestGetProductLookup:
     def test_product_lookup_with_product_column(self, sample_transactions_with_product):
         """Test product lookup with separate product column."""
         lookup = get_product_lookup(sample_transactions_with_product)
-        
+
         assert lookup["A"] == "Apple"
         assert lookup["B"] == "Banana"
         assert lookup["C"] == "Cherry"
@@ -120,12 +120,12 @@ class TestRunFpGrowth:
         """Test basic FP-Growth execution."""
         basket = create_basket_matrix(sample_transactions)
         freq_items = run_fpgrowth(basket, min_support=0.2, max_len=3)
-        
+
         assert isinstance(freq_items, pd.DataFrame)
         assert "support" in freq_items.columns
         assert "itemsets" in freq_items.columns
         assert len(freq_items) > 0
-        
+
         # Check that itemsets are frozensets
         for itemset in freq_items["itemsets"]:
             assert isinstance(itemset, frozenset)
@@ -133,26 +133,26 @@ class TestRunFpGrowth:
     def test_fpgrowth_min_support(self, sample_transactions):
         """Test FP-Growth with different min_support values."""
         basket = create_basket_matrix(sample_transactions)
-        
+
         # High support - should find fewer itemsets
         freq_high = run_fpgrowth(basket, min_support=0.8, max_len=3)
-        
+
         # Low support - should find more itemsets
         freq_low = run_fpgrowth(basket, min_support=0.1, max_len=3)
-        
+
         assert len(freq_low) >= len(freq_high)
 
     def test_fpgrowth_max_len(self, sample_transactions):
         """Test FP-Growth with max_len parameter."""
         basket = create_basket_matrix(sample_transactions)
-        
+
         freq_len2 = run_fpgrowth(basket, min_support=0.1, max_len=2)
         freq_len3 = run_fpgrowth(basket, min_support=0.1, max_len=3)
-        
+
         # Max len 3 should find itemsets of size up to 3
         max_len_found = max(len(i) for i in freq_len3["itemsets"])
         assert max_len_found <= 3
-        
+
         # Max len 2 should not find itemsets larger than 2
         max_len_found = max(len(i) for i in freq_len2["itemsets"])
         assert max_len_found <= 2
@@ -161,20 +161,22 @@ class TestRunFpGrowth:
         """Test FP-Growth with empty basket."""
         empty_basket = pd.DataFrame()
         freq_items = run_fpgrowth(empty_basket, min_support=0.1, max_len=3)
-        
+
         assert freq_items.empty
         assert list(freq_items.columns) == ["support", "itemsets"]
 
     def test_fpgrowth_single_item(self):
         """Test FP-Growth with single item transactions."""
-        transactions = pd.DataFrame({
-            "transaction_id": [1, 2, 3],
-            "stockcode": ["A", "A", "B"],
-            "quantity": [1, 1, 1],
-        })
+        transactions = pd.DataFrame(
+            {
+                "transaction_id": [1, 2, 3],
+                "stockcode": ["A", "A", "B"],
+                "quantity": [1, 1, 1],
+            }
+        )
         basket = create_basket_matrix(transactions)
         freq_items = run_fpgrowth(basket, min_support=0.3, max_len=3)
-        
+
         assert len(freq_items) >= 1
         # Item A appears in 2/3 transactions (support=0.67)
         # Item B appears in 1/3 transactions (support=0.33)

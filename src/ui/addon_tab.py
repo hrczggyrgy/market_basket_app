@@ -97,6 +97,7 @@ def render_multi_addon(transactions_df: pd.DataFrame, product_lookup: dict, para
     @st.cache_data
     def get_addon_matrix_cached(df, min_lift, top_n):
         return get_anchor_addon_matrix(df, min_lift=min_lift, top_n_per_anchor=top_n)
+
     with st.spinner("Computing add-on matrix..."):
         addon_matrix = get_addon_matrix_cached(
             transactions_df,

@@ -28,14 +28,30 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
         col1, col2 = st.columns(2)
         with col1:
             window_days = st.slider(
-                "Analysis Window (days)", 30, 365, params.get("window_days", 90), key="switch_tab_window_days"
+                "Analysis Window (days)",
+                30,
+                365,
+                params.get("window_days", 90),
+                key="switch_tab_window_days",
             )
             min_transactions = st.slider(
-                "Min Customer Transactions", 2, 10, params.get("min_transactions", 3), key="switch_tab_min_transactions"
+                "Min Customer Transactions",
+                2,
+                10,
+                params.get("min_transactions", 3),
+                key="switch_tab_min_transactions",
             )
         with col2:
-            top_n_products = st.slider("Top Products for Heatmap", 10, 50, 30, key="switch_tab_top_n_products")
-            min_switches = st.number_input("Min Switch Count", 1, 50, params.get("min_switches", 2), key="switch_tab_min_switches")
+            top_n_products = st.slider(
+                "Top Products for Heatmap", 10, 50, 30, key="switch_tab_top_n_products"
+            )
+            min_switches = st.number_input(
+                "Min Switch Count",
+                1,
+                50,
+                params.get("min_switches", 2),
+                key="switch_tab_min_switches",
+            )
 
     with st.spinner("Computing switching patterns..."):
         # Compute switching matrix
@@ -47,12 +63,14 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
     @st.cache_data
     def get_loyalty_cached(df):
         return get_customer_loyalty_metrics(df)
+
     loyalty = get_loyalty_cached(transactions_df)
 
     # Top switching paths (cached)
     @st.cache_data
     def get_top_paths_cached(df, min_sw):
         return get_top_switching_paths(df, min_switches=min_sw)
+
     top_paths = get_top_paths_cached(transactions_df, min_switches)
 
     # Overview metrics
@@ -119,6 +137,7 @@ def _render_heatmap_tab(
     @st.cache_data
     def get_heatmap_data_cached(df, top_n):
         return get_switching_heatmap_data(df, top_n_products=top_n)
+
     heatmap_data = get_heatmap_data_cached(transactions_df, top_n_products)
 
     if not heatmap_data.empty:

@@ -32,6 +32,7 @@ def render_promotional_tab(transactions_df: pd.DataFrame, product_lookup: dict, 
             min_duration_days=min_dur,
             max_duration_days=max_dur,
         )
+
     with st.spinner("Detecting promotional periods..."):
         promo_periods = detect_promos_cached(
             transactions_df,

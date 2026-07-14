@@ -240,8 +240,7 @@ def build_similarity_matrix(
     tables = build_copurchase_tables(transactions_df, customer_col, product_col, min_cooccurrence)
 
     products = sorted(transactions_df[product_col].unique())
-    sim_matrix = pd.DataFrame(0.0, index=products, columns=products, dtype=float)
-    np.fill_diagonal(sim_matrix.to_numpy(), 1.0)
+    sim_matrix = pd.DataFrame(np.eye(len(products)), index=products, columns=products, dtype=float)
 
     compute_fn = compute_yules_q if method == "yules_q" else compute_jaccard
 

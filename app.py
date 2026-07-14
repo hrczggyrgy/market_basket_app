@@ -100,9 +100,7 @@ def main():
             if config["run_analysis"]:
                 run_analysis(transactions_df, product_lookup, config)
             else:
-                st.info(
-                    "👈 Configure parameters in sidebar and click **Run Analysis** to start"
-                )
+                st.info("👈 Configure parameters in sidebar and click **Run Analysis** to start")
 
     except Exception as e:
         st.error(f"Error: {str(e)}")
@@ -155,9 +153,7 @@ def run_analysis(transactions_df: pd.DataFrame, product_lookup: dict, config: Co
         st.code(traceback.format_exc())
 
 
-def render_rules_analysis(
-    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
-):
+def render_rules_analysis(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render association rules analysis (default mode with all visualizations)."""
 
     # Create basket matrix
@@ -197,9 +193,7 @@ def render_rules_analysis(
         max_lift=params.get("max_lift", 100.0),
     )
 
-    st.info(
-        f"{len(filtered_rules)} rules after filtering (lift ≥ {params['min_lift']})"
-    )
+    st.info(f"{len(filtered_rules)} rules after filtering (lift ≥ {params['min_lift']})")
 
     # Create tabs for different views
     tab1, tab2, tab3, tab4 = st.tabs(
