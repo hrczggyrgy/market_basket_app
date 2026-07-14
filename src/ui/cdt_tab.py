@@ -50,6 +50,62 @@ from src.viz.cdt_viz import (
 )
 
 
+# Bug 1: Cached wrappers for heavy CDT computations
+@st.cache_data
+def _cached_build_customer_sequences(transactions_df):
+    return build_customer_sequences(transactions_df)
+
+
+@st.cache_data
+def _cached_build_similarity_matrix(transactions_df, method, min_cooccurrence):
+    return build_similarity_matrix(transactions_df, method=method, min_cooccurrence=min_cooccurrence)
+
+
+@st.cache_data
+def _cached_perform_hierarchical_clustering(similarity_matrix, linkage_method, distance_method):
+    return perform_hierarchical_clustering(similarity_matrix, linkage_method=linkage_method, distance_method=distance_method)
+
+
+@st.cache_data
+def _cached_find_optimal_clusters(linkage_matrix, similarity_matrix, distance_method, min_clusters, max_clusters):
+    return find_optimal_clusters(linkage_matrix, similarity_matrix, distance_method=distance_method, min_clusters=min_clusters, max_clusters=max_clusters)
+
+
+@st.cache_data
+def _cached_get_cluster_assignments(linkage_matrix, similarity_matrix, n_clusters):
+    return get_cluster_assignments(linkage_matrix, similarity_matrix, n_clusters=n_clusters)
+
+
+@st.cache_data
+def _cached_extract_product_attributes(transactions_df, attribute_cols):
+    return extract_product_attributes(transactions_df, attribute_cols=attribute_cols)
+
+
+@st.cache_data
+def _cached_build_cdt(similarity_matrix, cluster_assignments, attributes_df, min_cluster_size, quality_threshold, candidate_attributes):
+    return build_cdt(similarity_matrix, cluster_assignments, attributes_df, min_cluster_size=min_cluster_size, quality_threshold=quality_threshold, candidate_attributes=candidate_attributes)
+
+
+@st.cache_data
+def _cached_build_behavioral_matrices(sequences, min_cooccurrence):
+    return build_behavioral_matrices(sequences, min_cooccurrence=min_cooccurrence)
+
+
+@st.cache_data
+def _cached_get_top_bundling_pairs(affinity_matrix, top_n):
+    return get_top_bundling_pairs(affinity_matrix, top_n=top_n)
+
+
+@st.cache_data
+def _cached_get_top_substitution_pairs(switching_matrix, top_n):
+    return get_top_substitution_pairs(switching_matrix, top_n=top_n)
+
+
+@st.cache_data
+def _cached_get_top_switching_paths(switching_matrix, top_n):
+    return get_top_switching_paths(switching_matrix, top_n=top_n)
+
+
 def render_cdt_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render Customer Decision Tree & Patterns tab."""
 
@@ -221,13 +277,13 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
         status_text.text("Step 1/6: Building customer purchase sequences...")
         progress_bar.progress(10)
 
-        sequences = build_customer_sequences(transactions_df)
+        sequences = _cached_build_customer_sequences(transactions_df)
 
         # Step 2: Compute similarity matrix
         status_text.text("Step 2/6: Computing similarity matrix...")
         progress_bar.progress(25)
 
-        similarity_matrix = build_similarity_matrix(
+        similarity_matrix = _cached_build_similarity_matrix(
             transactions_df,
             method=similarity_method,
             min_cooccurrence=min_cooccurrence,
@@ -253,14 +309,14 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
         status_text.text("Step 3/6: Performing hierarchical clustering...")
         progress_bar.progress(40)
 
-        linkage_matrix, ordered_labels = perform_hierarchical_clustering(
+        linkage_matrix, ordered_labels = _cached_perform_hierarchical_clustering(
             similarity_matrix,
             linkage_method=linkage_method,
             distance_method=similarity_method,
         )
 
         # Find optimal k
-        optimal_k, silhouette_scores = find_optimal_clusters(
+        optimal_k, silhouette_scores = _cached_find_optimal_clusters(
             linkage_matrix,
             similarity_matrix,
             distance_method=similarity_method,
@@ -269,7 +325,7 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
         )
 
         # Get cluster assignments
-        cluster_assignments = get_cluster_assignments(
+        cluster_assignments = _cached_get_cluster_assignments(
             linkage_matrix, similarity_matrix, n_clusters=optimal_k
         )
 

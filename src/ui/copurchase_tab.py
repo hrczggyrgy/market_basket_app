@@ -13,6 +13,26 @@ from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
 
 
+# Bug 1: Cached wrappers for heavy computations
+@st.cache_data
+def _cached_compute_affinity_matrix(transactions_df, min_support, min_lift, top_n_products):
+    return compute_affinity_matrix(
+        transactions_df, min_support=min_support, min_lift=min_lift, top_n_products=top_n_products
+    )
+
+
+@st.cache_data
+def _cached_get_top_affinity_pairs(transactions_df, min_support, min_lift, top_n, top_n_products):
+    return get_top_affinity_pairs(
+        transactions_df, min_support=min_support, min_lift=min_lift, top_n=top_n, top_n_products=top_n_products
+    )
+
+
+@st.cache_data
+def _cached_get_product_affinity_profile(transactions_df, target_product, min_lift, top_n):
+    return get_product_affinity_profile(transactions_df, target_product, min_lift=min_lift, top_n=top_n)
+
+
 def render_copurchase_tab(
     transactions_df: pd.DataFrame, product_lookup: dict, params: dict
 ):
@@ -29,19 +49,12 @@ def render_copurchase_tab(
     top_n_products = params.get("top_n_products", 50)
 
     with st.spinner("Computing affinity matrix..."):
-        affinity_matrix = compute_affinity_matrix(
-            transactions_df,
-            min_support=min_support,
-            min_lift=min_lift,
-            top_n_products=top_n_products,
+        affinity_matrix = _cached_compute_affinity_matrix(
+            transactions_df, min_support, min_lift, top_n_products
         )
 
-        top_pairs = get_top_affinity_pairs(
-            transactions_df,
-            min_support=min_support,
-            min_lift=min_lift,
-            top_n=top_n,
-            top_n_products=top_n_products,
+        top_pairs = _cached_get_top_affinity_pairs(
+            transactions_df, min_support, min_lift, top_n, top_n_products
         )
 
     if top_pairs.empty:
@@ -56,15 +69,15 @@ def render_copurchase_tab(
 
     # Persistent tabs for different views
     tab_labels = ["📊 Top Pairs", "🔥 Affinity Heatmap", "🔗 Sankey Flow", "🎯 Product Profile"]
-    selected = persistent_tabs(tab_labels, "copurchase_view_tabs", default_tab=0)
+    selected_tab = persistent_tabs(tab_labels, "copurchase_view_tabs", default_tab=0)
 
-    if selected == 0:
+    if selected_tab == 0:
         _render_top_pairs_tab(top_pairs, min_lift)
-    elif selected == 1:
+    elif selected_tab == 1:
         _render_heatmap_tab(affinity_matrix, product_lookup, top_n_products)
-    elif selected == 2:
+    elif selected_tab == 2:
         _render_sankey_tab(affinity_matrix, product_lookup, top_n_products)
-    elif selected == 3:
+    elif selected_tab == 3:
         _render_product_profile_tab(transactions_df, product_lookup, min_lift)
 
 
@@ -149,23 +162,23 @@ def _render_product_profile_tab(
     st.subheader("Single Product Affinity Profile")
 
     products = transactions_df["stockcode"].unique()
-    selected = st.selectbox(
+    selected_product = st.selectbox(
         "Select Product",
         options=products,
         format_func=lambda x: product_lookup.get(x, x),
         key="copurchase_tab_product_select",
     )
 
-    if selected:
-        profile = get_product_affinity_profile(
-            transactions_df, selected, min_lift=min_lift, top_n=20
+    if selected_product:
+        profile = _cached_get_product_affinity_profile(
+            transactions_df, selected_product, min_lift, 20
         )
 
         if not profile.empty:
             profile["Co-purchase Product Name"] = profile[
                 "co_purchase_product"
             ].map(product_lookup)
-            profile["Target Product"] = product_lookup.get(selected, selected)
+            profile["Target Product"] = product_lookup.get(selected_product, selected_product)
 
             display_cols = [
                 "Co-purchase Product Name",
@@ -182,7 +195,7 @@ def _render_product_profile_tab(
                 hide_index=True,
             )
 
-            render_analytics_export(profile, f"Affinity_{selected}")
+            render_analytics_export(profile, f"Affinity_{selected_product}")
 
             # Bar chart
             st.subheader("Top Co-purchases by Lift")
@@ -192,7 +205,7 @@ def _render_product_profile_tab(
                 y="Co-purchase Product Name",
                 orientation="h",
                 color="confidence_target_to_other",
-                title=f"Products co-purchased with {product_lookup.get(selected, selected)}",
+                title=f"Products co-purchased with {product_lookup.get(selected_product, selected_product)}",
                 labels={"lift": "Lift", "confidence_target_to_other": "Confidence"},
             )
             fig.update_layout(yaxis={"categoryorder": "total ascending"})

@@ -247,7 +247,7 @@ def build_similarity_matrix(
 
     products = sorted(transactions_df[product_col].unique())
     sim_matrix = pd.DataFrame(0.0, index=products, columns=products, dtype=float)
-    np.fill_diagonal(sim_matrix.values, 1.0)
+    np.fill_diagonal(sim_matrix.to_numpy(), 1.0)
 
     compute_fn = compute_yules_q if method == "yules_q" else compute_jaccard
 

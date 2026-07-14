@@ -1,5 +1,6 @@
 """Cohort Analysis Tab."""
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -8,6 +9,18 @@ from src.analytics.cohort import (
     compute_cohorts,
 )
 from src.ui.export import render_analytics_export
+
+
+@st.cache_data
+def _cached_compute_cohorts(transactions_df: pd.DataFrame, cohort_period: str, metric: str) -> pd.DataFrame:
+    """Cached wrapper for compute_cohorts."""
+    return compute_cohorts(transactions_df, cohort_period=cohort_period, metric=metric)
+
+
+@st.cache_data
+def _cached_cohort_comparison_summary(transactions_df: pd.DataFrame, cohort_period: str, max_periods: int) -> dict:
+    """Cached wrapper for cohort_comparison_summary."""
+    return cohort_comparison_summary(transactions_df, cohort_period=cohort_period, max_periods=max_periods)
 
 
 def render_cohort_tab(
@@ -63,7 +76,7 @@ def render_cohort_tab(
 
     # Compute cohorts
     with st.spinner("Computing cohorts..."):
-        cohort_matrix = compute_cohorts(
+        cohort_matrix = _cached_compute_cohorts(
             transactions_df, cohort_period=period_code, metric=metric_internal
         )
 
@@ -78,12 +91,16 @@ def render_cohort_tab(
 
     # Reset index to get Cohort as column
     cohort_data = cohort_matrix.reset_index()
-    cohort_data = cohort_data.rename(columns={"index": "Cohort"})
+    # Bug 7 fix: safety check for Cohort column name
+    if "Cohort" not in cohort_data.columns:
+        cohort_data = cohort_data.rename(columns={cohort_data.columns[0]: "Cohort"})
+    else:
+        cohort_data = cohort_data.rename(columns={"index": "Cohort"})
 
     # Summary metrics
     st.subheader("Cohort Summary")
 
-    summary = cohort_comparison_summary(transactions_df)
+    summary = _cached_cohort_comparison_summary(transactions_df, cohort_period=period_code, max_periods=max_periods)
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -202,6 +219,8 @@ def render_cohort_tab(
             )
 
         if period_1 in cohort_data.columns and period_2 in cohort_data.columns:
+            # Bug 4 fix: replace 0 with NaN before division to avoid inf/NaN
+            period_1_vals = cohort_data[period_1].replace(0, np.nan)
             comparison = pd.DataFrame(
                 {
                     "Cohort": cohort_data["Cohort"],
@@ -210,7 +229,7 @@ def render_cohort_tab(
                     "Change": cohort_data[period_2] - cohort_data[period_1],
                     "Pct Change": (
                         (cohort_data[period_2] - cohort_data[period_1])
-                        / cohort_data[period_1]
+                        / period_1_vals
                         * 100
                     ).round(1),
                 }

@@ -16,6 +16,27 @@ from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
 
 
+# Bug 1: Cached wrappers for heavy computations
+@st.cache_data
+def _cached_compute_rfm_features(transactions_df):
+    return compute_rfm_features(transactions_df)
+
+
+@st.cache_data
+def _cached_rfm_segmentation(rfm_df, method, n_segments):
+    return rfm_segmentation(rfm_df, method=method, n_segments=n_segments)
+
+
+@st.cache_data
+def _cached_behavioral_segmentation(transactions_df, n_clusters):
+    return behavioral_segmentation(transactions_df, n_clusters=n_clusters)
+
+
+@st.cache_data
+def _cached_value_based_segmentation(transactions_df, prediction_horizon_days):
+    return value_based_segmentation(transactions_df, prediction_horizon_days=prediction_horizon_days)
+
+
 def render_segmentation_tab(
     transactions_df: pd.DataFrame, product_lookup: dict, params: dict
 ):
@@ -62,7 +83,7 @@ def render_rfm_segmentation(transactions_df: pd.DataFrame, params: dict):
 
     # Compute RFM
     with st.spinner("Computing RFM features..."):
-        rfm = compute_rfm_features(transactions_df)
+        rfm = _cached_compute_rfm_features(transactions_df)
 
     st.success(f"Computed RFM for {len(rfm)} customers")
 
@@ -72,7 +93,7 @@ def render_rfm_segmentation(transactions_df: pd.DataFrame, params: dict):
 
     if method == "Quantile (Classic RFM)":
         # Classic RFM scoring
-        rfm_scored = rfm_segmentation(rfm, method="quantile")
+        rfm_scored = _cached_rfm_segmentation(rfm, method="quantile", n_segments=8)
 
         if rfm_selected == 0:
             _render_rfm_segment_distribution(rfm_scored)
@@ -87,7 +108,7 @@ def render_rfm_segmentation(transactions_df: pd.DataFrame, params: dict):
 
     else:
         # K-Means clustering
-        rfm_clustered = rfm_segmentation(rfm, method="kmeans", n_segments=n_segments)
+        rfm_clustered = _cached_rfm_segmentation(rfm, method="kmeans", n_segments=n_segments)
 
         if rfm_selected == 0:
             _render_kmeans_segment_distribution(rfm_clustered)
@@ -368,7 +389,7 @@ def render_behavioral_segmentation(transactions_df: pd.DataFrame, params: dict):
     )
 
     with st.spinner("Computing behavioral segments..."):
-        behavioral = behavioral_segmentation(transactions_df, n_clusters=n_clusters)
+        behavioral = _cached_behavioral_segmentation(transactions_df, n_clusters=n_clusters)
 
     # Persistent sub-tabs
     behav_tabs = ["📊 Profiles", "🎯 Radar Chart", "📦 Box Plots", "📈 Revenue"]
@@ -500,9 +521,7 @@ def render_value_segmentation(transactions_df: pd.DataFrame, params: dict):
     )
 
     with st.spinner("Computing value segments..."):
-        value_segments = value_based_segmentation(
-            transactions_df, prediction_horizon_days=horizon
-        )
+        value_segments = _cached_value_based_segmentation(transactions_df, horizon)
 
     # Persistent sub-tabs
     value_tabs = ["📊 Distribution", "💰 Revenue", "📋 Profiles", "🎯 CLV Accuracy"]

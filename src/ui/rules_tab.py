@@ -160,15 +160,16 @@ def _render_rules_heatmap_tab(filtered: pd.DataFrame):
     st.subheader("Support-Confidence-Lift Heatmap")
 
     x_metric = st.selectbox(
-        "X-axis", ["support", "confidence", "lift", "leverage"], index=0
+        "X-axis", ["support", "confidence", "lift", "leverage"], index=0, key="heatmap_x"
     )
     y_metric = st.selectbox(
-        "Y-axis", ["confidence", "support", "lift", "leverage"], index=1
+        "Y-axis", ["confidence", "support", "lift", "leverage"], index=1, key="heatmap_y"
     )
     color_metric = st.selectbox(
         "Color",
         ["lift", "confidence", "support", "leverage", "conviction"],
         index=0,
+        key="heatmap_color",
     )
 
     fig = create_heatmap(
@@ -226,17 +227,15 @@ def _create_3d_scatter(rules: pd.DataFrame) -> go.Figure:
     # Limit points
     plot_rules = rules.nlargest(500, "lift") if len(rules) > 500 else rules
 
-    # Format hover text
-    hover_text = []
-    for _, row in plot_rules.iterrows():
-        ant = ", ".join(map(str, row["antecedents"]))
-        cons = ", ".join(map(str, row["consequents"]))
-        hover_text.append(
-            f"A: {ant}<br>C: {cons}<br>"
-            f"Supp: {row['support']:.4f}<br>"
-            f"Conf: {row['confidence']:.4f}<br>"
-            f"Lift: {row['lift']:.4f}"
-        )
+    # Format hover text - vectorized approach (Bug 6 fix)
+    ant_str = plot_rules["antecedents"].apply(lambda x: ", ".join(map(str, x)))
+    cons_str = plot_rules["consequents"].apply(lambda x: ", ".join(map(str, x)))
+    hover_text = (
+        "A: " + ant_str + "<br>C: " + cons_str + "<br>"
+        "Supp: " + plot_rules["support"].round(4).astype(str) + "<br>"
+        "Conf: " + plot_rules["confidence"].round(4).astype(str) + "<br>"
+        "Lift: " + plot_rules["lift"].round(4).astype(str)
+    )
 
     fig = go.Figure(
         data=[

@@ -28,6 +28,17 @@ from src.ui.segmentation_tab import render_segmentation_tab
 from src.ui.sidebar import render_sidebar
 from src.ui.switching_tab import render_switching_tab
 from src.ui.tree_tab import render_tree_tab
+
+
+# Bug 1: Cached wrappers for heavy computations in rules analysis
+@st.cache_data
+def _cached_run_fpgrowth(basket, min_support, max_len):
+    return run_fpgrowth(basket, min_support=min_support, max_len=max_len)
+
+
+@st.cache_data
+def _cached_generate_rules(freq_items, metric, min_threshold):
+    return generate_rules(freq_items, metric=metric, min_threshold=min_threshold)
 from src.viz.heatmap import create_heatmap, create_scatter_heatmap
 from src.viz.network import create_network_graph
 
@@ -154,7 +165,7 @@ def render_rules_analysis(
 
     # Run FP-Growth
     with st.spinner(f"Running FP-Growth (min_support={params['min_support']:.3f})..."):
-        freq_items = run_fpgrowth(
+        freq_items = _cached_run_fpgrowth(
             basket, min_support=params["min_support"], max_len=params["max_itemset_len"]
         )
 
@@ -166,7 +177,7 @@ def render_rules_analysis(
 
     # Generate rules
     with st.spinner("Generating association rules..."):
-        rules = generate_rules(
+        rules = _cached_generate_rules(
             freq_items, metric="confidence", min_threshold=params["min_confidence"]
         )
 
