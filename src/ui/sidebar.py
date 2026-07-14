@@ -229,7 +229,7 @@ def render_sidebar() -> Config:
             "Max Substitution", 0.0, 0.5, 0.3, 0.05, key="cdt_max_sub"
         )
 
-elif analysis_mode == "Customer Segmentation":
+    elif analysis_mode == "Customer Segmentation":
         analysis_params["rfm_method"] = st.sidebar.radio(
             "RFM Method", ["Quantile (Classic)", "K-Means"], key="sidebar_rfm_method"
         )
