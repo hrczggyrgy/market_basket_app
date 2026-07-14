@@ -43,6 +43,76 @@ except ImportError:
 MIN_CLUSTER_SIZE = 5
 
 
+def _label_rfm_clusters(profiles: pd.DataFrame) -> dict:
+    n_clusters = len(profiles)
+    ranked = pd.DataFrame({
+        "rec_rank": profiles["recency_days"].rank(),
+        "freq_rank": profiles["frequency"].rank(ascending=False),
+        "mon_rank": profiles["monetary"].rank(ascending=False),
+    })
+    labels = {}
+    for c in profiles.index:
+        r = ranked.loc[c, "rec_rank"]
+        mr = ranked.loc[c, "mon_rank"]
+        fr = ranked.loc[c, "freq_rank"]
+
+        if mr <= 2 and r <= 2:
+            labels[c] = "Champions"
+        elif mr <= 2:
+            labels[c] = "Big Spenders"
+        elif fr <= 2 and r <= 2:
+            labels[c] = "Frequent Buyers"
+        elif fr <= 2:
+            labels[c] = "Loyal"
+        elif r <= 2 and mr <= 3:
+            labels[c] = "Promising"
+        elif r >= n_clusters - 1:
+            labels[c] = "Dormant"
+        elif fr >= n_clusters - 1 and mr >= n_clusters - 1:
+            labels[c] = "At Risk"
+        else:
+            p = profiles.loc[c]
+            labels[c] = f"Regular ({int(p['recency_days'])}d, {p['frequency']:.1f}x, ${p['monetary']:.0f})"
+    return labels
+
+
+def _label_behavioral_clusters(profiles: pd.DataFrame) -> dict:
+    key_dims = ["total_revenue", "purchase_frequency", "n_products"]
+    present = [d for d in key_dims if d in profiles.columns]
+    if not present:
+        return {c: f"Segment {c}" for c in profiles.index}
+
+    n_clusters = len(profiles)
+    ranked = pd.DataFrame({d: profiles[d].rank(ascending=False) for d in present})
+    has_weekend = "weekend_ratio" in profiles.columns
+    labels = {}
+
+    for c in profiles.index:
+        rev = ranked.loc[c, "total_revenue"]
+        freq = ranked.loc[c, "purchase_frequency"]
+        prod = ranked.loc[c, "n_products"]
+
+        if rev <= 2 and freq <= 2:
+            labels[c] = "High Value"
+        elif has_weekend and profiles.loc[c, "weekend_ratio"] > 0.5:
+            labels[c] = "Weekend Shoppers"
+        elif freq <= 2 and prod <= 2:
+            labels[c] = "Frequent Buyers"
+        elif prod <= 2:
+            labels[c] = "Variety Seekers"
+        elif freq <= 2:
+            labels[c] = "Regular Shoppers"
+        elif rev <= 2:
+            labels[c] = "Big Spenders"
+        elif freq >= n_clusters - 1 and rev >= n_clusters - 1:
+            labels[c] = "Light Buyers"
+        else:
+            p = profiles.loc[c]
+            details = ", ".join(f"{d}={p[d]:.1f}" for d in present[:2])
+            labels[c] = f"Mid-Tier ({details})"
+    return labels
+
+
 def compute_cluster_quality_metrics(
     features: np.ndarray,
     labels: np.ndarray,
@@ -493,74 +563,19 @@ def rfm_segmentation(
         ]
         df["segment"] = np.select(conditions, choices, default="Other")
 
-    elif method == "kmeans":
-        # K-means clustering on RFM
+    elif method in ("kmeans", "gmm"):
         features = ["recency_days", "frequency", "monetary"]
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(df[features])
 
-        kmeans = KMeans(n_clusters=n_segments, random_state=42, n_init=10)
-        df["cluster"] = kmeans.fit_predict(X_scaled)
+        if method == "kmeans":
+            model = KMeans(n_clusters=n_segments, random_state=42, n_init=10)
+        else:
+            model = GaussianMixture(n_components=n_segments, random_state=42, n_init=10)
+        df["cluster"] = model.fit_predict(X_scaled)
 
-        # Label clusters by characteristics
-        cluster_labels = {}
-        for c in range(n_segments):
-            cluster_data = df[df["cluster"] == c]
-            avg_rec = cluster_data["recency_days"].mean()
-            avg_freq = cluster_data["frequency"].mean()
-            avg_mon = cluster_data["monetary"].mean()
-
-            if avg_rec < df["recency_days"].quantile(0.25) and avg_mon > df["monetary"].quantile(
-                0.75
-            ):
-                label = "High Value"
-            elif avg_rec < df["recency_days"].quantile(0.5) and avg_freq > df["frequency"].quantile(
-                0.5
-            ):
-                label = "Active"
-            elif avg_rec > df["recency_days"].quantile(0.75):
-                label = "Churned/At Risk"
-            elif avg_freq == 1:
-                label = "One-time Buyers"
-            else:
-                label = f"Cluster {c}"
-            cluster_labels[c] = label
-
-        df["segment"] = df["cluster"].map(cluster_labels)
-
-    elif method == "gmm":
-        # Gaussian Mixture Model for probabilistic segmentation
-        features = ["recency_days", "frequency", "monetary"]
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(df[features])
-
-        gmm = GaussianMixture(n_components=n_segments, random_state=42, n_init=10)
-        df["cluster"] = gmm.fit_predict(X_scaled)
-
-        # Label clusters
-        cluster_labels = {}
-        for c in range(n_segments):
-            cluster_data = df[df["cluster"] == c]
-            avg_rec = cluster_data["recency_days"].mean()
-            avg_freq = cluster_data["frequency"].mean()
-            avg_mon = cluster_data["monetary"].mean()
-
-            if avg_rec < df["recency_days"].quantile(0.25) and avg_mon > df["monetary"].quantile(
-                0.75
-            ):
-                label = "High Value"
-            elif avg_rec < df["recency_days"].quantile(0.5) and avg_freq > df["frequency"].quantile(
-                0.5
-            ):
-                label = "Active"
-            elif avg_rec > df["recency_days"].quantile(0.75):
-                label = "Churned/At Risk"
-            elif avg_freq == 1:
-                label = "One-time Buyers"
-            else:
-                label = f"Segment {c}"
-            cluster_labels[c] = label
-
+        cluster_profiles = df.groupby("cluster")[features].mean()
+        cluster_labels = _label_rfm_clusters(cluster_profiles)
         df["segment"] = df["cluster"].map(cluster_labels)
 
     return df
@@ -667,30 +682,16 @@ def behavioral_segmentation(
 
     # Label clusters
     cluster_profiles = behavioral.groupby("cluster")[feature_cols].mean()
-    labels = {}
+    labels = _label_behavioral_clusters(cluster_profiles)
     for c in behavioral["cluster"].unique():
         if c == -1:
             labels[c] = "Outliers"
-            continue
-        profile = cluster_profiles.loc[c]
-        if profile["total_revenue"] > cluster_profiles["total_revenue"].quantile(0.75):
-            labels[c] = "High Value"
-        elif profile["purchase_frequency"] > cluster_profiles["purchase_frequency"].quantile(0.75):
-            labels[c] = "Frequent Buyers"
-        elif profile["avg_days_between"] < cluster_profiles["avg_days_between"].quantile(0.25):
-            labels[c] = "Regular Shoppers"
-        elif profile["n_products"] > cluster_profiles["n_products"].quantile(0.75):
-            labels[c] = "Variety Seekers"
-        elif profile["weekend_ratio"] > 0.5:
-            labels[c] = "Weekend Shoppers"
-        else:
-            labels[c] = f"Segment {c}"
 
     # Drop clusters below MIN_CLUSTER_SIZE
     cluster_sizes = behavioral["cluster"].value_counts()
     small_clusters = cluster_sizes[cluster_sizes < MIN_CLUSTER_SIZE].index
     valid_clusters = set(behavioral["cluster"].unique()) - set(small_clusters)
-    if small_clusters.any() and len(valid_clusters) > 0:
+    if not small_clusters.empty and len(valid_clusters) > 0:
         for sc in small_clusters:
             if sc == -1:
                 continue

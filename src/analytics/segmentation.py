@@ -10,6 +10,93 @@ from sklearn.preprocessing import StandardScaler
 
 MIN_CLUSTER_SIZE = 5
 
+_RFM_ARCHETYPES = [
+    "Champions", "Loyal", "Big Spenders", "Frequent Buyers",
+    "Promising", "Regular", "At Risk", "Dormant",
+]
+
+_BEHAVIORAL_ARCHETYPES = [
+    "High Value", "Frequent Buyers", "Regular Shoppers",
+    "Variety Seekers", "Weekend Shoppers", "Big Spenders",
+    "At Risk", "Light Buyers",
+]
+
+
+def _label_rfm_clusters(profiles: pd.DataFrame) -> dict:
+    """Label RFM clusters by their relative rank across dimensions.
+
+    Every cluster gets a meaningful name — no 'Cluster N' fallback.
+    Uses the _RFM_ARCHETYPES pool, with descriptive fallbacks for >8 clusters.
+    """
+    n_clusters = len(profiles)
+    ranked = pd.DataFrame({
+        "rec_rank": profiles["recency_days"].rank(),
+        "freq_rank": profiles["frequency"].rank(ascending=False),
+        "mon_rank": profiles["monetary"].rank(ascending=False),
+    })
+    labels = {}
+    for c in profiles.index:
+        r = ranked.loc[c, "rec_rank"]
+        mr = ranked.loc[c, "mon_rank"]
+        fr = ranked.loc[c, "freq_rank"]
+
+        if mr <= 2 and r <= 2:
+            labels[c] = "Champions"
+        elif mr <= 2:
+            labels[c] = "Big Spenders"
+        elif fr <= 2 and r <= 2:
+            labels[c] = "Frequent Buyers"
+        elif fr <= 2:
+            labels[c] = "Loyal"
+        elif r <= 2 and mr <= 3:
+            labels[c] = "Promising"
+        elif r >= n_clusters - 1:
+            labels[c] = "Dormant"
+        elif fr >= n_clusters - 1 and mr >= n_clusters - 1:
+            labels[c] = "At Risk"
+        else:
+            p = profiles.loc[c]
+            labels[c] = f"Regular ({int(p['recency_days'])}d, {p['frequency']:.1f}x, ${p['monetary']:.0f})"
+    return labels
+
+
+def _label_behavioral_clusters(profiles: pd.DataFrame) -> dict:
+    """Label behavioral clusters by relative rank across key dimensions."""
+    key_dims = ["total_revenue", "purchase_frequency", "n_products"]
+    present = [d for d in key_dims if d in profiles.columns]
+    if not present:
+        return {c: f"Segment {c}" for c in profiles.index}
+
+    n_clusters = len(profiles)
+    ranked = pd.DataFrame({d: profiles[d].rank(ascending=False) for d in present})
+    has_weekend = "weekend_ratio" in profiles.columns
+    labels = {}
+
+    for c in profiles.index:
+        rev = ranked.loc[c, "total_revenue"]
+        freq = ranked.loc[c, "purchase_frequency"]
+        prod = ranked.loc[c, "n_products"]
+
+        if rev <= 2 and freq <= 2:
+            labels[c] = "High Value"
+        elif has_weekend and profiles.loc[c, "weekend_ratio"] > 0.5:
+            labels[c] = "Weekend Shoppers"
+        elif freq <= 2 and prod <= 2:
+            labels[c] = "Frequent Buyers"
+        elif prod <= 2:
+            labels[c] = "Variety Seekers"
+        elif freq <= 2:
+            labels[c] = "Regular Shoppers"
+        elif rev <= 2:
+            labels[c] = "Big Spenders"
+        elif freq >= n_clusters - 1 and rev >= n_clusters - 1:
+            labels[c] = "Light Buyers"
+        else:
+            p = profiles.loc[c]
+            details = ", ".join(f"{d}={p[d]:.1f}" for d in present[:2])
+            labels[c] = f"Mid-Tier ({details})"
+    return labels
+
 
 def compute_cluster_quality_metrics(
     features: np.ndarray,
@@ -279,34 +366,8 @@ def rfm_segmentation(
         kmeans = KMeans(n_clusters=n_segments, random_state=42, n_init=10)
         df["cluster"] = kmeans.fit_predict(X_scaled)
 
-        # Label clusters by ranking them relative to each other
         cluster_profiles = df.groupby("cluster")[["recency_days", "frequency", "monetary"]].mean()
-
-        recency_rank = cluster_profiles["recency_days"].rank()
-        freq_rank = cluster_profiles["frequency"].rank(ascending=False)
-        mon_rank = cluster_profiles["monetary"].rank(ascending=False)
-
-        composite = recency_rank + freq_rank + mon_rank
-
-        cluster_labels = {}
-        best_idx = composite.idxmin()
-        cluster_labels[best_idx] = "High Value"
-
-        worst_idx = composite.idxmax()
-        cluster_labels[worst_idx] = "Churned/At Risk"
-
-        for c in range(n_segments):
-            if c in cluster_labels:
-                continue
-            if mon_rank[c] == mon_rank.min():
-                cluster_labels[c] = "Big Spenders"
-            elif freq_rank[c] == freq_rank.min():
-                cluster_labels[c] = "Frequent Buyers"
-            elif recency_rank[c] == recency_rank.min():
-                cluster_labels[c] = "Recent Customers"
-            else:
-                cluster_labels[c] = f"Segment {c}"
-
+        cluster_labels = _label_rfm_clusters(cluster_profiles)
         df["segment"] = df["cluster"].map(cluster_labels)
 
     return df
@@ -389,36 +450,8 @@ def behavioral_segmentation(
 
     # Label clusters
     cluster_profiles = behavioral.groupby("cluster")[feature_cols].mean()
+    labels = _label_behavioral_clusters(cluster_profiles)
 
-    rev_rank = cluster_profiles["total_revenue"].rank(ascending=False)
-    freq_rank = cluster_profiles["purchase_frequency"].rank(ascending=False)
-    days_rank = cluster_profiles["avg_days_between"].rank()
-    prod_rank = cluster_profiles["n_products"].rank(ascending=False)
-    weekend_ratio = cluster_profiles["weekend_ratio"]
-
-    composite = rev_rank + freq_rank + prod_rank - days_rank
-
-    labels = {}
-    best = composite.idxmin()
-    labels[best] = "High Value"
-
-    for c in range(n_clusters):
-        if c in labels:
-            continue
-        if rev_rank[c] == rev_rank.min():
-            labels[c] = "Top Revenue"
-        elif freq_rank[c] == freq_rank.min():
-            labels[c] = "Frequent Buyers"
-        elif prod_rank[c] == prod_rank.min():
-            labels[c] = "Variety Seekers"
-        elif weekend_ratio[c] > 0.5:
-            labels[c] = "Weekend Shoppers"
-        elif days_rank[c] == days_rank.min():
-            labels[c] = "Regular Shoppers"
-        else:
-            labels[c] = f"Segment {c}"
-
-    # Drop clusters that fell below MIN_CLUSTER_SIZE
     cluster_sizes = behavioral["cluster"].value_counts()
     small_clusters = cluster_sizes[cluster_sizes < MIN_CLUSTER_SIZE].index
     if not small_clusters.empty and len(small_clusters) < n_clusters:

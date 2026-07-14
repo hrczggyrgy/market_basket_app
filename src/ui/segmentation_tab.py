@@ -16,6 +16,60 @@ from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
 
 
+def _normalize_metrics(
+    df: pd.DataFrame, method: str = "index", invert_recency: bool = True
+) -> pd.DataFrame:
+    """Normalize segment metrics to indexed-to-average or 0-1 scale.
+
+    Args:
+        df: DataFrame with segments as rows, metrics as columns (first col = segment names).
+        method: 'index' (100 = average) or 'minmax' (0-1).
+        invert_recency: Convert recency columns to freshness so higher = better.
+
+    Returns:
+        Normalized DataFrame with same structure.
+    """
+    result = df.copy()
+    id_col = result.columns[0]
+    value_cols = [c for c in result.columns if c != id_col]
+
+    # Identify recency-like columns
+    recency_keywords = ["recency", "recency_days", "days_between", "interval"]
+
+    for col in value_cols:
+        col_lower = col.lower()
+        is_recency = any(kw in col_lower for kw in recency_keywords)
+
+        if method == "index":
+            avg = result[col].mean()
+            if avg == 0:
+                result[col] = 100.0
+            else:
+                result[col] = 100.0 * result[col] / avg
+                if is_recency and invert_recency:
+                    # Invert: lower recency → higher freshness index
+                    result[col] = 200.0 - result[col]
+        elif method == "minmax":
+            mn, mx = result[col].min(), result[col].max()
+            if mx == mn:
+                result[col] = 0.5
+            else:
+                result[col] = (result[col] - mn) / (mx - mn)
+                if is_recency and invert_recency:
+                    result[col] = 1.0 - result[col]
+    return result
+
+
+def _render_normalization_toggle(key: str) -> str:
+    """Render a raw/normalized toggle and return the selected mode."""
+    return st.radio(
+        "Display mode",
+        ["Raw values", "Indexed to average (100 = avg)"],
+        horizontal=True,
+        key=key,
+    )
+
+
 # Bug 1: Cached wrappers for heavy computations
 @st.cache_data
 def _cached_compute_rfm_features(transactions_df):
@@ -243,17 +297,27 @@ def _render_rfm_profiles_table(rfm_scored: pd.DataFrame):
         .sort_values("total_revenue", ascending=False)
     )
 
-    st.dataframe(
-        seg_rev.style.format(
-            {
-                "avg_recency": "{:.1f}",
-                "avg_frequency": "{:.1f}",
-                "avg_monetary": "${:,.2f}",
-                "total_revenue": "${:,.2f}",
-            }
-        ).background_gradient(cmap="RdYlGn", subset=["total_revenue"]),
-        width="stretch",
-    )
+    mode = _render_normalization_toggle("seg_tab_rfm_profiles_norm")
+    if mode == "Indexed to average (100 = avg)":
+        display_df = _normalize_metrics(seg_rev, method="index", invert_recency=True)
+        st.dataframe(
+            display_df.style.format("{:.1f}").background_gradient(
+                cmap="RdYlGn", axis=0, subset=display_df.columns[1:]
+            ),
+            width="stretch",
+        )
+    else:
+        st.dataframe(
+            seg_rev.style.format(
+                {
+                    "avg_recency": "{:.1f}",
+                    "avg_frequency": "{:.1f}",
+                    "avg_monetary": "${:,.2f}",
+                    "total_revenue": "${:,.2f}",
+                }
+            ).background_gradient(cmap="RdYlGn", subset=["total_revenue"]),
+            width="stretch",
+        )
 
 
 def _render_kmeans_segment_distribution(rfm_clustered: pd.DataFrame):
@@ -325,18 +389,28 @@ def _render_kmeans_revenue_analysis(rfm_clustered: pd.DataFrame):
         .reset_index()
     )
 
-    st.dataframe(
-        cluster_profiles.style.format(
-            {
-                "avg_recency": "{:.1f}",
-                "avg_frequency": "{:.1f}",
-                "avg_monetary": "${:,.2f}",
-                "total_revenue": "${:,.2f}",
-                "pct_revenue": "{:.1f}%",
-            }
-        ).background_gradient(cmap="RdYlGn", subset=["total_revenue", "pct_revenue"]),
-        width="stretch",
-    )
+    mode = _render_normalization_toggle("seg_tab_kmeans_profiles_norm")
+    if mode == "Indexed to average (100 = avg)":
+        display_df = _normalize_metrics(cluster_profiles, method="index", invert_recency=True)
+        st.dataframe(
+            display_df.style.format("{:.1f}").background_gradient(
+                cmap="RdYlGn", axis=0, subset=display_df.columns[1:]
+            ),
+            width="stretch",
+        )
+    else:
+        st.dataframe(
+            cluster_profiles.style.format(
+                {
+                    "avg_recency": "{:.1f}",
+                    "avg_frequency": "{:.1f}",
+                    "avg_monetary": "${:,.2f}",
+                    "total_revenue": "${:,.2f}",
+                    "pct_revenue": "{:.1f}%",
+                }
+            ).background_gradient(cmap="RdYlGn", subset=["total_revenue", "pct_revenue"]),
+            width="stretch",
+        )
 
 
 def _render_kmeans_2d_visualization(rfm_clustered: pd.DataFrame):
@@ -424,10 +498,19 @@ def _render_behavioral_profiles(profiles: pd.DataFrame):
     """Render behavioral segment profiles."""
     st.subheader("Behavioral Segment Profiles")
 
-    st.dataframe(
-        profiles.style.background_gradient(cmap="RdYlGn", axis=1),
-        width="stretch",
-    )
+    mode = _render_normalization_toggle("seg_tab_behav_profiles_norm")
+    if mode == "Indexed to average (100 = avg)":
+        display_df = _normalize_metrics(profiles.reset_index(), method="index")
+        display_df = display_df.set_index(profiles.index.name or "index")
+        st.dataframe(
+            display_df.style.format("{:.1f}").background_gradient(cmap="RdYlGn", axis=1),
+            width="stretch",
+        )
+    else:
+        st.dataframe(
+            profiles.style.background_gradient(cmap="RdYlGn", axis=1),
+            width="stretch",
+        )
 
 
 def _render_behavioral_radar(profiles: pd.DataFrame, key_features: list):
@@ -448,20 +531,31 @@ def _render_behavioral_radar(profiles: pd.DataFrame, key_features: list):
     if selected_features:
         radar_data = profiles.loc[selected_features]
 
+        # Normalize each feature to 0-1 across segments so the radar is readable
+        radar_norm = radar_data.copy()
+        for feat in radar_norm.index:
+            mn, mx = radar_norm.loc[feat].min(), radar_norm.loc[feat].max()
+            if mx > mn:
+                radar_norm.loc[feat] = (radar_norm.loc[feat] - mn) / (mx - mn)
+            else:
+                radar_norm.loc[feat] = 0.5
+
         fig = go.Figure()
-        for segment in radar_data.columns:
+        for segment in radar_norm.columns:
             fig.add_trace(
                 go.Scatterpolar(
-                    r=radar_data[segment].values,
-                    theta=radar_data.index,
+                    r=radar_norm[segment].values,
+                    theta=radar_norm.index,
                     fill="toself",
                     name=segment,
+                    hovertemplate="<b>%{theta}</b>: %{customdata:.2f}<extra>%{legend}</extra>",
+                    customdata=radar_data[segment].values,
                 )
             )
         fig.update_layout(
-            polar={"radialaxis": {"visible": True, "range": [0, radar_data.max().max()]}},
+            polar={"radialaxis": {"visible": True, "range": [0, 1]}},
             showlegend=True,
-            title="Segment Comparison (Normalized Metrics)",
+            title="Segment Comparison (0-1 Normalized)",
         )
         st.plotly_chart(fig, width="stretch")
 
@@ -627,18 +721,27 @@ def _render_value_profiles(value_segments: pd.DataFrame):
         .round(2)
     )
 
-    st.dataframe(
-        profiles.style.format(
-            {
-                "Avg_Recency": "{:.1f}",
-                "Avg_Frequency": "{:.1f}",
-                "Avg_Monetary": "${:,.2f}",
-                "Avg_Predicted_CLV": "${:,.2f}",
-                "Total_Revenue": "${:,.2f}",
-            }
-        ).background_gradient(cmap="RdYlGn"),
-        width="stretch",
-    )
+    mode = _render_normalization_toggle("seg_tab_value_profiles_norm")
+    if mode == "Indexed to average (100 = avg)":
+        display_df = _normalize_metrics(profiles.reset_index(), method="index", invert_recency=True)
+        display_df = display_df.set_index("value_segment")
+        st.dataframe(
+            display_df.style.format("{:.1f}").background_gradient(cmap="RdYlGn", axis=0),
+            width="stretch",
+        )
+    else:
+        st.dataframe(
+            profiles.style.format(
+                {
+                    "Avg_Recency": "{:.1f}",
+                    "Avg_Frequency": "{:.1f}",
+                    "Avg_Monetary": "${:,.2f}",
+                    "Avg_Predicted_CLV": "${:,.2f}",
+                    "Total_Revenue": "${:,.2f}",
+                }
+            ).background_gradient(cmap="RdYlGn"),
+            width="stretch",
+        )
 
 
 def _render_value_clv_accuracy(value_segments: pd.DataFrame):
