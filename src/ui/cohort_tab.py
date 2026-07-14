@@ -58,7 +58,7 @@ def render_cohort_tab(
     metric_internal = metric_map[metric]
 
     # Cohort period mapping
-    period_map = {"Weekly": "W", "Monthly": "ME", "Quarterly": "Q"}
+    period_map = {"Weekly": "W", "Monthly": "M", "Quarterly": "Q"}
     period_code = period_map[cohort_period]
 
     # Compute cohorts

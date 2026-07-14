@@ -562,7 +562,7 @@ def render_period_comparison_tab(
         period = st.selectbox(
             "Period", ["Monthly", "Weekly", "Quarterly"], index=1, key="pop_period"
         )
-        period_map = {"Monthly": "ME", "Weekly": "W", "Quarterly": "Q"}
+        period_map = {"Monthly": "M", "Weekly": "W", "Quarterly": "Q"}
 
         from src.analytics.cohort import period_over_period_comparison
 

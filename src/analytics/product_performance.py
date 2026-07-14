@@ -132,7 +132,7 @@ def abc_analysis(
 
 def xyz_analysis(
     transactions_df: pd.DataFrame,
-    period: str = "ME",  # Monthly
+    period: str = "M",  # Monthly
 ) -> pd.DataFrame:
     """XYZ analysis for demand variability."""
     df = transactions_df.copy()
@@ -170,7 +170,7 @@ def xyz_analysis(
 
 
 def product_lifecycle_stage(
-    product_metrics: pd.DataFrame, transactions_df: pd.DataFrame, period: str = "ME"
+    product_metrics: pd.DataFrame, transactions_df: pd.DataFrame, period: str = "M"
 ) -> pd.DataFrame:
     """Determine product lifecycle stage: Introduction, Growth, Maturity, Decline."""
     df = transactions_df.copy()

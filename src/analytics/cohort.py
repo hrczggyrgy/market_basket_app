@@ -167,7 +167,7 @@ def compute_cohort_sizes(
 
 
 def period_over_period_comparison(
-    transactions_df: pd.DataFrame, period: str = "ME", metrics: List[str] = None
+    transactions_df: pd.DataFrame, period: str = "M", metrics: List[str] = None
 ) -> pd.DataFrame:
     """Compare metrics period over period (PoP)."""
     if metrics is None:
