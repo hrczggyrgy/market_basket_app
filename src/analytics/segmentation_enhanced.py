@@ -6,7 +6,13 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN, AgglomerativeClustering, KMeans
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import (
+    davies_bouldin_score,
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score,
+    silhouette_score,
+)
 from sklearn.mixture import GaussianMixture
 from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.preprocessing import RobustScaler, StandardScaler
@@ -34,6 +40,322 @@ except ImportError:
     LIGHTGBM_AVAILABLE = False
 
 
+MIN_CLUSTER_SIZE = 5
+
+
+def compute_cluster_quality_metrics(
+    features: np.ndarray,
+    labels: np.ndarray,
+) -> Dict[str, float]:
+    """Compute silhouette score and Davies-Bouldin index for a clustering.
+
+    Returns empty dict when fewer than 2 clusters or evaluation fails.
+    """
+    unique = set(labels)
+    n_clusters = len(unique - {-1}) if -1 in unique else len(unique)
+    if n_clusters < 2:
+        return {}
+
+    mask = labels != -1
+    valid_count = mask.sum()
+    if valid_count < n_clusters or valid_count < MIN_CLUSTER_SIZE:
+        return {}
+
+    try:
+        sil = silhouette_score(features[mask], labels[mask])
+        db = davies_bouldin_score(features[mask], labels[mask])
+        sizes = pd.Series(labels[mask]).value_counts()
+        return {
+            "silhouette_score": round(sil, 4),
+            "davies_bouldin_score": round(db, 4),
+            "n_clusters": n_clusters,
+            "cluster_size_min": int(sizes.min()),
+            "cluster_size_max": int(sizes.max()),
+            "cluster_size_mean": round(sizes.mean(), 1),
+            "cluster_size_std": round(sizes.std(), 1),
+        }
+    except Exception:
+        return {}
+
+
+def compute_cluster_stability(
+    transactions_df: pd.DataFrame,
+    n_clusters: int = 6,
+    n_iterations: int = 10,
+    method: str = "kmeans",
+    sample_frac: float = 0.8,
+    seed: int = 42,
+) -> Dict[str, float]:
+    """Evaluate cluster stability across random seeds and subsamples.
+
+    Returns mean/std/min/max adjusted Rand index vs reference clustering.
+    """
+    from sklearn.metrics import adjusted_rand_score
+    from sklearn.utils import resample
+
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["revenue"] = df["price"] * df["quantity"]
+
+    cat_col = "category" if "category" in df.columns else "stockcode"
+
+    behavioral = (
+        df.groupby("customer_id")
+        .agg(
+            days_active=("date", lambda x: (x.max() - x.min()).days + 1),
+            purchase_frequency=("transaction_id", "nunique"),
+            avg_days_between=(
+                "date",
+                lambda x: (x.max() - x.min()).days / max(x.nunique() - 1, 1),
+            ),
+            total_revenue=("revenue", "sum"),
+            avg_order_value=("revenue", "mean"),
+            n_products=("stockcode", "nunique"),
+            n_categories=(cat_col, "nunique"),
+            avg_basket_size=("quantity", "mean"),
+            avg_price=("price", "mean"),
+            weekend_ratio=("date", lambda x: (x.dt.dayofweek >= 5).mean()),
+        )
+        .fillna(0)
+        .reset_index()
+    )
+
+    feature_cols = [c for c in behavioral.columns if c != "customer_id"]
+    if len(behavioral) < max(n_clusters * 2, 10):
+        return {}
+
+    scaler = StandardScaler()
+    X = scaler.fit_transform(behavioral[feature_cols])
+
+    ref = KMeans(n_clusters=n_clusters, random_state=seed, n_init=10).fit_predict(X)
+
+    scores = []
+    for i in range(n_iterations):
+        rs = seed + i + 1
+        subsample_idx = resample(
+            range(len(X)), replace=False, n_samples=int(len(X) * sample_frac), random_state=rs
+        )
+        X_sub = X[subsample_idx]
+        pred = KMeans(n_clusters=n_clusters, random_state=rs, n_init=10).fit_predict(X_sub)
+        ref_sub = ref[subsample_idx]
+        scores.append(adjusted_rand_score(ref_sub, pred))
+
+    scores = np.array(scores)
+    return {
+        "mean_ari": round(scores.mean(), 4),
+        "std_ari": round(scores.std(), 4),
+        "min_ari": round(scores.min(), 4),
+        "max_ari": round(scores.max(), 4),
+    }
+
+
+class CLVPrediction:
+    """Container for CLV prediction results with validation and baselines."""
+
+    def __init__(
+        self,
+        transactions_df: pd.DataFrame,
+        prediction_horizon_days: int = 90,
+    ):
+        self.prediction_horizon_days = prediction_horizon_days
+        df = transactions_df.copy()
+        df["date"] = pd.to_datetime(df["date"])
+        df["revenue"] = df["price"] * df["quantity"]
+
+        snapshot_date = df["date"].max()
+        self.cutoff_date = snapshot_date - pd.Timedelta(prediction_horizon_days, unit="D")
+
+        self.hist = df[df["date"] < self.cutoff_date].copy()
+        self.future = df[df["date"] >= self.cutoff_date].copy()
+        self.transactions_df = df
+
+    def build_features(self) -> pd.DataFrame:
+        """Build historical features and merge future actuals."""
+        cat_col = "category" if "category" in self.hist.columns else "stockcode"
+
+        features = (
+            self.hist.groupby("customer_id")
+            .agg(
+                recency=("date", lambda x: int((self.cutoff_date - x.max()).days)),
+                frequency=("transaction_id", "nunique"),
+                monetary=("revenue", "sum"),
+                avg_order=("revenue", "mean"),
+                n_products=("stockcode", "nunique"),
+                n_categories=(cat_col, "nunique"),
+                avg_items_per_order=("quantity", "mean"),
+                avg_price_paid=("price", "mean"),
+                price_std=("price", "std"),
+                first_purchase=("date", "min"),
+                last_purchase=("date", "max"),
+            )
+            .reset_index()
+        )
+
+        features["lifetime_days"] = pd.to_numeric(
+            (features["last_purchase"] - features["first_purchase"]).dt.days,
+            errors="coerce",
+        ).fillna(1)
+
+        features["recency"] = (
+            pd.to_numeric(features["recency"], errors="coerce").fillna(0).astype(int)
+        )
+
+        features["monetary_per_order"] = features["monetary"] / features["frequency"].replace(0, 1)
+        features["purchase_rate"] = (
+            features["frequency"] / features["lifetime_days"].replace(0, 1) * 30
+        )
+        features["recency_ratio"] = features["recency"] / features["lifetime_days"].replace(0, 1)
+
+        future_rev = self.future.groupby("customer_id")["revenue"].sum().reset_index()
+        future_rev.columns = ["customer_id", "future_revenue"]
+        features = features.merge(future_rev, on="customer_id", how="left").fillna(
+            {"future_revenue": 0}
+        )
+
+        self.features = features
+        return features
+
+    def baseline_predictions(self) -> pd.DataFrame:
+        """Compute simple benchmark baselines for CLV comparison."""
+        if not hasattr(self, "features"):
+            self.build_features()
+
+        f = self.features
+        baselines = pd.DataFrame({"customer_id": f["customer_id"]})
+
+        # Baseline 1: trailing 90-day revenue (same window)
+        baselines["baseline_trailing_revenue"] = f["monetary"] * (
+            self.prediction_horizon_days / f["lifetime_days"].clip(lower=1)
+        )
+
+        # Baseline 2: average daily revenue extrapolated
+        daily_rate = f["monetary"] / f["lifetime_days"].clip(lower=1)
+        baselines["baseline_extrapolated"] = daily_rate * self.prediction_horizon_days
+
+        # Baseline 3: simple heuristic (AOV * frequency_in_window)
+        baseline_freq = f["frequency"] * (
+            self.prediction_horizon_days / f["lifetime_days"].clip(lower=1)
+        )
+        baselines["baseline_aov_times_freq"] = f["avg_order"] * baseline_freq.fillna(0)
+
+        # Errors vs actual
+        actual = f.set_index("customer_id")["future_revenue"]
+        for col in [c for c in baselines.columns if c != "customer_id"]:
+            pred = baselines.set_index("customer_id")[col]
+            common = actual.index.intersection(pred.index)
+            baselines[f"{col}_mae"] = (actual[common] - pred[common]).abs().mean()
+
+        self.baselines = baselines
+        return baselines
+
+
+def predict_clv_v2(
+    transactions_df: pd.DataFrame,
+    prediction_horizon_days: int = 90,
+    model_type: str = "gradient_boosting",
+    features_to_use: Optional[List[str]] = None,
+) -> Tuple[pd.DataFrame, Dict]:
+    """Predict CLV with benchmark baselines and out-of-time validation.
+
+    Uses the CLVPrediction container internally.
+    """
+    cv = CLVPrediction(transactions_df, prediction_horizon_days)
+    features = cv.build_features()
+    baselines = cv.baseline_predictions()
+
+    # Merge baselines
+    features = features.merge(baselines, on="customer_id", how="left", suffixes=("", "_bl"))
+
+    y = features["future_revenue"]
+    X = features.drop(columns=["customer_id", "first_purchase", "last_purchase", "future_revenue"])
+    if features_to_use:
+        X = X[features_to_use]
+
+    X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    if model_type == "xgboost" and XGBOOST_AVAILABLE:
+        model = xgb.XGBRegressor(
+            n_estimators=200,
+            max_depth=5,
+            learning_rate=0.1,
+            min_child_weight=5,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            random_state=42,
+            n_jobs=-1,
+        )
+    elif model_type == "lightgbm" and LIGHTGBM_AVAILABLE:
+        model = lgb.LGBMRegressor(
+            n_estimators=200,
+            max_depth=5,
+            learning_rate=0.1,
+            min_child_samples=10,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            random_state=42,
+            n_jobs=-1,
+            verbosity=-1,
+        )
+    elif model_type == "random_forest":
+        model = RandomForestRegressor(
+            n_estimators=200,
+            max_depth=10,
+            min_samples_leaf=10,
+            random_state=42,
+            n_jobs=-1,
+        )
+    else:
+        model = GradientBoostingRegressor(
+            n_estimators=200,
+            max_depth=5,
+            learning_rate=0.1,
+            min_samples_leaf=10,
+            random_state=42,
+        )
+
+    model.fit(X_train, y_train)
+    y_pred_test = model.predict(X_test)
+
+    metrics = {
+        "test_mae": mean_absolute_error(y_test, y_pred_test),
+        "test_rmse": np.sqrt(mean_squared_error(y_test, y_pred_test)),
+        "test_r2": r2_score(y_test, y_pred_test),
+    }
+
+    # Add baseline metrics for comparison
+    if hasattr(cv, "baselines"):
+        bl_cols = [c for c in cv.baselines.columns if c.endswith("_mae")]
+        for col in bl_cols:
+            metrics[f"baseline_{col}"] = cv.baselines[col].iloc[0]
+
+    # Feature importance
+    if hasattr(model, "feature_importances_"):
+        fi = pd.DataFrame({"feature": X.columns, "importance": model.feature_importances_})
+        fi = fi.sort_values("importance", ascending=False)
+    else:
+        fi = pd.DataFrame()
+
+    # Refit on all data
+    model.fit(X, y)
+    features["predicted_clv"] = np.clip(model.predict(X), a_min=0, a_max=None)
+
+    features["clv_segment"] = pd.qcut(
+        features["predicted_clv"],
+        q=4,
+        labels=["Bronze", "Silver", "Gold", "Platinum"],
+        duplicates="drop",
+    )
+
+    result_df = features[["customer_id", "predicted_clv", "clv_segment"]].copy()
+    result_df = result_df.merge(
+        features[["customer_id", "recency", "frequency", "monetary"]], on="customer_id"
+    )
+
+    return result_df, {"metrics": metrics, "feature_importance": fi, "model": model}
+
+
 def compute_rfm_features(
     transactions_df: pd.DataFrame, snapshot_date: Optional[pd.Timestamp] = None
 ) -> pd.DataFrame:
@@ -43,7 +365,7 @@ def compute_rfm_features(
     df["revenue"] = df["price"] * df["quantity"]
 
     if snapshot_date is None:
-        snapshot_date = df["date"].max() + pd.Timedelta(1, unit='D')
+        snapshot_date = df["date"].max() + pd.Timedelta(1, unit="D")
 
     cat_col_rfm = "category" if "category" in df.columns else "stockcode"
     rfm = (
@@ -245,79 +567,109 @@ def rfm_segmentation(
 
 
 def behavioral_segmentation(
-    transactions_df: pd.DataFrame, n_clusters: int = 6, method: str = "kmeans"
+    transactions_df: pd.DataFrame,
+    n_clusters: int = 6,
+    method: str = "kmeans",
+    return_metrics: bool = False,
 ) -> pd.DataFrame:
-    """Behavioral segmentation based on purchase patterns."""
+    """Behavioral segmentation based on purchase patterns.
+
+    Args:
+        transactions_df: Transaction data
+        n_clusters: Number of clusters
+        method: Clustering algorithm ('kmeans', 'agglomerative', 'gmm', 'dbscan')
+        return_metrics: Also return cluster quality metrics dict
+
+    Returns:
+        DataFrame with cluster assignments; if return_metrics is True,
+        returns (DataFrame, metrics_dict).
+    """
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
 
-    # Build behavioral features
     cat_col_behav = "category" if "category" in df.columns else "stockcode"
 
     behavioral = (
         df.groupby("customer_id")
         .agg(
-            # Temporal
             days_active=("date", lambda x: (x.max() - x.min()).days + 1),
             purchase_frequency=("transaction_id", "nunique"),
             avg_days_between=(
                 "date",
                 lambda x: (x.max() - x.min()).days / max(x.nunique() - 1, 1),
             ),
-            # Monetary
             total_revenue=("revenue", "sum"),
             avg_order_value=("revenue", "mean"),
             revenue_std=("revenue", "std"),
-            # Product
             n_products=("stockcode", "nunique"),
             n_categories=(cat_col_behav, "nunique"),
-            # Basket
             avg_basket_size=("quantity", "mean"),
             max_basket_size=("quantity", "max"),
-            # Price
             avg_price=("price", "mean"),
             price_cv=("price", lambda x: x.std() / x.mean() if x.mean() > 0 else 0),
-            # Temporal patterns
             weekend_ratio=("date", lambda x: (x.dt.dayofweek >= 5).mean()),
         )
         .reset_index()
     )
 
-    # Fill NaN
     behavioral = behavioral.fillna(0)
 
-    # Features for clustering
     feature_cols = [c for c in behavioral.columns if c != "customer_id"]
+    n_samples = len(behavioral)
 
-    # Use RobustScaler to handle outliers
+    # Minimum sample-size guard
+    min_required = max(n_clusters * MIN_CLUSTER_SIZE, 10)
+    if n_samples < min_required:
+        behavioral["cluster"] = 0
+        behavioral["segment"] = "Other"
+        behavioral["cluster_distance"] = 0.0
+        if return_metrics:
+            return behavioral, {}
+        return behavioral
+
     scaler = RobustScaler()
     X_scaled = scaler.fit_transform(behavioral[feature_cols])
 
     if method == "kmeans":
         kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
         behavioral["cluster"] = kmeans.fit_predict(X_scaled)
+        # Distance-to-centroid confidence (KMeans only)
+        distances = kmeans.transform(X_scaled)
+        behavioral["cluster_distance"] = distances.min(axis=1)
+        max_dist = distances.max(axis=1)
+        behavioral["cluster_confidence"] = np.where(
+            max_dist > 0, 1 - behavioral["cluster_distance"] / max_dist, 1.0
+        )
     elif method == "agglomerative":
         clustering = AgglomerativeClustering(n_clusters=n_clusters)
         behavioral["cluster"] = clustering.fit_predict(X_scaled)
+        behavioral["cluster_distance"] = 0.0
     elif method == "gmm":
         gmm = GaussianMixture(n_components=n_clusters, random_state=42, n_init=10)
         behavioral["cluster"] = gmm.fit_predict(X_scaled)
+        # GMM confidence = max responsibility
+        behavioral["cluster_distance"] = 1.0 - gmm.predict_proba(X_scaled).max(axis=1)
     elif method == "dbscan":
-        # DBSCAN for density-based clustering
         clustering = DBSCAN(eps=1.5, min_samples=5)
         behavioral["cluster"] = clustering.fit_predict(X_scaled)
-        n_clusters = len(set(behavioral["cluster"])) - (
+        behavioral["cluster_distance"] = np.where(behavioral["cluster"] == -1, 1.0, 0.0)
+        actual_n = len(set(behavioral["cluster"])) - (
             1 if -1 in behavioral["cluster"].values else 0
         )
+        if actual_n > 0:
+            n_clusters = actual_n
     else:
         raise ValueError(f"Unknown method: {method}")
+
+    # Cluster quality metrics
+    quality_metrics = compute_cluster_quality_metrics(X_scaled, behavioral["cluster"].values)
 
     # Label clusters
     cluster_profiles = behavioral.groupby("cluster")[feature_cols].mean()
     labels = {}
     for c in behavioral["cluster"].unique():
-        if c == -1:  # DBSCAN noise
+        if c == -1:
             labels[c] = "Outliers"
             continue
         profile = cluster_profiles.loc[c]
@@ -334,8 +686,21 @@ def behavioral_segmentation(
         else:
             labels[c] = f"Segment {c}"
 
-    behavioral["segment"] = behavioral["cluster"].map(labels)
+    # Drop clusters below MIN_CLUSTER_SIZE
+    cluster_sizes = behavioral["cluster"].value_counts()
+    small_clusters = cluster_sizes[cluster_sizes < MIN_CLUSTER_SIZE].index
+    valid_clusters = set(behavioral["cluster"].unique()) - set(small_clusters)
+    if small_clusters.any() and len(valid_clusters) > 0:
+        for sc in small_clusters:
+            if sc == -1:
+                continue
+            behavioral.loc[behavioral["cluster"] == sc, "cluster"] = -1
+            labels.pop(sc, None)
 
+    behavioral["segment"] = behavioral["cluster"].map(labels).fillna("Outliers")
+
+    if return_metrics:
+        return behavioral, quality_metrics
     return behavioral
 
 
@@ -356,7 +721,7 @@ def predict_clv(
     df["revenue"] = df["price"] * df["quantity"]
 
     snapshot_date = df["date"].max()
-    cutoff_date = snapshot_date - pd.Timedelta(prediction_horizon_days, unit='D')
+    cutoff_date = snapshot_date - pd.Timedelta(prediction_horizon_days, unit="D")
 
     # Historical (before cutoff) and future (after cutoff)
     hist = df[df["date"] < cutoff_date]
@@ -551,7 +916,7 @@ def survival_analysis(
     df["days_to_next"] = (df["next_purchase"] - df[time_col]).dt.days
 
     # For last purchase, censor at snapshot date
-    snapshot = df[time_col].max() + pd.Timedelta(1, unit='D')
+    snapshot = df[time_col].max() + pd.Timedelta(1, unit="D")
     df["days_to_next"] = df["days_to_next"].fillna((snapshot - df[time_col]).dt.days)
 
     # Event: 1 if made another purchase, 0 if censored
@@ -684,7 +1049,7 @@ def value_based_segmentation(
     df["revenue"] = df["price"] * df["quantity"]
 
     snapshot_date = df["date"].max()
-    cutoff_date = snapshot_date - pd.Timedelta(prediction_horizon_days, unit='D')
+    cutoff_date = snapshot_date - pd.Timedelta(prediction_horizon_days, unit="D")
 
     hist = df[df["date"] < cutoff_date]
     future = df[df["date"] >= cutoff_date]

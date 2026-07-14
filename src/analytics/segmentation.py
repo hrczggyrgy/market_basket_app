@@ -1,11 +1,133 @@
 """Customer Segmentation Analytics - RFM, Behavioral, Value-based."""
 
-from typing import Optional
+from typing import Dict, Optional
 
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
+from sklearn.metrics import davies_bouldin_score, silhouette_score
 from sklearn.preprocessing import StandardScaler
+
+MIN_CLUSTER_SIZE = 5
+
+
+def compute_cluster_quality_metrics(
+    features: np.ndarray,
+    labels: np.ndarray,
+) -> Dict[str, float]:
+    """Compute silhouette score and Davies-Bouldin index for a clustering.
+
+    Args:
+        features: Scaled feature matrix (n_samples x n_features)
+        labels: Cluster assignments (n_samples,)
+
+    Returns:
+        Dict with 'silhouette_score', 'davies_bouldin_score', 'n_clusters',
+        and 'cluster_size_min' entries (empty dict if fewer than 2 clusters
+        or evaluation fails).
+    """
+    unique = set(labels)
+    n_clusters = len(unique - {-1}) if -1 in unique else len(unique)
+    if n_clusters < 2:
+        return {}
+
+    mask = labels != -1
+    valid_count = mask.sum()
+    if valid_count < n_clusters or valid_count < MIN_CLUSTER_SIZE:
+        return {}
+
+    try:
+        sil = silhouette_score(features[mask], labels[mask])
+        db = davies_bouldin_score(features[mask], labels[mask])
+        sizes = pd.Series(labels[mask]).value_counts()
+        return {
+            "silhouette_score": round(sil, 4),
+            "davies_bouldin_score": round(db, 4),
+            "n_clusters": n_clusters,
+            "cluster_size_min": int(sizes.min()),
+            "cluster_size_max": int(sizes.max()),
+            "cluster_size_mean": round(sizes.mean(), 1),
+            "cluster_size_std": round(sizes.std(), 1),
+        }
+    except Exception:
+        return {}
+
+
+def compute_cluster_stability(
+    transactions_df: pd.DataFrame,
+    n_clusters: int = 6,
+    n_iterations: int = 10,
+    method: str = "kmeans",
+    sample_frac: float = 0.8,
+    seed: int = 42,
+) -> Dict[str, float]:
+    """Evaluate cluster stability across random seeds and subsamples.
+
+    Runs the clustering multiple times and measures pairwise agreement
+    using the adjusted Rand index against a reference clustering.
+
+    Returns:
+        Dict with 'mean_ari', 'std_ari', 'min_ari', 'max_ari' (empty if
+        fewer than 2 clusters).
+    """
+    from sklearn.metrics import adjusted_rand_score
+    from sklearn.utils import resample
+
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["revenue"] = df["price"] * df["quantity"]
+
+    cat_col = "category" if "category" in df.columns else "stockcode"
+
+    behavioral = (
+        df.groupby("customer_id")
+        .agg(
+            days_active=("date", lambda x: (x.max() - x.min()).days + 1),
+            purchase_frequency=("transaction_id", "nunique"),
+            avg_days_between=(
+                "date",
+                lambda x: (x.max() - x.min()).days / max(x.nunique() - 1, 1),
+            ),
+            total_revenue=("revenue", "sum"),
+            avg_order_value=("revenue", "mean"),
+            n_products=("stockcode", "nunique"),
+            n_categories=(cat_col, "nunique"),
+            avg_basket_size=("quantity", "mean"),
+            avg_price=("price", "mean"),
+            weekend_ratio=("date", lambda x: (x.dt.dayofweek >= 5).mean()),
+        )
+        .fillna(0)
+        .reset_index()
+    )
+
+    feature_cols = [c for c in behavioral.columns if c != "customer_id"]
+    if len(behavioral) < max(n_clusters * 2, 10):
+        return {}
+
+    scaler = StandardScaler()
+    X = scaler.fit_transform(behavioral[feature_cols])
+
+    # Reference clustering
+    ref = KMeans(n_clusters=n_clusters, random_state=seed, n_init=10).fit_predict(X)
+
+    scores = []
+    for i in range(n_iterations):
+        rs = seed + i + 1
+        subsample_idx = resample(
+            range(len(X)), replace=False, n_samples=int(len(X) * sample_frac), random_state=rs
+        )
+        X_sub = X[subsample_idx]
+        pred = KMeans(n_clusters=n_clusters, random_state=rs, n_init=10).fit_predict(X_sub)
+        ref_sub = ref[subsample_idx]
+        scores.append(adjusted_rand_score(ref_sub, pred))
+
+    scores = np.array(scores)
+    return {
+        "mean_ari": round(scores.mean(), 4),
+        "std_ari": round(scores.std(), 4),
+        "min_ari": round(scores.min(), 4),
+        "max_ari": round(scores.max(), 4),
+    }
 
 
 def compute_rfm_features(
@@ -17,7 +139,7 @@ def compute_rfm_features(
     df["revenue"] = df["price"] * df["quantity"]
 
     if snapshot_date is None:
-        snapshot_date = df["date"].max() + pd.Timedelta(1, unit='D')
+        snapshot_date = df["date"].max() + pd.Timedelta(1, unit="D")
 
     cat_col = "category" if "category" in df.columns else "stockcode"
 
@@ -190,60 +312,82 @@ def rfm_segmentation(
     return df
 
 
-def behavioral_segmentation(transactions_df: pd.DataFrame, n_clusters: int = 6) -> pd.DataFrame:
-    """Behavioral segmentation based on purchase patterns."""
+def behavioral_segmentation(
+    transactions_df: pd.DataFrame, n_clusters: int = 6, return_metrics: bool = False
+) -> pd.DataFrame:
+    """Behavioral segmentation based on purchase patterns.
+
+    Args:
+        transactions_df: Transaction data
+        n_clusters: Number of clusters
+        return_metrics: Also return cluster quality metrics dict
+
+    Returns:
+        DataFrame with cluster assignments; if return_metrics is True,
+        returns (DataFrame, metrics_dict).
+    """
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
 
-    # Build behavioral features
     cat_col_behav = "category" if "category" in df.columns else "stockcode"
 
     behavioral = (
         df.groupby("customer_id")
         .agg(
-            # Temporal
             days_active=("date", lambda x: (x.max() - x.min()).days + 1),
             purchase_frequency=("transaction_id", "nunique"),
             avg_days_between=(
                 "date",
                 lambda x: (x.max() - x.min()).days / max(x.nunique() - 1, 1),
             ),
-            # Monetary
             total_revenue=("revenue", "sum"),
             avg_order_value=("revenue", "mean"),
             revenue_std=("revenue", "std"),
-            # Product
             n_products=("stockcode", "nunique"),
             n_categories=(cat_col_behav, "nunique"),
-            # Basket
             avg_basket_size=("quantity", "mean"),
             max_basket_size=("quantity", "max"),
-            # Price
             avg_price=("price", "mean"),
             price_cv=("price", lambda x: x.std() / x.mean() if x.mean() > 0 else 0),
-            # Temporal patterns
             weekend_ratio=("date", lambda x: (x.dt.dayofweek >= 5).mean()),
         )
         .reset_index()
     )
 
-    # Fill NaN
     behavioral = behavioral.fillna(0)
 
-    # Features for clustering
     feature_cols = [c for c in behavioral.columns if c != "customer_id"]
-    if len(behavioral) < n_clusters:
+    n_samples = len(behavioral)
+
+    # Minimum sample-size guard
+    min_required = max(n_clusters * MIN_CLUSTER_SIZE, 10)
+    if n_samples < min_required:
         behavioral["cluster"] = 0
         behavioral["segment"] = "Other"
+        behavioral["cluster_distance"] = 0.0
+        if return_metrics:
+            return behavioral, {}
         return behavioral
+
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(behavioral[feature_cols])
 
     kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
     behavioral["cluster"] = kmeans.fit_predict(X_scaled)
 
-    # Label clusters by ranking them relative to each other
+    # Distance-to-centroid confidence
+    distances = kmeans.transform(X_scaled)
+    behavioral["cluster_distance"] = distances.min(axis=1)
+    max_dist = distances.max(axis=1)
+    behavioral["cluster_confidence"] = np.where(
+        max_dist > 0, 1 - behavioral["cluster_distance"] / max_dist, 1.0
+    )
+
+    # Cluster quality metrics
+    quality_metrics = compute_cluster_quality_metrics(X_scaled, behavioral["cluster"].values)
+
+    # Label clusters
     cluster_profiles = behavioral.groupby("cluster")[feature_cols].mean()
 
     rev_rank = cluster_profiles["total_revenue"].rank(ascending=False)
@@ -274,8 +418,18 @@ def behavioral_segmentation(transactions_df: pd.DataFrame, n_clusters: int = 6) 
         else:
             labels[c] = f"Segment {c}"
 
-    behavioral["segment"] = behavioral["cluster"].map(labels)
+    # Drop clusters that fell below MIN_CLUSTER_SIZE
+    cluster_sizes = behavioral["cluster"].value_counts()
+    small_clusters = cluster_sizes[cluster_sizes < MIN_CLUSTER_SIZE].index
+    if not small_clusters.empty and len(small_clusters) < n_clusters:
+        for sc in small_clusters:
+            behavioral.loc[behavioral["cluster"] == sc, "cluster"] = -1
+            labels.pop(sc, None)
 
+    behavioral["segment"] = behavioral["cluster"].map(labels).fillna("Outliers")
+
+    if return_metrics:
+        return behavioral, quality_metrics
     return behavioral
 
 
@@ -288,7 +442,7 @@ def value_based_segmentation(
     df["revenue"] = df["price"] * df["quantity"]
 
     snapshot_date = df["date"].max()
-    cutoff_date = snapshot_date - pd.Timedelta(prediction_horizon_days, unit='D')
+    cutoff_date = snapshot_date - pd.Timedelta(prediction_horizon_days, unit="D")
 
     # Historical (before cutoff) and future (after cutoff)
     hist = df[df["date"] < cutoff_date]
