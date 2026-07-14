@@ -1,6 +1,8 @@
 # Market Basket Analysis — Customer Decision Intelligence
 
 > **A full-featured Streamlit application for market basket analysis, customer choice modeling, and Customer Decision Tree (CDT) construction.**
+>
+> **Live app:** [marketbasketapp.streamlit.app](https://marketbasketapp.streamlit.app/)
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.30+-red.svg)
