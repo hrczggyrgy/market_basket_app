@@ -270,8 +270,12 @@ def _build_similarity_matrix_vectorized(
         bc = a_only * b_only
         numerator = ad - bc
         denominator = ad + bc
-        sim = np.divide(numerator, denominator, out=np.zeros_like(numerator, dtype=float),
-                        where=denominator != 0)
+        sim = np.divide(
+            numerator,
+            denominator,
+            out=np.zeros_like(numerator, dtype=float),
+            where=denominator != 0,
+        )
     else:
         # Jaccard: intersection / union
         union = both + a_only + b_only
@@ -308,7 +312,12 @@ def build_similarity_matrix(
         Diagonal = 1.0. Values in [-1, 1] for Yule's Q, [0, 1] for Jaccard.
     """
     return _build_similarity_matrix_vectorized(
-        transactions_df, customer_col, product_col, method, min_cooccurrence, min_product_support,
+        transactions_df,
+        customer_col,
+        product_col,
+        method,
+        min_cooccurrence,
+        min_product_support,
     )
 
 

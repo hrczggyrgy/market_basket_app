@@ -230,7 +230,11 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
         values = top_switches["switch_count"].tolist()
 
         labels = [
-            (product_lookup.get(p, p)[:20] + "..." if len(product_lookup.get(p, p)) > 20 else product_lookup.get(p, p))
+            (
+                product_lookup.get(p, p)[:20] + "..."
+                if len(product_lookup.get(p, p)) > 20
+                else product_lookup.get(p, p)
+            )
             if product_lookup
             else (p[:20] + "..." if len(p) > 20 else p)
             for p in all_products

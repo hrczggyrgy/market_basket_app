@@ -123,7 +123,7 @@ def get_customer_loyalty_metrics(
 
         # Brand concentration (HHI) — how concentrated purchases are across products
         shares = product_counts.values / n_purchases
-        concentration_hhi = (shares ** 2).sum()
+        concentration_hhi = (shares**2).sum()
 
         # Switching count
         switches = sum(1 for i in range(n_purchases - 1) if products[i] != products[i + 1])
@@ -156,9 +156,13 @@ def get_customer_loyalty_metrics(
     freq_quantiles = loyalty_df["purchase_frequency_per_month"].quantile([0.33, 0.66])
 
     def assign_segment(row):
-        if row["repeat_rate"] >= repeat_quantiles.get(0.66, 0.5) and row["purchase_frequency_per_month"] >= freq_quantiles.get(0.66, 1):
+        if row["repeat_rate"] >= repeat_quantiles.get(0.66, 0.5) and row[
+            "purchase_frequency_per_month"
+        ] >= freq_quantiles.get(0.66, 1):
             return "Loyal"
-        elif row["repeat_rate"] >= repeat_quantiles.get(0.33, 0.25) or row["purchase_frequency_per_month"] >= freq_quantiles.get(0.33, 0.5):
+        elif row["repeat_rate"] >= repeat_quantiles.get(0.33, 0.25) or row[
+            "purchase_frequency_per_month"
+        ] >= freq_quantiles.get(0.33, 0.5):
             return "Regular"
         elif row["repeat_rate"] == 0 and row["transaction_count"] == 1:
             return "New"

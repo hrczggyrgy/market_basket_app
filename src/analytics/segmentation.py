@@ -307,7 +307,8 @@ def value_based_segmentation(
     # Survival probability: customers with long recency relative to lifetime likely churned
     survival_prob = np.clip(
         1 - features["recency"] / (features["lifetime_days"].clip(lower=1) + features["recency"]),
-        0, 1,
+        0,
+        1,
     )
     features["predicted_clv"] = annual_value * survival_prob * 2  # 2-year horizon
 

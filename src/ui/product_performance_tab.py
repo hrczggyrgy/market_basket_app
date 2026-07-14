@@ -599,6 +599,7 @@ def render_price_elasticity(transactions_df: pd.DataFrame, product_lookup: dict,
 
             if len(weekly) > 0:
                 import numpy as np
+
                 fig = px.scatter(
                     weekly,
                     x="avg_price",
@@ -612,8 +613,10 @@ def render_price_elasticity(transactions_df: pd.DataFrame, product_lookup: dict,
                 slope, intercept = np.polyfit(weekly["avg_price"], weekly["total_qty"], 1)
                 x_range = np.linspace(weekly["avg_price"].min(), weekly["avg_price"].max(), 2)
                 fig.add_scatter(
-                    x=x_range, y=slope * x_range + intercept,
-                    mode="lines", name=f"Trend (slope={slope:.2f})",
+                    x=x_range,
+                    y=slope * x_range + intercept,
+                    mode="lines",
+                    name=f"Trend (slope={slope:.2f})",
                     line=dict(dash="dash", color="red"),
                 )
                 st.plotly_chart(fig, width="stretch")

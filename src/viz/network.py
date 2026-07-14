@@ -356,7 +356,11 @@ def create_sankey_from_matrix(
         return _empty_figure("No strong relationships")
 
     labels = [
-        (product_lookup.get(p, p)[:20] + "..." if len(product_lookup.get(p, p)) > 20 else product_lookup.get(p, p))
+        (
+            product_lookup.get(p, p)[:20] + "..."
+            if len(product_lookup.get(p, p)) > 20
+            else product_lookup.get(p, p)
+        )
         if product_lookup
         else (p[:20] + "..." if len(p) > 20 else p)
         for p in products

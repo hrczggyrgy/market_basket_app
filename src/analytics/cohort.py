@@ -6,9 +6,7 @@ import numpy as np
 import pandas as pd
 
 
-def _prepare_cohort_df(
-    transactions_df: pd.DataFrame, cohort_period: str = "M"
-) -> pd.DataFrame:
+def _prepare_cohort_df(transactions_df: pd.DataFrame, cohort_period: str = "M") -> pd.DataFrame:
     """Prepare DataFrame with cohort and period columns for cohort analysis."""
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
@@ -179,8 +177,12 @@ def period_over_period_comparison(
         .reset_index()
     )
 
-    period_stats["avg_order_value"] = period_stats["revenue"] / period_stats["orders"].replace(0, np.nan)
-    period_stats["items_per_order"] = period_stats["total_items"] / period_stats["orders"].replace(0, np.nan)
+    period_stats["avg_order_value"] = period_stats["revenue"] / period_stats["orders"].replace(
+        0, np.nan
+    )
+    period_stats["items_per_order"] = period_stats["total_items"] / period_stats["orders"].replace(
+        0, np.nan
+    )
 
     period_stats["period"] = period_stats["period"].astype(str)
 
