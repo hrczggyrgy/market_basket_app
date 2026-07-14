@@ -100,9 +100,7 @@ def detect_switches(
                     )
 
     if not switches:
-        return pd.DataFrame(
-            columns=["from_product", "to_product", "customer_id", "days_between"]
-        )
+        return pd.DataFrame(columns=["from_product", "to_product", "customer_id", "days_between"])
 
     return pd.DataFrame(switches)
 
@@ -132,9 +130,7 @@ def build_copurchase_tables(
         Dict mapping (prod_a, prod_b) -> {both, a_only, b_only, neither}
     """
     # Build customer-product matrix (one-hot)
-    cust_product = pd.crosstab(
-        transactions_df[customer_col], transactions_df[product_col]
-    )
+    cust_product = pd.crosstab(transactions_df[customer_col], transactions_df[product_col])
     cust_product = (cust_product > 0).astype(int)
 
     products = cust_product.columns.tolist()
@@ -241,9 +237,7 @@ def build_similarity_matrix(
         Square DataFrame (products x products) with similarity scores.
         Diagonal = 1.0. Values in [-1, 1] for Yule's Q, [0, 1] for Jaccard.
     """
-    tables = build_copurchase_tables(
-        transactions_df, customer_col, product_col, min_cooccurrence
-    )
+    tables = build_copurchase_tables(transactions_df, customer_col, product_col, min_cooccurrence)
 
     products = sorted(transactions_df[product_col].unique())
     sim_matrix = pd.DataFrame(0.0, index=products, columns=products, dtype=float)
@@ -294,9 +288,7 @@ def compute_switching_matrix_from_sequences(
             )
 
     if not rows:
-        return pd.DataFrame(
-            columns=["from_product", "to_product", "switch_count", "switch_rate"]
-        )
+        return pd.DataFrame(columns=["from_product", "to_product", "switch_count", "switch_rate"])
 
     df = pd.DataFrame(rows)
     df = df.sort_values("switch_count", ascending=False).reset_index(drop=True)

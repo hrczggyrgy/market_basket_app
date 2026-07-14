@@ -10,9 +10,7 @@ from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
 
 
-def render_promotional_tab(
-    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
-):
+def render_promotional_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render promotional analytics tab with persistent sub-tabs."""
     st.header("📢 Promotional Analytics")
 
@@ -61,9 +59,7 @@ def render_promotional_tab(
                     "avg_price_drop_pct",
                     "avg_volume_lift_pct",
                 ]
-            ].style.format(
-                {"avg_price_drop_pct": "{:.1f}%", "avg_volume_lift_pct": "{:.1f}%"}
-            ),
+            ].style.format({"avg_price_drop_pct": "{:.1f}%", "avg_volume_lift_pct": "{:.1f}%"}),
             width="stretch",
         )
 
@@ -110,10 +106,7 @@ def render_promotional_lift_tab(
         st.warning(f"Could not calculate promotional lift: {lift_results['error']}")
         return
 
-    if (
-        not isinstance(lift_results, pd.DataFrame)
-        or "product_lifts" not in lift_results
-    ):
+    if not isinstance(lift_results, pd.DataFrame) or "product_lifts" not in lift_results:
         st.warning("Unexpected lift results format")
         st.write(lift_results)
         return
@@ -136,9 +129,7 @@ def render_promotional_lift_tab(
         st.metric("Avg Revenue Lift", f"{avg_lift:.1f}%")
     with col3:
         positive_lift = (product_lifts["lift_pct"] > 0).sum()
-        st.metric(
-            "Products with Positive Lift", f"{positive_lift}/{len(product_lifts)}"
-        )
+        st.metric("Products with Positive Lift", f"{positive_lift}/{len(product_lifts)}")
     with col4:
         max_lift = product_lifts["lift_pct"].max()
         st.metric("Max Revenue Lift", f"{max_lift:.1f}%")
@@ -294,9 +285,7 @@ def render_roi_analysis_tab(
     )
 
     margin_assumption = st.slider("Assumed Margin %", 10, 50, 30, key="roi_margin")
-    promo_cost_pct = st.slider(
-        "Promotional Cost % of Revenue", 5, 50, 15, key="roi_cost_pct"
-    )
+    promo_cost_pct = st.slider("Promotional Cost % of Revenue", 5, 50, 15, key="roi_cost_pct")
 
     with st.spinner("Calculating ROI..."):
         from src.analytics.promotional import promotion_roi_analysis
@@ -379,18 +368,14 @@ def render_halo_effect_tab(
 ):
     """Render halo effect analysis."""
     st.subheader("Halo Effect Analysis")
-    st.info(
-        "Analyzes impact of promotions on non-promoted products in the same transactions."
-    )
+    st.info("Analyzes impact of promotions on non-promoted products in the same transactions.")
 
     window_days = st.slider("Analysis Window (days)", 1, 30, 7, key="halo_window")
 
     with st.spinner("Analyzing halo effects..."):
         from src.analytics.promotional import halo_effect_analysis
 
-        halo_results = halo_effect_analysis(
-            transactions_df, promo_periods, window_days=window_days
-        )
+        halo_results = halo_effect_analysis(transactions_df, promo_periods, window_days=window_days)
 
     if halo_results.empty:
         st.warning("No halo effects detected")

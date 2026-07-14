@@ -8,12 +8,12 @@ from mlxtend.frequent_patterns import apriori, fpgrowth
 
 def _postprocess_itemsets(freq_items: pd.DataFrame) -> pd.DataFrame:
     """Common postprocessing for frequent itemset results.
-    
+
     BUG 10 FIX: Extracted duplicate code into helper function.
     """
     if freq_items.empty:
         return pd.DataFrame(columns=["support", "itemsets"])
-    
+
     freq_items["length"] = freq_items["itemsets"].apply(len)
     freq_items = freq_items.sort_values("support", ascending=False).reset_index(drop=True)
     return freq_items
@@ -98,7 +98,7 @@ def run_eclat(
 ) -> pd.DataFrame:
     """
     Run Eclat algorithm to find frequent itemsets using vertical data format.
-    
+
     Eclat uses a depth-first search with tidset intersections.
     This is a custom implementation since mlxtend doesn't have Eclat.
 
@@ -116,46 +116,46 @@ def run_eclat(
 
     n_transactions = len(basket_df)
     min_support_count = int(min_support * n_transactions)
-    
+
     # Convert to vertical format: item -> set of transaction IDs
     item_tidsets = {}
     for item in basket_df.columns:
         tids = set(basket_df.index[basket_df[item]].tolist())
         if len(tids) >= min_support_count:
             item_tidsets[item] = tids
-    
+
     if not item_tidsets:
         return pd.DataFrame(columns=["support", "itemsets"])
-    
+
     # Eclat recursive search
     freq_itemsets = []
-    
+
     def eclat_recursive(prefix_items, prefix_tids, items_list, start_idx):
         for i in range(start_idx, len(items_list)):
             item = items_list[i]
             tids = item_tidsets[item]
             new_tids = prefix_tids & tids
             support_count = len(new_tids)
-            
+
             if support_count >= min_support_count:
                 new_prefix = prefix_items + [item]
                 support = support_count / n_transactions
                 freq_itemsets.append((support, frozenset(new_prefix)))
-                
+
                 if len(new_prefix) < max_len:
                     # Continue with remaining items
                     eclat_recursive(new_prefix, new_tids, items_list, i + 1)
-    
+
     items_list = list(item_tidsets.keys())
     eclat_recursive([], set(basket_df.index), items_list, 0)
-    
+
     if not freq_itemsets:
         return pd.DataFrame(columns=["support", "itemsets"])
-    
+
     df = pd.DataFrame(freq_itemsets, columns=["support", "itemsets"])
     df["length"] = df["itemsets"].apply(len)
     df = df.sort_values("support", ascending=False).reset_index(drop=True)
-    
+
     return df
 
 
@@ -168,14 +168,14 @@ def run_algorithm(
 ) -> pd.DataFrame:
     """
     Run specified frequent itemset mining algorithm.
-    
+
     Args:
         basket_df: One-hot encoded transaction matrix
         algorithm: Algorithm to use ('fpgrowth', 'apriori', 'eclat')
         min_support: Minimum support threshold
         max_len: Maximum itemset length
         **kwargs: Additional algorithm-specific parameters
-        
+
     Returns:
         DataFrame with frequent itemsets
     """
@@ -211,11 +211,7 @@ def create_basket_matrix(
     """
     df = transactions_df[transactions_df[quantity_col] >= min_quantity].copy()
 
-    basket = (
-        df.groupby([transaction_col, item_col])[quantity_col]
-        .sum()
-        .unstack(fill_value=0)
-    )
+    basket = df.groupby([transaction_col, item_col])[quantity_col].sum().unstack(fill_value=0)
 
     basket = (basket > 0).astype(bool)
 
@@ -228,7 +224,7 @@ def get_product_lookup(
     name_col: str = "product",
 ) -> dict:
     """Create lookup dictionary from stockcode to product name.
-    
+
     BUG 14 FIX: Deduplicate on stockcode - first value wins (silent deduplication)
     """
     # Deduplicate on code_col, keeping first occurrence
@@ -243,14 +239,14 @@ def compare_algorithms(
 ) -> pd.DataFrame:
     """
     Compare results from all three algorithms.
-    
+
     BUG 11 FIX: Ensure consistent schema - use NaN for failed algorithms instead of error dict
-    
+
     Returns:
         DataFrame with comparison metrics
     """
     results = {}
-    
+
     for algo in ["fpgrowth", "apriori", "eclat"]:
         try:
             freq = run_algorithm(basket_df, algo, min_support, max_len)
@@ -269,5 +265,5 @@ def compare_algorithms(
                 "max_length": 0,
                 "error": str(e),
             }
-    
+
     return pd.DataFrame(results).T

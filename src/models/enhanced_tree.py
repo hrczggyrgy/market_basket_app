@@ -29,18 +29,21 @@ warnings.filterwarnings("ignore")
 # Optional imports
 try:
     import xgboost as xgb
+
     XGBOOST_AVAILABLE = True
 except ImportError:
     XGBOOST_AVAILABLE = False
 
 try:
     import lightgbm as lgb
+
     LIGHTGBM_AVAILABLE = True
 except ImportError:
     LIGHTGBM_AVAILABLE = False
 
 try:
     import shap
+
     SHAP_AVAILABLE = True
 except ImportError:
     SHAP_AVAILABLE = False
@@ -73,7 +76,7 @@ def train_model(
 ) -> Tuple[Any, Dict]:
     """
     Train a classification model with comprehensive metrics.
-    
+
     Args:
         X: Feature matrix
         y: Target vector
@@ -86,7 +89,7 @@ def train_model(
         random_state: Random seed
         calibrate: Whether to calibrate probabilities
         **kwargs: Additional model-specific parameters
-    
+
     Returns:
         (model, metrics_dict)
     """
@@ -136,7 +139,7 @@ def _create_model(
     **kwargs,
 ):
     """Create model instance based on type."""
-    
+
     if model_type == "decision_tree":
         return DecisionTreeClassifier(
             max_depth=max_depth,
@@ -145,7 +148,7 @@ def _create_model(
             class_weight=class_weight,
             random_state=random_state,
         )
-    
+
     elif model_type == "random_forest":
         return RandomForestClassifier(
             n_estimators=n_estimators,
@@ -156,7 +159,7 @@ def _create_model(
             random_state=random_state,
             n_jobs=-1,
         )
-    
+
     elif model_type == "gradient_boosting":
         return GradientBoostingClassifier(
             n_estimators=n_estimators,
@@ -165,7 +168,7 @@ def _create_model(
             learning_rate=learning_rate,
             random_state=random_state,
         )
-    
+
     elif model_type == "xgboost" and XGBOOST_AVAILABLE:
         return xgb.XGBClassifier(
             n_estimators=n_estimators,
@@ -178,7 +181,7 @@ def _create_model(
             eval_metric="logloss",
             verbosity=0,
         )
-    
+
     elif model_type == "lightgbm" and LIGHTGBM_AVAILABLE:
         return lgb.LGBMClassifier(
             n_estimators=n_estimators,
@@ -190,7 +193,7 @@ def _create_model(
             n_jobs=-1,
             verbosity=-1,
         )
-    
+
     return None
 
 
@@ -219,6 +222,7 @@ def _compute_metrics(
     # Calibration metrics
     try:
         from sklearn.calibration import calibration_curve
+
         prob_true, prob_pred = calibration_curve(y_test, y_prob, n_bins=10)
         calibration_error = np.mean(np.abs(prob_true - prob_pred))
     except Exception:
@@ -274,10 +278,10 @@ def cross_validate_model(
     **kwargs,
 ) -> Dict:
     """Perform cross-validation with multiple metrics."""
-    
+
     cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
     scoring_metrics = ["accuracy", "precision", "recall", "f1", "roc_auc", "average_precision"]
-    
+
     base_model = _create_model(
         model_type=model_type,
         max_depth=max_depth,
@@ -288,7 +292,7 @@ def cross_validate_model(
         random_state=random_state,
         **kwargs,
     )
-    
+
     if base_model is None:
         return {"error": f"Model type '{model_type}' not available"}
 
@@ -316,7 +320,7 @@ def hyperparameter_tune(
 ) -> Tuple[Any, Dict]:
     """
     Hyperparameter tuning using GridSearchCV or RandomizedSearchCV.
-    
+
     Returns:
         (best_model, best_params_and_scores)
     """
@@ -329,7 +333,7 @@ def hyperparameter_tune(
         class_weight="balanced",
         random_state=random_state,
     )
-    
+
     if base_model is None:
         return None, {"error": f"Model type '{model_type}' not available"}
 
@@ -339,13 +343,17 @@ def hyperparameter_tune(
     cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
 
     if method == "grid":
-        search = GridSearchCV(
-            base_model, param_grid, cv=cv, scoring=scoring, n_jobs=-1, verbose=0
-        )
+        search = GridSearchCV(base_model, param_grid, cv=cv, scoring=scoring, n_jobs=-1, verbose=0)
     else:
         search = RandomizedSearchCV(
-            base_model, param_grid, n_iter=n_iter, cv=cv, 
-            scoring=scoring, n_jobs=-1, random_state=random_state, verbose=0
+            base_model,
+            param_grid,
+            n_iter=n_iter,
+            cv=cv,
+            scoring=scoring,
+            n_jobs=-1,
+            random_state=random_state,
+            verbose=0,
         )
 
     search.fit(X, y)
@@ -414,7 +422,7 @@ def get_shap_explanations(
 ) -> Dict:
     """
     Generate SHAP explanations for tree-based models.
-    
+
     Returns:
         Dict with shap_values, feature_importance, and plots data
     """
@@ -432,7 +440,7 @@ def get_shap_explanations(
         if hasattr(model, "predict_proba"):
             explainer = shap.TreeExplainer(model)
             shap_values = explainer.shap_values(X_sample)
-            
+
             # For binary classification, shap_values is list of two arrays
             if isinstance(shap_values, list):
                 shap_values = shap_values[1]  # Positive class
@@ -443,11 +451,13 @@ def get_shap_explanations(
                 shap_values = shap_values[:, :, 1]  # Positive class
 
         # Feature importance (mean absolute SHAP)
-        feature_importance = pd.DataFrame({
-            "feature": X_sample.columns,
-            "mean_abs_shap": np.abs(shap_values).mean(axis=0),
-            "mean_shap": shap_values.mean(axis=0),
-        }).sort_values("mean_abs_shap", ascending=False)
+        feature_importance = pd.DataFrame(
+            {
+                "feature": X_sample.columns,
+                "mean_abs_shap": np.abs(shap_values).mean(axis=0),
+                "mean_shap": shap_values.mean(axis=0),
+            }
+        ).sort_values("mean_abs_shap", ascending=False)
 
         return {
             "shap_values": shap_values,
@@ -468,15 +478,17 @@ def get_shap_dependence_data(
     """Get data for SHAP dependence plot."""
     feat_idx = X.columns.get_loc(feature)
     shap_feat = shap_values[:, feat_idx]
-    
-    df = pd.DataFrame({
-        "feature_value": X[feature].values,
-        "shap_value": shap_feat,
-    })
-    
+
+    df = pd.DataFrame(
+        {
+            "feature_value": X[feature].values,
+            "shap_value": shap_feat,
+        }
+    )
+
     if interaction_feature and interaction_feature in X.columns:
         df["interaction_value"] = X[interaction_feature].values
-    
+
     return df
 
 
@@ -491,7 +503,7 @@ def compare_models(
     if model_types is None:
         available = get_available_models()
         model_types = [k for k, v in available.items() if v and k != "shap"]
-    
+
     results = []
     for model_type in model_types:
         try:
@@ -505,7 +517,7 @@ def compare_models(
             results.append(row)
         except Exception as e:
             results.append({"model": model_type, "error": str(e)})
-    
+
     return pd.DataFrame(results)
 
 
@@ -527,7 +539,7 @@ def extract_tree_rules(
         estimators = model.estimators_
         if hasattr(estimators, "ravel"):
             estimators = estimators.ravel()
-        
+
         for i, estimator in enumerate(estimators[:10]):  # Limit to first 10 trees
             tree_rules = _extract_single_tree_rules(
                 estimator, feature_names, target_names, max_depth
@@ -535,17 +547,17 @@ def extract_tree_rules(
             for rule in tree_rules:
                 rule["tree_index"] = i
             rules.extend(tree_rules)
-    
+
     elif hasattr(model, "get_booster"):
         # XGBoost / LightGBM
         if hasattr(model, "get_booster"):  # XGBoost
             model.get_booster().trees_to_dataframe()
         else:  # LightGBM
             model.booster_.trees_to_dataframe()
-        
+
         # Parse tree structure (simplified)
         pass
-    
+
     else:
         # Single decision tree
         rules = _extract_single_tree_rules(model, feature_names, target_names, max_depth)
@@ -566,7 +578,7 @@ def _extract_single_tree_rules(
     def recurse(node, depth, path_conditions):
         if max_depth is not None and depth > max_depth:
             return
-            
+
         if tree.feature[node] != -2:  # Not a leaf
             feature_idx = tree.feature[node]
             threshold = tree.threshold[node]
@@ -587,14 +599,16 @@ def _extract_single_tree_rules(
             probs = value / total if total > 0 else [0, 0]
             predicted_class = np.argmax(value)
 
-            rules.append({
-                "conditions": path_conditions,
-                "prediction": target_names[predicted_class],
-                "probability": probs[predicted_class],
-                "class_distribution": dict(zip(target_names, value.astype(int))),
-                "samples": n_samples,
-                "purity": max(probs),
-            })
+            rules.append(
+                {
+                    "conditions": path_conditions,
+                    "prediction": target_names[predicted_class],
+                    "probability": probs[predicted_class],
+                    "class_distribution": dict(zip(target_names, value.astype(int))),
+                    "samples": n_samples,
+                    "purity": max(probs),
+                }
+            )
 
     recurse(0, 0, [])
     return rules
@@ -612,7 +626,9 @@ def predict_with_explanation(
 
     cust_features = features.loc[[customer_id]]
     prediction = model.predict(cust_features)[0]
-    probability = model.predict_proba(cust_features)[0] if hasattr(model, "predict_proba") else [0, 0]
+    probability = (
+        model.predict_proba(cust_features)[0] if hasattr(model, "predict_proba") else [0, 0]
+    )
 
     # Decision path for tree models
     path_conditions = []
@@ -621,16 +637,16 @@ def predict_with_explanation(
         leaf_id = model.apply(cust_features)[0]
         feature_names = features.columns.tolist()
 
-        for node_id in node_indicator.indices[
-            node_indicator.indptr[0] : node_indicator.indptr[1]
-        ]:
+        for node_id in node_indicator.indices[node_indicator.indptr[0] : node_indicator.indptr[1]]:
             if model.tree_.feature[node_id] != -2:
                 feature_idx = model.tree_.feature[node_id]
                 threshold = model.tree_.threshold[node_id]
                 feature_name = feature_names[feature_idx]
                 value = cust_features.iloc[0, feature_idx]
                 if value <= threshold:
-                    path_conditions.append(f"{feature_name} <= {threshold:.2f} (value: {value:.2f})")
+                    path_conditions.append(
+                        f"{feature_name} <= {threshold:.2f} (value: {value:.2f})"
+                    )
                 else:
                     path_conditions.append(f"{feature_name} > {threshold:.2f} (value: {value:.2f})")
 
@@ -641,11 +657,13 @@ def predict_with_explanation(
             shap_vals = shap_explainer.shap_values(cust_features)
             if isinstance(shap_vals, list):
                 shap_vals = shap_vals[1]  # Positive class
-            shap_explanation = pd.DataFrame({
-                "feature": features.columns,
-                "shap_value": shap_vals[0],
-                "feature_value": cust_features.iloc[0].values,
-            }).sort_values("shap_value", key=abs, ascending=False)
+            shap_explanation = pd.DataFrame(
+                {
+                    "feature": features.columns,
+                    "shap_value": shap_vals[0],
+                    "feature_value": cust_features.iloc[0].values,
+                }
+            ).sort_values("shap_value", key=abs, ascending=False)
         except Exception:
             pass
 
@@ -672,10 +690,12 @@ def get_model_feature_importance(model: Any, feature_names: List[str]) -> pd.Dat
     else:
         return pd.DataFrame()
 
-    return pd.DataFrame({
-        "feature": feature_names,
-        "importance": importances,
-    }).sort_values("importance", ascending=False)
+    return pd.DataFrame(
+        {
+            "feature": feature_names,
+            "importance": importances,
+        }
+    ).sort_values("importance", ascending=False)
 
 
 def calibrate_model(
@@ -706,7 +726,9 @@ def train_xgboost(
 ) -> Tuple[Any, Dict]:
     """Train XGBoost model with default parameters."""
     return train_model(
-        X, y, model_type="xgboost",
+        X,
+        y,
+        model_type="xgboost",
         max_depth=max_depth,
         min_samples_leaf=min_samples_leaf,
         n_estimators=n_estimators,
@@ -732,7 +754,9 @@ def train_lightgbm(
 ) -> Tuple[Any, Dict]:
     """Train LightGBM model with default parameters."""
     return train_model(
-        X, y, model_type="lightgbm",
+        X,
+        y,
+        model_type="lightgbm",
         max_depth=max_depth,
         min_samples_leaf=min_samples_leaf,
         n_estimators=n_estimators,
@@ -757,7 +781,9 @@ def train_random_forest(
 ) -> Tuple[Any, Dict]:
     """Train Random Forest model with default parameters."""
     return train_model(
-        X, y, model_type="random_forest",
+        X,
+        y,
+        model_type="random_forest",
         max_depth=max_depth,
         min_samples_leaf=min_samples_leaf,
         n_estimators=n_estimators,
@@ -781,7 +807,9 @@ def train_gradient_boosting(
 ) -> Tuple[Any, Dict]:
     """Train Gradient Boosting model with default parameters."""
     return train_model(
-        X, y, model_type="gradient_boosting",
+        X,
+        y,
+        model_type="gradient_boosting",
         max_depth=max_depth,
         min_samples_leaf=min_samples_leaf,
         n_estimators=n_estimators,

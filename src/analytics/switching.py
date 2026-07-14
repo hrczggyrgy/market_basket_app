@@ -71,9 +71,7 @@ def compute_switching_matrix(
     )
 
     # Add total switches from each product for rate calculation
-    from_totals = (
-        switch_matrix.groupby("from_product")["switch_count"].sum().reset_index()
-    )
+    from_totals = switch_matrix.groupby("from_product")["switch_count"].sum().reset_index()
     from_totals.columns = ["from_product", "total_switches_from"]
 
     switch_matrix = switch_matrix.merge(from_totals, on="from_product")
@@ -82,9 +80,9 @@ def compute_switching_matrix(
     )
 
     # Sort by switch count
-    switch_matrix = switch_matrix.sort_values(
-        "switch_count", ascending=False
-    ).reset_index(drop=True)
+    switch_matrix = switch_matrix.sort_values("switch_count", ascending=False).reset_index(
+        drop=True
+    )
 
     return switch_matrix
 
@@ -120,14 +118,10 @@ def get_customer_loyalty_metrics(
 
         # Most purchased product
         top_product = product_counts.index[0] if len(product_counts) > 0 else None
-        top_product_share = (
-            product_counts.iloc[0] / len(products) if len(product_counts) > 0 else 0
-        )
+        top_product_share = product_counts.iloc[0] / len(products) if len(product_counts) > 0 else 0
 
         # Switching count
-        switches = sum(
-            1 for i in range(len(products) - 1) if products[i] != products[i + 1]
-        )
+        switches = sum(1 for i in range(len(products) - 1) if products[i] != products[i + 1])
 
         # Purchase frequency
         days_span = (group[date_col].max() - group[date_col].min()).days
@@ -142,9 +136,7 @@ def get_customer_loyalty_metrics(
                 "top_product": top_product,
                 "top_product_share": top_product_share,
                 "switch_count": switches,
-                "switch_rate": (
-                    switches / (len(products) - 1) if len(products) > 1 else 0
-                ),
+                "switch_rate": (switches / (len(products) - 1) if len(products) > 1 else 0),
                 "purchase_frequency_per_month": freq,
                 "days_span": days_span,
             }

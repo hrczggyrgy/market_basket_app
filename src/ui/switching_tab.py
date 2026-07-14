@@ -15,9 +15,7 @@ from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
 
 
-def render_switching_tab(
-    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
-):
+def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render product switching analysis tab with persistent sub-tabs."""
     st.header("🔄 Product Switching Analysis")
 
@@ -37,9 +35,7 @@ def render_switching_tab(
             )
         with col2:
             top_n_products = st.slider("Top Products for Heatmap", 10, 50, 30)
-            min_switches = st.number_input(
-                "Min Switch Count", 1, 50, params.get("min_switches", 2)
-            )
+            min_switches = st.number_input("Min Switch Count", 1, 50, params.get("min_switches", 2))
 
     with st.spinner("Computing switching patterns..."):
         # Compute switching matrix
@@ -65,11 +61,7 @@ def render_switching_tab(
     with col2:
         st.metric(
             "Avg Switch Rate",
-            (
-                f"{switch_matrix['switch_rate'].mean():.1%}"
-                if not switch_matrix.empty
-                else "0%"
-            ),
+            (f"{switch_matrix['switch_rate'].mean():.1%}" if not switch_matrix.empty else "0%"),
         )
     with col3:
         st.metric(
@@ -110,14 +102,15 @@ def render_switching_tab(
 
 
 def _render_heatmap_tab(
-    switch_matrix: pd.DataFrame, transactions_df: pd.DataFrame, product_lookup: dict, top_n_products: int
+    switch_matrix: pd.DataFrame,
+    transactions_df: pd.DataFrame,
+    product_lookup: dict,
+    top_n_products: int,
 ):
     """Render the switching heatmap tab."""
     st.subheader("Product Switching Heatmap")
 
-    heatmap_data = get_switching_heatmap_data(
-        transactions_df, top_n_products=top_n_products
-    )
+    heatmap_data = get_switching_heatmap_data(transactions_df, top_n_products=top_n_products)
 
     if not heatmap_data.empty:
         fig = go.Figure(
@@ -173,9 +166,7 @@ def _render_top_paths_tab(top_paths: pd.DataFrame, product_lookup: dict):
         # Bar chart
         st.subheader("Top 20 Switches by Count")
         chart_data = top_paths.head(20).copy()
-        chart_data["path"] = (
-            chart_data["From Product"] + " → " + chart_data["To Product"]
-        )
+        chart_data["path"] = chart_data["From Product"] + " → " + chart_data["To Product"]
 
         fig = px.bar(
             chart_data,
@@ -201,25 +192,15 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
 
         # Get unique products
         all_products = list(
-            set(
-                top_switches["from_product"].tolist()
-                + top_switches["to_product"].tolist()
-            )
+            set(top_switches["from_product"].tolist() + top_switches["to_product"].tolist())
         )
         product_to_idx = {p: i for i, p in enumerate(all_products)}
 
-        sources = [
-            product_to_idx[row["from_product"]]
-            for _, row in top_switches.iterrows()
-        ]
-        targets = [
-            product_to_idx[row["to_product"]] for _, row in top_switches.iterrows()
-        ]
+        sources = [product_to_idx[row["from_product"]] for _, row in top_switches.iterrows()]
+        targets = [product_to_idx[row["to_product"]] for _, row in top_switches.iterrows()]
         values = top_switches["switch_count"].tolist()
 
-        labels = [
-            product_lookup.get(p, p) if product_lookup else p for p in all_products
-        ]
+        labels = [product_lookup.get(p, p) if product_lookup else p for p in all_products]
 
         fig = go.Figure(
             data=[
@@ -241,9 +222,7 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
             ]
         )
 
-        fig.update_layout(
-            title_text="Product Switching Flow", font_size=10, height=500
-        )
+        fig.update_layout(title_text="Product Switching Flow", font_size=10, height=500)
         st.plotly_chart(fig, width="stretch")
     else:
         st.info("No switching data for Sankey diagram")
@@ -285,9 +264,7 @@ def _render_loyalty_tab(loyalty: pd.DataFrame):
 
         # Loyalty details table
         st.write("**Top Customers by Loyalty**")
-        top_loyal = loyalty[loyalty["loyalty_segment"] == "Loyal"].nlargest(
-            20, "repeat_rate"
-        )
+        top_loyal = loyalty[loyalty["loyalty_segment"] == "Loyal"].nlargest(20, "repeat_rate")
         if not top_loyal.empty:
             st.dataframe(
                 top_loyal[

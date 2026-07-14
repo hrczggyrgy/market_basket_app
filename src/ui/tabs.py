@@ -15,14 +15,14 @@ def persistent_tabs(
 ) -> int:
     """
     Create persistent tabs that remember selection across reruns.
-    
+
     Uses st.session_state to track the active tab.
-    
+
     Args:
         labels: List of tab labels
         key: Unique key for this tab group
         default_tab: Default tab index (0-based)
-    
+
     Returns:
         Index of currently selected tab
     """
@@ -57,23 +57,23 @@ def persistent_tabs_container(
 ) -> tuple[int, List[st.container]]:
     """
     Create persistent tabs that return containers for each tab.
-    
+
     Only the selected tab's container will have content rendered into it.
     This mimics the `with tab:` pattern but with persistent state.
-    
+
     Args:
         labels: List of tab labels
         key: Unique key for this tab group
         default_tab: Default tab index (0-based)
-    
+
     Returns:
         Tuple of (selected_index, List of containers - one per tab)
     """
     selected = persistent_tabs(labels, key, default_tab)
-    
+
     # Create containers for all tabs
     containers = [st.container() for _ in labels]
-    
+
     return selected, containers
 
 
@@ -84,7 +84,7 @@ def tabbed_view(
 ) -> int:
     """
     Simple tabbed view that returns selected index.
-    
+
     Alias for persistent_tabs with simpler name.
     """
     return persistent_tabs(labels, key, default_tab)

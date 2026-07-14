@@ -32,13 +32,13 @@ def load_transactions(file, column_mapping=None, **kwargs) -> pd.DataFrame:
         ValueError: If required columns missing or data invalid
     """
     df = pd.read_csv(file, **kwargs)
-    
+
     # Apply column mapping if provided
     if column_mapping:
         # Reverse mapping: actual_col -> standard_col
         reverse_mapping = {v: k for k, v in column_mapping.items() if v in df.columns}
         df = df.rename(columns=reverse_mapping)
-    
+
     return validate_and_clean(df)
 
 
@@ -102,7 +102,7 @@ def get_data_summary(df: pd.DataFrame) -> dict:
     df["revenue"] = df["price"] * df["quantity"]
     basket_revenue = df.groupby("transaction_id")["revenue"].sum()
     basket_size = df.groupby("transaction_id")["quantity"].sum()
-    
+
     return {
         "n_transactions": df["transaction_id"].nunique(),
         "n_customers": df["customer_id"].nunique(),
@@ -128,14 +128,13 @@ def filter_by_date_range(
     return filtered
 
 
-def filter_top_products(
-    df: pd.DataFrame, n: int = 100, by: str = "frequency"
-) -> pd.DataFrame:
+def filter_top_products(df: pd.DataFrame, n: int = 100, by: str = "frequency") -> pd.DataFrame:
     """Filter to top N products by frequency or revenue."""
     if by == "frequency":
         top_products = df["stockcode"].value_counts().head(n).index
     elif by == "revenue":
-        df_revenue = df["price"] * df["quantity"]
+        df = df.copy()
+        df["revenue"] = df["price"] * df["quantity"]
         revenue = df.groupby("stockcode")["revenue"].sum()
         top_products = revenue.nlargest(n).index
     else:
@@ -144,9 +143,7 @@ def filter_top_products(
     return df[df["stockcode"].isin(top_products)]
 
 
-def get_customer_product_matrix(
-    df: pd.DataFrame, min_transactions: int = 1
-) -> pd.DataFrame:
+def get_customer_product_matrix(df: pd.DataFrame, min_transactions: int = 1) -> pd.DataFrame:
     """
     Create customer x product matrix (one-hot encoded).
 
@@ -165,9 +162,7 @@ def get_customer_product_matrix(
     return matrix
 
 
-def add_rfm_features(
-    df: pd.DataFrame, snapshot_date: pd.Timestamp = None
-) -> pd.DataFrame:
+def add_rfm_features(df: pd.DataFrame, snapshot_date: pd.Timestamp = None) -> pd.DataFrame:
     """
     Add RFM (Recency, Frequency, Monetary) features per customer.
 
@@ -199,13 +194,9 @@ def add_rfm_features(
     for col in ["recency", "frequency", "monetary"]:
         if col == "recency":
             # Lower recency is better
-            rfm[f"{col}_score"] = pd.qcut(
-                rfm[col], 4, labels=[4, 3, 2, 1], duplicates="drop"
-            )
+            rfm[f"{col}_score"] = pd.qcut(rfm[col], 4, labels=[4, 3, 2, 1], duplicates="drop")
         else:
-            rfm[f"{col}_score"] = pd.qcut(
-                rfm[col], 4, labels=[1, 2, 3, 4], duplicates="drop"
-            )
+            rfm[f"{col}_score"] = pd.qcut(rfm[col], 4, labels=[1, 2, 3, 4], duplicates="drop")
 
     rfm["rfm_score"] = (
         rfm["recency_score"].astype(str)

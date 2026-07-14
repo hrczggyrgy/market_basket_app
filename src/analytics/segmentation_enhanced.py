@@ -17,18 +17,21 @@ warnings.filterwarnings("ignore")
 # Optional imports
 try:
     from lifelines import CoxPHFitter, KaplanMeierFitter
+
     LIFELINES_AVAILABLE = True
 except ImportError:
     LIFELINES_AVAILABLE = False
 
 try:
     import xgboost as xgb
+
     XGBOOST_AVAILABLE = True
 except ImportError:
     XGBOOST_AVAILABLE = False
 
 try:
     import lightgbm as lgb
+
     LIGHTGBM_AVAILABLE = True
 except ImportError:
     LIGHTGBM_AVAILABLE = False
@@ -56,9 +59,7 @@ def compute_rfm_features(
             n_items=("quantity", "sum"),
             n_unique_products=("stockcode", "nunique"),
             n_unique_categories=(
-                ("category", "nunique")
-                if "category" in df.columns
-                else ("stockcode", "nunique")
+                ("category", "nunique") if "category" in df.columns else ("stockcode", "nunique")
             ),
             first_purchase=("date", "min"),
             last_purchase=("date", "max"),
@@ -69,9 +70,7 @@ def compute_rfm_features(
     )
 
     # Derived features
-    rfm["customer_lifetime_days"] = (
-        rfm["last_purchase"] - rfm["first_purchase"]
-    ).dt.days
+    rfm["customer_lifetime_days"] = (rfm["last_purchase"] - rfm["first_purchase"]).dt.days
     rfm["purchase_interval"] = np.where(
         rfm["frequency"] > 1,
         rfm["customer_lifetime_days"] / (rfm["frequency"] - 1),
@@ -79,9 +78,7 @@ def compute_rfm_features(
     )
     rfm["items_per_order"] = rfm["n_items"] / rfm["frequency"]
     rfm["revenue_per_item"] = rfm["monetary"] / rfm["n_items"].replace(0, np.nan)
-    rfm["order_value_cv"] = rfm["std_order_value"] / rfm["avg_order_value"].replace(
-        0, np.nan
-    )
+    rfm["order_value_cv"] = rfm["std_order_value"] / rfm["avg_order_value"].replace(0, np.nan)
 
     # Recency segments
     rfm["recency_segment"] = pd.qcut(
@@ -116,9 +113,7 @@ def rfm_segmentation(
         # Classic RFM scoring (1-4 per dimension)
         for dim in ["recency_days", "frequency", "monetary"]:
             if dim == "recency_days":
-                df[f"{dim}_score"] = pd.qcut(
-                    df[dim], q=4, labels=[4, 3, 2, 1], duplicates="drop"
-                )
+                df[f"{dim}_score"] = pd.qcut(df[dim], q=4, labels=[4, 3, 2, 1], duplicates="drop")
             else:
                 df[f"{dim}_score"] = pd.qcut(
                     df[dim].rank(method="first"),
@@ -190,13 +185,13 @@ def rfm_segmentation(
             avg_freq = cluster_data["frequency"].mean()
             avg_mon = cluster_data["monetary"].mean()
 
-            if avg_rec < df["recency_days"].quantile(0.25) and avg_mon > df[
-                "monetary"
-            ].quantile(0.75):
+            if avg_rec < df["recency_days"].quantile(0.25) and avg_mon > df["monetary"].quantile(
+                0.75
+            ):
                 label = "High Value"
-            elif avg_rec < df["recency_days"].quantile(0.5) and avg_freq > df[
-                "frequency"
-            ].quantile(0.5):
+            elif avg_rec < df["recency_days"].quantile(0.5) and avg_freq > df["frequency"].quantile(
+                0.5
+            ):
                 label = "Active"
             elif avg_rec > df["recency_days"].quantile(0.75):
                 label = "Churned/At Risk"
@@ -225,13 +220,13 @@ def rfm_segmentation(
             avg_freq = cluster_data["frequency"].mean()
             avg_mon = cluster_data["monetary"].mean()
 
-            if avg_rec < df["recency_days"].quantile(0.25) and avg_mon > df[
-                "monetary"
-            ].quantile(0.75):
+            if avg_rec < df["recency_days"].quantile(0.25) and avg_mon > df["monetary"].quantile(
+                0.75
+            ):
                 label = "High Value"
-            elif avg_rec < df["recency_days"].quantile(0.5) and avg_freq > df[
-                "frequency"
-            ].quantile(0.5):
+            elif avg_rec < df["recency_days"].quantile(0.5) and avg_freq > df["frequency"].quantile(
+                0.5
+            ):
                 label = "Active"
             elif avg_rec > df["recency_days"].quantile(0.75):
                 label = "Churned/At Risk"
@@ -272,9 +267,7 @@ def behavioral_segmentation(
             # Product
             n_products=("stockcode", "nunique"),
             n_categories=(
-                ("category", "nunique")
-                if "category" in df.columns
-                else ("stockcode", "nunique")
+                ("category", "nunique") if "category" in df.columns else ("stockcode", "nunique")
             ),
             # Basket
             avg_basket_size=("quantity", "mean"),
@@ -297,7 +290,7 @@ def behavioral_segmentation(
 
     # Features for clustering
     feature_cols = [c for c in behavioral.columns if c != "customer_id"]
-    
+
     # Use RobustScaler to handle outliers
     scaler = RobustScaler()
     X_scaled = scaler.fit_transform(behavioral[feature_cols])
@@ -315,7 +308,9 @@ def behavioral_segmentation(
         # DBSCAN for density-based clustering
         clustering = DBSCAN(eps=1.5, min_samples=5)
         behavioral["cluster"] = clustering.fit_predict(X_scaled)
-        n_clusters = len(set(behavioral["cluster"])) - (1 if -1 in behavioral["cluster"].values else 0)
+        n_clusters = len(set(behavioral["cluster"])) - (
+            1 if -1 in behavioral["cluster"].values else 0
+        )
     else:
         raise ValueError(f"Unknown method: {method}")
 
@@ -329,13 +324,9 @@ def behavioral_segmentation(
         profile = cluster_profiles.loc[c]
         if profile["total_revenue"] > cluster_profiles["total_revenue"].quantile(0.75):
             labels[c] = "High Value"
-        elif profile["purchase_frequency"] > cluster_profiles[
-            "purchase_frequency"
-        ].quantile(0.75):
+        elif profile["purchase_frequency"] > cluster_profiles["purchase_frequency"].quantile(0.75):
             labels[c] = "Frequent Buyers"
-        elif profile["avg_days_between"] < cluster_profiles[
-            "avg_days_between"
-        ].quantile(0.25):
+        elif profile["avg_days_between"] < cluster_profiles["avg_days_between"].quantile(0.25):
             labels[c] = "Regular Shoppers"
         elif profile["n_products"] > cluster_profiles["n_products"].quantile(0.75):
             labels[c] = "Variety Seekers"
@@ -357,7 +348,7 @@ def predict_clv(
 ) -> Tuple[pd.DataFrame, Dict]:
     """
     Predict Customer Lifetime Value using ML models.
-    
+
     Returns:
         DataFrame with predicted CLV and model metrics
     """
@@ -382,9 +373,7 @@ def predict_clv(
             avg_order=("revenue", "mean"),
             n_products=("stockcode", "nunique"),
             n_categories=(
-                ("category", "nunique")
-                if "category" in hist.columns
-                else ("stockcode", "nunique")
+                ("category", "nunique") if "category" in hist.columns else ("stockcode", "nunique")
             ),
             avg_items_per_order=("quantity", "mean"),
             avg_price_paid=("price", "mean"),
@@ -399,7 +388,7 @@ def predict_clv(
     features["lifetime_days"] = pd.to_numeric(
         (features["last_purchase"] - features["first_purchase"]).dt.days, errors="coerce"
     ).fillna(1)
-    
+
     features["recency"] = pd.to_numeric(features["recency"], errors="coerce").fillna(0).astype(int)
 
     # Add derived features
@@ -416,9 +405,7 @@ def predict_clv(
 
     # Target: future revenue in prediction window
     y = features["future_revenue"]
-    X = features.drop(
-        columns=["customer_id", "first_purchase", "last_purchase", "future_revenue"]
-    )
+    X = features.drop(columns=["customer_id", "first_purchase", "last_purchase", "future_revenue"])
 
     # Select features
     if features_to_use:
@@ -428,9 +415,7 @@ def predict_clv(
     X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
 
     # Train-test split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     # Create model
     if model_type == "xgboost" and XGBOOST_AVAILABLE:
@@ -499,15 +484,19 @@ def predict_clv(
 
     # Feature importance
     if hasattr(model, "feature_importances_"):
-        feature_importance = pd.DataFrame({
-            "feature": X.columns,
-            "importance": model.feature_importances_,
-        }).sort_values("importance", ascending=False)
+        feature_importance = pd.DataFrame(
+            {
+                "feature": X.columns,
+                "importance": model.feature_importances_,
+            }
+        ).sort_values("importance", ascending=False)
     elif hasattr(model, "coef_"):
-        feature_importance = pd.DataFrame({
-            "feature": X.columns,
-            "importance": np.abs(model.coef_),
-        }).sort_values("importance", ascending=False)
+        feature_importance = pd.DataFrame(
+            {
+                "feature": X.columns,
+                "importance": np.abs(model.coef_),
+            }
+        ).sort_values("importance", ascending=False)
     else:
         feature_importance = pd.DataFrame()
 
@@ -545,7 +534,7 @@ def survival_analysis(
 ) -> Dict:
     """
     Perform survival analysis on customer churn.
-    
+
     Uses lifelines library for Kaplan-Meier and Cox Proportional Hazards.
     """
     if not LIFELINES_AVAILABLE:
@@ -553,31 +542,31 @@ def survival_analysis(
 
     df = transactions_df.copy()
     df[time_col] = pd.to_datetime(df[time_col])
-    
+
     # Calculate time to next purchase for each customer
     df = df.sort_values([customer_col, time_col])
     df["next_purchase"] = df.groupby(customer_col)[time_col].shift(-1)
     df["days_to_next"] = (df["next_purchase"] - df[time_col]).dt.days
-    
+
     # For last purchase, censor at snapshot date
     snapshot = df[time_col].max() + pd.Timedelta(days=1)
     df["days_to_next"] = df["days_to_next"].fillna((snapshot - df[time_col]).dt.days)
-    
+
     # Event: 1 if made another purchase, 0 if censored
     df["event"] = df["next_purchase"].notna().astype(int)
-    
+
     # One row per customer (use last observation)
     surv_df = df.groupby(customer_col).last().reset_index()
     surv_df = surv_df[[customer_col, "days_to_next", "event"]].copy()
     surv_df.columns = [customer_col, "duration", "event"]
-    
+
     # Kaplan-Meier estimate
     kmf = KaplanMeierFitter()
     kmf.fit(surv_df["duration"], surv_df["event"])
-    
+
     # Median survival time
     median_survival = kmf.median_survival_time_
-    
+
     # Survival curves by segment if available
     results = {
         "kaplan_meier": {
@@ -589,17 +578,19 @@ def survival_analysis(
         "n_events": surv_df["event"].sum(),
         "censoring_rate": (surv_df["event"] == 0).mean(),
     }
-    
+
     # Cox Proportional Hazards if we have covariates
     if len(df.columns) > 3:
         # Build covariates (RFM features)
         rfm = compute_rfm_features(transactions_df)
         rfm = rfm.set_index("customer_id")
-        
+
         # Merge with survival data
-        cox_df = surv_df.set_index(customer_col).join(rfm[["recency_days", "frequency", "monetary"]])
+        cox_df = surv_df.set_index(customer_col).join(
+            rfm[["recency_days", "frequency", "monetary"]]
+        )
         cox_df = cox_df.dropna()
-        
+
         if len(cox_df) > 20:
             cph = CoxPHFitter()
             try:
@@ -611,7 +602,7 @@ def survival_analysis(
                 }
             except Exception as e:
                 results["cox_model"] = {"error": str(e)}
-    
+
     return results
 
 
@@ -622,57 +613,61 @@ def ensemble_segmentation(
 ) -> pd.DataFrame:
     """
     Ensemble segmentation combining multiple methods.
-    
+
     Uses consensus clustering to combine RFM, behavioral, and value-based segmentations.
     """
     if methods is None:
         methods = ["rfm_kmeans", "behavioral_kmeans", "value_based"]
-    
+
     all_segmentations = []
-    
+
     # RFM K-means
     if "rfm_kmeans" in methods:
         rfm = compute_rfm_features(transactions_df)
         rfm_seg = rfm_segmentation(rfm, method="kmeans", n_segments=n_segments)
         rfm_seg = rfm_seg[["customer_id", "segment"]].rename(columns={"segment": "rfm_segment"})
         all_segmentations.append(rfm_seg)
-    
+
     # Behavioral K-means
     if "behavioral_kmeans" in methods:
         beh_seg = behavioral_segmentation(transactions_df, n_clusters=n_segments, method="kmeans")
-        beh_seg = beh_seg[["customer_id", "segment"]].rename(columns={"segment": "behavioral_segment"})
+        beh_seg = beh_seg[["customer_id", "segment"]].rename(
+            columns={"segment": "behavioral_segment"}
+        )
         all_segmentations.append(beh_seg)
-    
+
     # Value-based
     if "value_based" in methods:
         val_seg = value_based_segmentation(transactions_df, prediction_horizon_days=90)
-        val_seg = val_seg[["customer_id", "value_segment"]].rename(columns={"value_segment": "value_segment"})
+        val_seg = val_seg[["customer_id", "value_segment"]].rename(
+            columns={"value_segment": "value_segment"}
+        )
         all_segmentations.append(val_seg)
-    
+
     # Merge all segmentations
     if not all_segmentations:
         return pd.DataFrame()
-    
+
     ensemble = all_segmentations[0]
     for seg in all_segmentations[1:]:
         ensemble = ensemble.merge(seg, on="customer_id", how="outer")
-    
+
     # Consensus clustering: assign final segment based on majority vote
     segment_cols = [c for c in ensemble.columns if c != "customer_id"]
-    
+
     def consensus_segment(row):
         votes = row[segment_cols].value_counts()
         if len(votes) > 0:
             return votes.index[0]
         return "Unknown"
-    
+
     ensemble["ensemble_segment"] = ensemble.apply(consensus_segment, axis=1)
-    
+
     # Also compute agreement score
     ensemble["agreement_score"] = ensemble[segment_cols].apply(
         lambda x: x.value_counts().iloc[0] / len(x), axis=1
     )
-    
+
     return ensemble
 
 
@@ -703,13 +698,9 @@ def value_based_segmentation(
         .reset_index()
     )
 
-    features["lifetime_days"] = pd.to_numeric(
-        features["lifetime_days"], errors="coerce"
-    ).fillna(1)
-    
-    features["recency"] = pd.to_numeric(
-        features["recency"], errors="coerce"
-    ).fillna(0).astype(int)
+    features["lifetime_days"] = pd.to_numeric(features["lifetime_days"], errors="coerce").fillna(1)
+
+    features["recency"] = pd.to_numeric(features["recency"], errors="coerce").fillna(0).astype(int)
 
     features["predicted_clv"] = (
         features["monetary"]
@@ -761,33 +752,24 @@ def get_segment_profiles(
             avg_items_per_order=("quantity", "mean"),
             avg_products_per_customer=(
                 "stockcode",
-                lambda x: (
-                    x.nunique() / df[df[segment_col] == x.name]["customer_id"].nunique()
-                ),
+                lambda x: x.nunique() / df[df[segment_col] == x.name]["customer_id"].nunique(),
             ),
             top_category=(
                 "category",
                 lambda x: (
-                    x.mode().iloc[0]
-                    if "category" in df.columns and not x.mode().empty
-                    else "N/A"
+                    x.mode().iloc[0] if "category" in df.columns and not x.mode().empty else "N/A"
                 ),
             ),
             top_brand=(
                 "brand",
                 lambda x: (
-                    x.mode().iloc[0]
-                    if "brand" in df.columns and not x.mode().empty
-                    else "N/A"
+                    x.mode().iloc[0] if "brand" in df.columns and not x.mode().empty else "N/A"
                 ),
             ),
             repeat_rate=(
                 "transaction_id",
                 lambda x: (
-                    (
-                        x.nunique()
-                        / df[df[segment_col] == x.name]["customer_id"].nunique()
-                    )
+                    (x.nunique() / df[df[segment_col] == x.name]["customer_id"].nunique())
                     if df[df[segment_col] == x.name]["customer_id"].nunique() > 0
                     else 0
                 ),
@@ -796,12 +778,8 @@ def get_segment_profiles(
         .reset_index()
     )
 
-    profiles["revenue_per_customer"] = (
-        profiles["total_revenue"] / profiles["n_customers"]
-    )
-    profiles["revenue_share"] = (
-        profiles["total_revenue"] / profiles["total_revenue"].sum()
-    )
+    profiles["revenue_per_customer"] = profiles["total_revenue"] / profiles["n_customers"]
+    profiles["revenue_share"] = profiles["total_revenue"] / profiles["total_revenue"].sum()
     profiles["customer_share"] = profiles["n_customers"] / profiles["n_customers"].sum()
 
     return profiles

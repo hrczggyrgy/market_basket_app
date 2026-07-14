@@ -109,7 +109,12 @@ def render_sidebar() -> Config:
     )
 
     min_lift = st.sidebar.slider(
-        "Min Lift", 0.5, 5.0, 1.2, 0.1, help="Minimum lift threshold for rules",
+        "Min Lift",
+        0.5,
+        5.0,
+        1.2,
+        0.1,
+        help="Minimum lift threshold for rules",
         key="sidebar_min_lift",
     )
 
@@ -172,23 +177,33 @@ def render_sidebar() -> Config:
         analysis_params["top_n_products"] = st.sidebar.slider(
             "Top N Products", 10, 200, 50, key="copurchase_top_n"
         )
-        analysis_params["min_lift"] = st.sidebar.slider("Min Lift", 1.0, 3.0, 1.5, 0.1, key="copurchase_min_lift")
+        analysis_params["min_lift"] = st.sidebar.slider(
+            "Min Lift", 1.0, 3.0, 1.5, 0.1, key="copurchase_min_lift"
+        )
 
     elif analysis_mode == "Add-on":
         analysis_params["min_support"] = st.sidebar.slider(
             "Min Support", 0.0005, 0.01, 0.002, 0.0005, key="addon_min_support"
         )
-        analysis_params["min_lift"] = st.sidebar.slider("Min Lift", 1.0, 3.0, 1.2, 0.1, key="addon_min_lift")
-        analysis_params["top_n"] = st.sidebar.slider("Top N Recommendations", 5, 20, 10, key="addon_top_n")
+        analysis_params["min_lift"] = st.sidebar.slider(
+            "Min Lift", 1.0, 3.0, 1.2, 0.1, key="addon_min_lift"
+        )
+        analysis_params["top_n"] = st.sidebar.slider(
+            "Top N Recommendations", 5, 20, 10, key="addon_top_n"
+        )
 
     elif analysis_mode == "Switching":
-        analysis_params["window_days"] = st.sidebar.slider("Window (days)", 30, 365, 90, key="switching_window")
+        analysis_params["window_days"] = st.sidebar.slider(
+            "Window (days)", 30, 365, 90, key="switching_window"
+        )
         analysis_params["min_transactions"] = st.sidebar.slider(
             "Min Customer Transactions", 2, 10, 3, key="switching_min_trans"
         )
 
     elif analysis_mode == "Choice Prediction Model":
-        analysis_params["max_depth"] = st.sidebar.slider("Max Tree Depth", 2, 8, 4, key="choice_max_depth")
+        analysis_params["max_depth"] = st.sidebar.slider(
+            "Max Tree Depth", 2, 8, 4, key="choice_max_depth"
+        )
         analysis_params["min_samples_leaf"] = st.sidebar.slider(
             "Min Samples Leaf", 5, 50, 10, key="choice_min_leaf"
         )
@@ -224,7 +239,9 @@ def render_sidebar() -> Config:
         analysis_params["top_n_products"] = st.sidebar.slider(
             "Top N Products", 20, 200, 50, key="cdt_top_n"
         )
-        analysis_params["min_lift"] = st.sidebar.slider("Min Lift", 1.0, 3.0, 1.2, 0.1, key="cdt_min_lift")
+        analysis_params["min_lift"] = st.sidebar.slider(
+            "Min Lift", 1.0, 3.0, 1.2, 0.1, key="cdt_min_lift"
+        )
         analysis_params["max_sub"] = st.sidebar.slider(
             "Max Substitution", 0.0, 0.5, 0.3, 0.05, key="cdt_max_sub"
         )
@@ -326,14 +343,14 @@ def render_data_info(df: pd.DataFrame):
         st.write(f"**Transactions:** {df['transaction_id'].nunique():,}")
         st.write(f"**Customers:** {df['customer_id'].nunique():,}")
         st.write(f"**Products:** {df['stockcode'].nunique():,}")
-        
+
         # BUG 6 FIX: Safe date formatting
-        min_date = df['date'].min()
-        max_date = df['date'].max()
+        min_date = df["date"].min()
+        max_date = df["date"].max()
         if pd.notna(min_date) and pd.notna(max_date):
             date_range = f"{min_date.strftime('%Y-%m-%d')} to {max_date.strftime('%Y-%m-%d')}"
         else:
             date_range = "N/A"
         st.write(f"**Date Range:** {date_range}")
-        
+
         st.write(f"**Total Revenue:** ${(df['price'] * df['quantity']).sum():,.2f}")

@@ -75,9 +75,7 @@ def compute_switching_matrix(
             )
 
     if not rows:
-        return pd.DataFrame(
-            columns=["from_product", "to_product", "switch_count", "switch_rate"]
-        )
+        return pd.DataFrame(columns=["from_product", "to_product", "switch_count", "switch_rate"])
 
     df = pd.DataFrame(rows)
     df = df.sort_values("switch_count", ascending=False).reset_index(drop=True)
@@ -107,9 +105,9 @@ def switching_matrix_to_heatmap(
         product_activity[row["from_product"]] += row["switch_count"]
         product_activity[row["to_product"]] += row["switch_count"]
 
-    top_products = sorted(
-        product_activity.keys(), key=lambda x: product_activity[x], reverse=True
-    )[:top_n]
+    top_products = sorted(product_activity.keys(), key=lambda x: product_activity[x], reverse=True)[
+        :top_n
+    ]
 
     matrix = pd.DataFrame(0.0, index=top_products, columns=top_products, dtype=float)
 
@@ -216,9 +214,7 @@ def build_behavioral_matrices(
     """
     switching_df = compute_switching_matrix(sequences, top_n_products)
     substitution_df = get_substitution_matrix(similarity_matrix)
-    bundling_df = compute_bundling_matrix(
-        affinity_matrix, substitution_df, top_n_products
-    )
+    bundling_df = compute_bundling_matrix(affinity_matrix, substitution_df, top_n_products)
 
     return switching_df, substitution_df, bundling_df
 
@@ -258,11 +254,7 @@ def get_top_substitution_pairs(
         return pd.DataFrame(columns=["product_a", "product_b", "substitution_score"])
 
     df = pd.DataFrame(pairs)
-    df = (
-        df.sort_values("substitution_score", ascending=False)
-        .head(top_n)
-        .reset_index(drop=True)
-    )
+    df = df.sort_values("substitution_score", ascending=False).head(top_n).reset_index(drop=True)
     return df
 
 
@@ -376,10 +368,7 @@ def compute_customer_switching_profiles(
             sorted(product_freq, key=product_freq.get, reverse=True)[:top_n_products]
         )
 
-        df = df[
-            df["top_from_product"].isin(top_products)
-            | df["top_to_product"].isin(top_products)
-        ]
+        df = df[df["top_from_product"].isin(top_products) | df["top_to_product"].isin(top_products)]
 
     return df
 
@@ -397,10 +386,7 @@ def detect_brand_switching(
 
     Returns brand-to-brand switching events with customer and timing.
     """
-    if (
-        brand_col not in transactions_df.columns
-        or category_col not in transactions_df.columns
-    ):
+    if brand_col not in transactions_df.columns or category_col not in transactions_df.columns:
         return pd.DataFrame(
             columns=[
                 "customer_id",
@@ -468,14 +454,12 @@ def compute_brand_switching_matrix(
     )
 
     # Add rate per category
-    from_totals = (
-        matrix.groupby(["category", "from_brand"])["switch_count"].sum().reset_index()
-    )
+    from_totals = matrix.groupby(["category", "from_brand"])["switch_count"].sum().reset_index()
     from_totals.columns = ["category", "from_brand", "total_switches_from"]
 
     matrix = matrix.merge(from_totals, on=["category", "from_brand"])
     matrix["switch_rate"] = matrix["switch_count"] / matrix["total_switches_from"]
 
-    return matrix.sort_values(
-        ["category", "switch_count"], ascending=[True, False]
-    ).reset_index(drop=True)
+    return matrix.sort_values(["category", "switch_count"], ascending=[True, False]).reset_index(
+        drop=True
+    )

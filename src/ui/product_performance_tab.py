@@ -139,9 +139,7 @@ def render_product_dashboard(transactions_df: pd.DataFrame, product_lookup: dict
 
     with viz_col2:
         # Revenue concentration (Pareto)
-        sorted_rev = (
-            metrics["total_revenue"].sort_values(ascending=False).reset_index(drop=True)
-        )
+        sorted_rev = metrics["total_revenue"].sort_values(ascending=False).reset_index(drop=True)
         cum_pct = sorted_rev.cumsum() / sorted_rev.sum() * 100
 
         fig = go.Figure()
@@ -166,9 +164,7 @@ def render_product_dashboard(transactions_df: pd.DataFrame, product_lookup: dict
             title="Revenue Concentration (Pareto)",
             xaxis_title="Product Rank",
             yaxis_title="Revenue ($)",
-            yaxis2=dict(
-                title="Cumulative %", overlaying="y", side="right", range=[0, 100]
-            ),
+            yaxis2=dict(title="Cumulative %", overlaying="y", side="right", range=[0, 100]),
         )
         st.plotly_chart(fig, width="stretch")
 
@@ -191,24 +187,18 @@ def render_product_dashboard(transactions_df: pd.DataFrame, product_lookup: dict
         st.plotly_chart(fig, width="stretch")
 
 
-def render_lifecycle_analysis(
-    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
-):
+def render_lifecycle_analysis(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render product lifecycle analysis."""
     st.subheader("Product Lifecycle Analysis")
 
-    top_n = st.slider(
-        "Top N Products by Revenue", 10, 200, 50, key="lifecycle_tab_top_n"
-    )
+    top_n = st.slider("Top N Products by Revenue", 10, 200, 50, key="lifecycle_tab_top_n")
 
     with st.spinner("Analyzing product lifecycles..."):
         from src.analytics.product_performance import product_lifecycle_stage
 
         # First compute product metrics
         product_metrics = compute_product_metrics(transactions_df)
-        lifecycle_df = product_lifecycle_stage(
-            product_metrics, transactions_df, period="ME"
-        )
+        lifecycle_df = product_lifecycle_stage(product_metrics, transactions_df, period="ME")
 
     if lifecycle_df.empty:
         st.warning("Insufficient data for lifecycle analysis")
@@ -321,9 +311,7 @@ def render_lifecycle_analysis(
     st.plotly_chart(fig, width="stretch")
 
 
-def render_seasonality_analysis(
-    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
-):
+def render_seasonality_analysis(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render seasonality analysis."""
     st.subheader("Product Seasonality Analysis")
 
@@ -435,9 +423,7 @@ def render_seasonality_analysis(
             st.info("📊 Weak seasonality. Demand relatively stable across months.")
 
 
-def render_affinity_analysis(
-    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
-):
+def render_affinity_analysis(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render product affinity and cross-sell analysis."""
     st.subheader("Product Affinity & Cross-Sell Opportunities")
 
@@ -512,9 +498,7 @@ def render_affinity_analysis(
     # Cross-sell opportunity matrix
     st.subheader("Cross-Sell Opportunity Matrix")
 
-    matrix_n = st.slider(
-        "Top N Products for Matrix", 10, 50, 30, key="affinity_tab_matrix_n"
-    )
+    matrix_n = st.slider("Top N Products for Matrix", 10, 50, 30, key="affinity_tab_matrix_n")
 
     with st.spinner("Computing cross-sell matrix..."):
         from src.analytics.product_performance import cross_sell_opportunity_matrix
@@ -564,9 +548,7 @@ def render_affinity_analysis(
             render_analytics_export(pairs_df, "Top_Cross_Sell_Pairs")
 
 
-def render_price_elasticity(
-    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
-):
+def render_price_elasticity(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render price elasticity analysis."""
     st.subheader("Price Elasticity Analysis")
 
@@ -579,9 +561,7 @@ def render_price_elasticity(
     )
 
     if selected_product:
-        min_periods = st.slider(
-            "Min Weekly Periods", 5, 50, 10, key="elasticity_tab_min_periods"
-        )
+        min_periods = st.slider("Min Weekly Periods", 5, 50, 10, key="elasticity_tab_min_periods")
 
         with st.spinner("Estimating price elasticity..."):
             from src.analytics.product_performance import price_elasticity_analysis
@@ -608,9 +588,7 @@ def render_price_elasticity(
             st.info(f"**Interpretation:** {elasticity['interpretation']}")
 
             # Show price-quantity scatter
-            prod_df = transactions_df[
-                transactions_df["stockcode"] == selected_product
-            ].copy()
+            prod_df = transactions_df[transactions_df["stockcode"] == selected_product].copy()
             prod_df["date"] = pd.to_datetime(prod_df["date"])
             prod_df["revenue"] = prod_df["price"] * prod_df["quantity"]
 

@@ -621,9 +621,7 @@ def generate_transactions(
         customer = np.random.choice(customer_ids)
 
         # Number of items in basket (1-8, weighted toward smaller)
-        n_items = np.random.choice(
-            range(1, 9), p=[0.3, 0.25, 0.2, 0.1, 0.07, 0.04, 0.02, 0.02]
-        )
+        n_items = np.random.choice(range(1, 9), p=[0.3, 0.25, 0.2, 0.1, 0.07, 0.04, 0.02, 0.02])
 
         # Select products for this basket
         # Bias toward customer preferences
@@ -649,9 +647,7 @@ def generate_transactions(
         # Create transaction rows
         for stockcode in basket_items:
             quantity = np.random.choice([1, 2, 3, 4, 5], p=[0.6, 0.2, 0.1, 0.07, 0.03])
-            price = base_prices[stockcode] * np.random.uniform(
-                0.9, 1.1
-            )  # Small price variation
+            price = base_prices[stockcode] * np.random.uniform(0.9, 1.1)  # Small price variation
             price = round(price, 2)
 
             idx = stockcodes.index(stockcode)
@@ -687,9 +683,7 @@ def save_sample_data(output_path: str = "data/sample_transactions.csv", **kwargs
     """Generate and save sample data."""
     df = generate_transactions(**kwargs)
     df.to_csv(output_path, index=False)
-    print(
-        f"Generated {len(df)} transactions, {df['transaction_id'].nunique()} unique orders"
-    )
+    print(f"Generated {len(df)} transactions, {df['transaction_id'].nunique()} unique orders")
     print(f"Saved to {output_path}")
     return df
 

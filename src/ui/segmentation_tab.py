@@ -34,12 +34,12 @@ def _cached_behavioral_segmentation(transactions_df, n_clusters):
 
 @st.cache_data
 def _cached_value_based_segmentation(transactions_df, prediction_horizon_days):
-    return value_based_segmentation(transactions_df, prediction_horizon_days=prediction_horizon_days)
+    return value_based_segmentation(
+        transactions_df, prediction_horizon_days=prediction_horizon_days
+    )
 
 
-def render_segmentation_tab(
-    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
-):
+def render_segmentation_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render customer segmentation analysis tab with persistent sub-tabs."""
     # product_lookup is available but not used in segmentation analysis
     # Kept for consistency with other tab functions
@@ -75,9 +75,7 @@ def render_rfm_segmentation(transactions_df: pd.DataFrame, params: dict):
         )
     with col2:
         if method == "K-Means Clustering":
-            n_segments = st.slider(
-                "Number of Segments", 3, 12, 8, key="seg_tab_n_segments"
-            )
+            n_segments = st.slider("Number of Segments", 3, 12, 8, key="seg_tab_n_segments")
         else:
             n_segments = 8
 
@@ -88,7 +86,12 @@ def render_rfm_segmentation(transactions_df: pd.DataFrame, params: dict):
     st.success(f"Computed RFM for {len(rfm)} customers")
 
     # Persistent sub-tabs for RFM methods
-    rfm_tabs = ["📊 Segment Distribution", "📈 Revenue Analysis", "🎯 3D Visualization", "📋 Profiles"]
+    rfm_tabs = [
+        "📊 Segment Distribution",
+        "📈 Revenue Analysis",
+        "🎯 3D Visualization",
+        "📋 Profiles",
+    ]
     rfm_selected = persistent_tabs(rfm_tabs, "rfm_view_tabs", default_tab=0)
 
     if method == "Quantile (Classic RFM)":
@@ -293,7 +296,11 @@ def _render_kmeans_segment_distribution(rfm_clustered: pd.DataFrame):
             y="total_revenue",
             color="n_customers",
             title="Revenue by K-Means Segment",
-            labels={"segment": "Segment", "total_revenue": "Revenue ($)", "n_customers": "Customers"},
+            labels={
+                "segment": "Segment",
+                "total_revenue": "Revenue ($)",
+                "n_customers": "Customers",
+            },
         )
         st.plotly_chart(fig, width="stretch")
 
@@ -384,9 +391,7 @@ def render_behavioral_segmentation(transactions_df: pd.DataFrame, params: dict):
     """Render behavioral segmentation analysis with persistent sub-tabs."""
     st.subheader("Behavioral Segmentation")
 
-    n_clusters = st.slider(
-        "Number of Clusters", 3, 10, 6, key="seg_tab_behav_n_clusters"
-    )
+    n_clusters = st.slider("Number of Clusters", 3, 10, 6, key="seg_tab_behav_n_clusters")
 
     with st.spinner("Computing behavioral segments..."):
         behavioral = _cached_behavioral_segmentation(transactions_df, n_clusters=n_clusters)
@@ -396,9 +401,7 @@ def render_behavioral_segmentation(transactions_df: pd.DataFrame, params: dict):
     behav_selected = persistent_tabs(behav_tabs, "behavioral_view_tabs", default_tab=0)
 
     # Feature columns
-    feature_cols = [
-        c for c in behavioral.columns if c not in ["customer_id", "cluster", "segment"]
-    ]
+    feature_cols = [c for c in behavioral.columns if c not in ["customer_id", "cluster", "segment"]]
 
     # Segment profiles
     profiles = behavioral.groupby("segment")[feature_cols].mean().round(2)
@@ -456,9 +459,7 @@ def _render_behavioral_radar(profiles: pd.DataFrame, key_features: list):
                 )
             )
         fig.update_layout(
-            polar={
-                "radialaxis": {"visible": True, "range": [0, radar_data.max().max()]}
-            },
+            polar={"radialaxis": {"visible": True, "range": [0, radar_data.max().max()]}},
             showlegend=True,
             title="Segment Comparison (Normalized Metrics)",
         )
@@ -469,9 +470,7 @@ def _render_behavioral_box_plots(behavioral: pd.DataFrame, feature_cols: list):
     """Render box plots for key differentiators."""
     st.subheader("Key Differentiators")
 
-    diff_feature = st.selectbox(
-        "Select Feature", feature_cols, key="seg_tab_behav_diff_feature"
-    )
+    diff_feature = st.selectbox("Select Feature", feature_cols, key="seg_tab_behav_diff_feature")
 
     fig = px.box(
         behavioral,
@@ -489,9 +488,7 @@ def _render_behavioral_revenue(transactions_df: pd.DataFrame, behavioral: pd.Dat
 
     df = transactions_df.copy()
     df["revenue"] = df["price"] * df["quantity"]
-    merged = df.merge(
-        behavioral[["customer_id", "segment"]], on="customer_id", how="left"
-    )
+    merged = df.merge(behavioral[["customer_id", "segment"]], on="customer_id", how="left")
     seg_rev = (
         merged.groupby("segment")
         .agg(
@@ -516,9 +513,7 @@ def render_value_segmentation(transactions_df: pd.DataFrame, params: dict):
     """Render value-based segmentation analysis with persistent sub-tabs."""
     st.subheader("Value-Based Segmentation (Predicted CLV)")
 
-    horizon = st.slider(
-        "Prediction Horizon (days)", 30, 365, 90, key="seg_tab_value_horizon"
-    )
+    horizon = st.slider("Prediction Horizon (days)", 30, 365, 90, key="seg_tab_value_horizon")
 
     with st.spinner("Computing value segments..."):
         value_segments = _cached_value_based_segmentation(transactions_df, horizon)
@@ -681,9 +676,7 @@ def _render_value_clv_accuracy(value_segments: pd.DataFrame):
             from sklearn.metrics import mean_absolute_error, mean_squared_error
 
             mae = mean_absolute_error(valid["future_revenue"], valid["predicted_clv"])
-            rmse = np.sqrt(
-                mean_squared_error(valid["future_revenue"], valid["predicted_clv"])
-            )
+            rmse = np.sqrt(mean_squared_error(valid["future_revenue"], valid["predicted_clv"]))
             col1, col2 = st.columns(2)
             col1.metric("MAE", f"${mae:,.2f}")
             col2.metric("RMSE", f"${rmse:,.2f}")

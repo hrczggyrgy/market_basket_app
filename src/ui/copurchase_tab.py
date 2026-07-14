@@ -24,18 +24,22 @@ def _cached_compute_affinity_matrix(transactions_df, min_support, min_lift, top_
 @st.cache_data
 def _cached_get_top_affinity_pairs(transactions_df, min_support, min_lift, top_n, top_n_products):
     return get_top_affinity_pairs(
-        transactions_df, min_support=min_support, min_lift=min_lift, top_n=top_n, top_n_products=top_n_products
+        transactions_df,
+        min_support=min_support,
+        min_lift=min_lift,
+        top_n=top_n,
+        top_n_products=top_n_products,
     )
 
 
 @st.cache_data
 def _cached_get_product_affinity_profile(transactions_df, target_product, min_lift, top_n):
-    return get_product_affinity_profile(transactions_df, target_product, min_lift=min_lift, top_n=top_n)
+    return get_product_affinity_profile(
+        transactions_df, target_product, min_lift=min_lift, top_n=top_n
+    )
 
 
-def render_copurchase_tab(
-    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
-):
+def render_copurchase_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render co-purchase/affinity analysis tab with persistent sub-tabs."""
     st.header("🤝 Co-purchase / Affinity Analysis")
 
@@ -58,9 +62,7 @@ def render_copurchase_tab(
         )
 
     if top_pairs.empty:
-        st.warning(
-            "No significant co-purchase pairs found. Try lowering min_lift or min_support."
-        )
+        st.warning("No significant co-purchase pairs found. Try lowering min_lift or min_support.")
         return
 
     # Add product names
@@ -129,6 +131,7 @@ def _render_heatmap_tab(affinity_matrix: pd.DataFrame, product_lookup: dict, top
 
     if not affinity_matrix.empty:
         from src.viz.heatmap import create_affinity_heatmap
+
         fig = create_affinity_heatmap(
             affinity_matrix,
             product_lookup=product_lookup,
@@ -146,6 +149,7 @@ def _render_sankey_tab(affinity_matrix: pd.DataFrame, product_lookup: dict, top_
 
     if not affinity_matrix.empty:
         from src.viz.network import create_sankey_from_matrix
+
         fig = create_sankey_from_matrix(
             affinity_matrix.head(min(top_n_products, 15)),
             product_lookup=product_lookup,
@@ -175,9 +179,7 @@ def _render_product_profile_tab(
         )
 
         if not profile.empty:
-            profile["Co-purchase Product Name"] = profile[
-                "co_purchase_product"
-            ].map(product_lookup)
+            profile["Co-purchase Product Name"] = profile["co_purchase_product"].map(product_lookup)
             profile["Target Product"] = product_lookup.get(selected_product, selected_product)
 
             display_cols = [

@@ -78,12 +78,8 @@ def create_scatter_heatmap(
         rules = rules_df.copy()
 
     # Format antecedents/consequents for hover
-    rules["ant_str"] = rules["antecedents"].apply(
-        lambda x: ", ".join(str(i) for i in x)
-    )
-    rules["cons_str"] = rules["consequents"].apply(
-        lambda x: ", ".join(str(i) for i in x)
-    )
+    rules["ant_str"] = rules["antecedents"].apply(lambda x: ", ".join(str(i) for i in x))
+    rules["cons_str"] = rules["consequents"].apply(lambda x: ", ".join(str(i) for i in x))
 
     fig = px.scatter(
         rules,
@@ -106,9 +102,7 @@ def create_scatter_heatmap(
         height=height,
     )
 
-    fig.update_layout(
-        xaxis_title=x_metric.capitalize(), yaxis_title=y_metric.capitalize()
-    )
+    fig.update_layout(xaxis_title=x_metric.capitalize(), yaxis_title=y_metric.capitalize())
 
     return fig
 
@@ -151,9 +145,7 @@ def create_affinity_heatmap(
             colorscale="RdYlBu_r",
             zmid=1.0,
             zmin=1.0,
-            zmax=(
-                matrix_display.values.max() if matrix_display.values.max() > 1 else 2.0
-            ),
+            zmax=(matrix_display.values.max() if matrix_display.values.max() > 1 else 2.0),
             colorbar=dict(title="Lift"),
             hoverongaps=False,
             hovertemplate="Product A: %{y}<br>Product B: %{x}<br>Lift: %{z:.2f}<extra></extra>",
@@ -200,11 +192,7 @@ def create_metric_comparison_heatmap(
         return _empty_figure("No matching metrics found")
 
     # Take top rules by lift
-    rules = (
-        rules_df.nlargest(100, "lift")
-        if "lift" in rules_df.columns
-        else rules_df.head(100)
-    )
+    rules = rules_df.nlargest(100, "lift") if "lift" in rules_df.columns else rules_df.head(100)
 
     # Normalize metrics for comparison
     data = rules[available].copy()

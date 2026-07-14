@@ -52,21 +52,19 @@ def compute_product_metrics(
         product_metrics = product_metrics.merge(brand_info, on="stockcode", how="left")
 
     # Derived metrics
-    product_metrics["days_on_market"] = (
-        snapshot_date - product_metrics["first_sale_date"]
-    ).dt.days
+    product_metrics["days_on_market"] = (snapshot_date - product_metrics["first_sale_date"]).dt.days
     product_metrics["days_since_last_sale"] = (
         snapshot_date - product_metrics["last_sale_date"]
     ).dt.days
-    product_metrics["revenue_per_customer"] = product_metrics[
-        "total_revenue"
-    ] / product_metrics["total_customers"].replace(0, np.nan)
-    product_metrics["revenue_per_txn"] = product_metrics[
-        "total_revenue"
-    ] / product_metrics["total_transactions"].replace(0, np.nan)
-    product_metrics["txn_per_customer"] = product_metrics[
+    product_metrics["revenue_per_customer"] = product_metrics["total_revenue"] / product_metrics[
+        "total_customers"
+    ].replace(0, np.nan)
+    product_metrics["revenue_per_txn"] = product_metrics["total_revenue"] / product_metrics[
         "total_transactions"
-    ] / product_metrics["total_customers"].replace(0, np.nan)
+    ].replace(0, np.nan)
+    product_metrics["txn_per_customer"] = product_metrics["total_transactions"] / product_metrics[
+        "total_customers"
+    ].replace(0, np.nan)
     product_metrics["sell_through_rate"] = (
         product_metrics["total_transactions"]
         / product_metrics["days_on_market"].replace(0, np.nan)
@@ -179,9 +177,7 @@ def product_lifecycle_stage(
     df["period"] = df["date"].dt.to_period(period)
 
     # Monthly revenue per product
-    monthly_rev = (
-        df.groupby(["stockcode", "period"])["revenue"].sum().unstack(fill_value=0)
-    )
+    monthly_rev = df.groupby(["stockcode", "period"])["revenue"].sum().unstack(fill_value=0)
 
     lifecycle = []
     for stockcode in product_metrics["stockcode"]:
@@ -280,9 +276,7 @@ def product_seasonality(transactions_df: pd.DataFrame, product_id: str) -> Dict:
     seasonal_strength = cv
 
     # Peak to trough ratio
-    peak_to_trough_ratio = (
-        month_avg.max() / month_avg.min() if month_avg.min() > 0 else np.inf
-    )
+    peak_to_trough_ratio = month_avg.max() / month_avg.min() if month_avg.min() > 0 else np.inf
 
     has_seasonality = seasonal_strength > 0.3
 
@@ -348,9 +342,7 @@ def product_affinity_score(
     return df
 
 
-def cross_sell_opportunity_matrix(
-    transactions_df: pd.DataFrame, top_n: int = 50
-) -> pd.DataFrame:
+def cross_sell_opportunity_matrix(transactions_df: pd.DataFrame, top_n: int = 50) -> pd.DataFrame:
     """Generate cross-sell opportunity matrix for top N products."""
     from src.algorithms.fpgrowth import create_basket_matrix
 
@@ -405,9 +397,7 @@ def price_elasticity_analysis(
 
     # Log-log regression
     log_price = np.log(weekly["avg_price"].replace(0, np.nan).dropna())
-    log_qty = np.log(
-        weekly.loc[log_price.index, "total_qty"].replace(0, np.nan).dropna()
-    )
+    log_qty = np.log(weekly.loc[log_price.index, "total_qty"].replace(0, np.nan).dropna())
 
     if len(log_price) < min_periods:
         return {"elasticity": None, "message": "Insufficient valid data after cleaning"}

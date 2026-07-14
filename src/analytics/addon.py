@@ -62,9 +62,9 @@ def get_addon_recommendations(
 
             if lift >= min_lift and p_both >= min_support:
                 # Revenue uplift estimate
-                anchor_price = transactions_df[
-                    transactions_df["stockcode"] == anchor_product
-                ]["price"].median()
+                anchor_price = transactions_df[transactions_df["stockcode"] == anchor_product][
+                    "price"
+                ].median()
                 addon_price = transactions_df[transactions_df["stockcode"] == product][
                     "price"
                 ].median()
@@ -115,9 +115,7 @@ def get_anchor_addon_matrix(
     """
     if anchor_products is None:
         # Use top 20 products by frequency
-        anchor_products = (
-            transactions_df["stockcode"].value_counts().head(20).index.tolist()
-        )
+        anchor_products = transactions_df["stockcode"].value_counts().head(20).index.tolist()
 
     all_results = []
 
@@ -152,9 +150,7 @@ def get_addon_by_category(
 
     # Get category for each addon
     product_categories = (
-        transactions_df.drop_duplicates("stockcode")
-        .set_index("stockcode")[category_col]
-        .to_dict()
+        transactions_df.drop_duplicates("stockcode").set_index("stockcode")[category_col].to_dict()
     )
 
     recs["addon_category"] = recs["addon_product"].map(product_categories)

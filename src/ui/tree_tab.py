@@ -131,7 +131,9 @@ def render_tree_tab(transactions_df: pd.DataFrame, product_lookup: dict, params:
         _render_predictions_tab(model, X, product_lookup, target_product)
 
 
-def _render_tree_tab(model, feature_names: list, product_lookup: dict, target_product: str, max_depth: int):
+def _render_tree_tab(
+    model, feature_names: list, product_lookup: dict, target_product: str, max_depth: int
+):
     """Render the decision tree visualization tab."""
     st.subheader("Interactive Decision Tree")
 
@@ -158,9 +160,7 @@ def _render_rules_tab(model, feature_names: list, target_product: str, product_l
         if leaf_rules:
             # Show as table
             rule_df = pd.DataFrame(leaf_rules)
-            rule_df["Conditions"] = rule_df["conditions"].apply(
-                lambda x: " AND ".join(x)
-            )
+            rule_df["Conditions"] = rule_df["conditions"].apply(lambda x: " AND ".join(x))
             rule_df["Prediction"] = rule_df["prediction"]
             rule_df["P(Buy)"] = rule_df["probability"]
             rule_df["Samples"] = rule_df["samples"]
@@ -206,9 +206,7 @@ def _render_predictions_tab(model, X: pd.DataFrame, product_lookup: dict, target
                 with col1:
                     st.metric("Prediction", prediction["prediction"])
                     st.metric("P(Buy)", f"{prediction['probability_buy']:.2%}")
-                    st.metric(
-                        "P(Not Buy)", f"{prediction['probability_not_buy']:.2%}"
-                    )
+                    st.metric("P(Not Buy)", f"{prediction['probability_not_buy']:.2%}")
 
                 with col2:
                     st.write("**Decision Path:**")
@@ -218,9 +216,7 @@ def _render_predictions_tab(model, X: pd.DataFrame, product_lookup: dict, target
                 # Show customer features
                 with st.expander("Customer Features"):
                     cust_features = X.loc[selected_customer]
-                    non_zero = cust_features[cust_features != 0].sort_values(
-                        ascending=False
-                    )
+                    non_zero = cust_features[cust_features != 0].sort_values(ascending=False)
                     st.dataframe(non_zero.round(4), width="stretch")
             else:
                 st.error(prediction["error"])

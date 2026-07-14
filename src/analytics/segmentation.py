@@ -33,9 +33,7 @@ def compute_rfm_features(
             n_items=("quantity", "sum"),
             n_unique_products=("stockcode", "nunique"),
             n_unique_categories=(
-                ("category", "nunique")
-                if "category" in df.columns
-                else ("stockcode", "nunique")
+                ("category", "nunique") if "category" in df.columns else ("stockcode", "nunique")
             ),
             first_purchase=("date", "min"),
             last_purchase=("date", "max"),
@@ -46,9 +44,7 @@ def compute_rfm_features(
     )
 
     # Derived features
-    rfm["customer_lifetime_days"] = (
-        rfm["last_purchase"] - rfm["first_purchase"]
-    ).dt.days
+    rfm["customer_lifetime_days"] = (rfm["last_purchase"] - rfm["first_purchase"]).dt.days
     rfm["purchase_interval"] = np.where(
         rfm["frequency"] > 1,
         rfm["customer_lifetime_days"] / (rfm["frequency"] - 1),
@@ -56,9 +52,7 @@ def compute_rfm_features(
     )
     rfm["items_per_order"] = rfm["n_items"] / rfm["frequency"]
     rfm["revenue_per_item"] = rfm["monetary"] / rfm["n_items"].replace(0, np.nan)
-    rfm["order_value_cv"] = rfm["std_order_value"] / rfm["avg_order_value"].replace(
-        0, np.nan
-    )
+    rfm["order_value_cv"] = rfm["std_order_value"] / rfm["avg_order_value"].replace(0, np.nan)
 
     # Recency segments
     rfm["recency_segment"] = pd.qcut(
@@ -93,9 +87,7 @@ def rfm_segmentation(
         # Classic RFM scoring (1-4 per dimension)
         for dim in ["recency_days", "frequency", "monetary"]:
             if dim == "recency_days":
-                df[f"{dim}_score"] = pd.qcut(
-                    df[dim], q=4, labels=[4, 3, 2, 1], duplicates="drop"
-                )
+                df[f"{dim}_score"] = pd.qcut(df[dim], q=4, labels=[4, 3, 2, 1], duplicates="drop")
             else:
                 df[f"{dim}_score"] = pd.qcut(
                     df[dim].rank(method="first"),
@@ -167,13 +159,13 @@ def rfm_segmentation(
             avg_freq = cluster_data["frequency"].mean()
             avg_mon = cluster_data["monetary"].mean()
 
-            if avg_rec < df["recency_days"].quantile(0.25) and avg_mon > df[
-                "monetary"
-            ].quantile(0.75):
+            if avg_rec < df["recency_days"].quantile(0.25) and avg_mon > df["monetary"].quantile(
+                0.75
+            ):
                 label = "High Value"
-            elif avg_rec < df["recency_days"].quantile(0.5) and avg_freq > df[
-                "frequency"
-            ].quantile(0.5):
+            elif avg_rec < df["recency_days"].quantile(0.5) and avg_freq > df["frequency"].quantile(
+                0.5
+            ):
                 label = "Active"
             elif avg_rec > df["recency_days"].quantile(0.75):
                 label = "Churned/At Risk"
@@ -188,9 +180,7 @@ def rfm_segmentation(
     return df
 
 
-def behavioral_segmentation(
-    transactions_df: pd.DataFrame, n_clusters: int = 6
-) -> pd.DataFrame:
+def behavioral_segmentation(transactions_df: pd.DataFrame, n_clusters: int = 6) -> pd.DataFrame:
     """Behavioral segmentation based on purchase patterns."""
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
@@ -214,9 +204,7 @@ def behavioral_segmentation(
             # Product
             n_products=("stockcode", "nunique"),
             n_categories=(
-                ("category", "nunique")
-                if "category" in df.columns
-                else ("stockcode", "nunique")
+                ("category", "nunique") if "category" in df.columns else ("stockcode", "nunique")
             ),
             # Basket
             avg_basket_size=("quantity", "mean"),
@@ -253,13 +241,9 @@ def behavioral_segmentation(
         profile = cluster_profiles.loc[c]
         if profile["total_revenue"] > cluster_profiles["total_revenue"].quantile(0.75):
             labels[c] = "High Value"
-        elif profile["purchase_frequency"] > cluster_profiles[
-            "purchase_frequency"
-        ].quantile(0.75):
+        elif profile["purchase_frequency"] > cluster_profiles["purchase_frequency"].quantile(0.75):
             labels[c] = "Frequent Buyers"
-        elif profile["avg_days_between"] < cluster_profiles[
-            "avg_days_between"
-        ].quantile(0.25):
+        elif profile["avg_days_between"] < cluster_profiles["avg_days_between"].quantile(0.25):
             labels[c] = "Regular Shoppers"
         elif profile["n_products"] > cluster_profiles["n_products"].quantile(0.75):
             labels[c] = "Variety Seekers"
@@ -303,14 +287,10 @@ def value_based_segmentation(
     )
 
     # Ensure lifetime_days is numeric
-    features["lifetime_days"] = pd.to_numeric(
-        features["lifetime_days"], errors="coerce"
-    ).fillna(1)
-    
+    features["lifetime_days"] = pd.to_numeric(features["lifetime_days"], errors="coerce").fillna(1)
+
     # Ensure recency is numeric (days as int)
-    features["recency"] = pd.to_numeric(
-        features["recency"], errors="coerce"
-    ).fillna(0).astype(int)
+    features["recency"] = pd.to_numeric(features["recency"], errors="coerce").fillna(0).astype(int)
 
     # Future actuals (for validation)
     future_rev = future.groupby("customer_id")["revenue"].sum().reset_index()
@@ -365,33 +345,24 @@ def get_segment_profiles(
             avg_items_per_order=("quantity", "mean"),
             avg_products_per_customer=(
                 "stockcode",
-                lambda x: (
-                    x.nunique() / df[df[segment_col] == x.name]["customer_id"].nunique()
-                ),
+                lambda x: x.nunique() / df[df[segment_col] == x.name]["customer_id"].nunique(),
             ),
             top_category=(
                 "category",
                 lambda x: (
-                    x.mode().iloc[0]
-                    if "category" in df.columns and not x.mode().empty
-                    else "N/A"
+                    x.mode().iloc[0] if "category" in df.columns and not x.mode().empty else "N/A"
                 ),
             ),
             top_brand=(
                 "brand",
                 lambda x: (
-                    x.mode().iloc[0]
-                    if "brand" in df.columns and not x.mode().empty
-                    else "N/A"
+                    x.mode().iloc[0] if "brand" in df.columns and not x.mode().empty else "N/A"
                 ),
             ),
             repeat_rate=(
                 "transaction_id",
                 lambda x: (
-                    (
-                        x.nunique()
-                        / df[df[segment_col] == x.name]["customer_id"].nunique()
-                    )
+                    (x.nunique() / df[df[segment_col] == x.name]["customer_id"].nunique())
                     if df[df[segment_col] == x.name]["customer_id"].nunique() > 0
                     else 0
                 ),
@@ -400,12 +371,8 @@ def get_segment_profiles(
         .reset_index()
     )
 
-    profiles["revenue_per_customer"] = (
-        profiles["total_revenue"] / profiles["n_customers"]
-    )
-    profiles["revenue_share"] = (
-        profiles["total_revenue"] / profiles["total_revenue"].sum()
-    )
+    profiles["revenue_per_customer"] = profiles["total_revenue"] / profiles["n_customers"]
+    profiles["revenue_share"] = profiles["total_revenue"] / profiles["total_revenue"].sum()
     profiles["customer_share"] = profiles["n_customers"] / profiles["n_customers"].sum()
 
     return profiles

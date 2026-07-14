@@ -53,9 +53,7 @@ def detect_promotions(
         # Find contiguous promo periods
         prod_df = prod_df.copy()
         prod_df["date_diff"] = prod_df["date"].diff().dt.days
-        prod_df["new_period"] = (prod_df["date_diff"] > 1) | (
-            prod_df["date_diff"].isna()
-        )
+        prod_df["new_period"] = (prod_df["date_diff"] > 1) | (prod_df["date_diff"].isna())
         prod_df["promo_group"] = prod_df["new_period"].cumsum()
 
         for group_id, group in prod_df.groupby("promo_group"):
@@ -86,16 +84,14 @@ def detect_promotions(
                 # Calculate lift
                 if baseline_qty > 0:
                     qty_lift = (promo_qty / duration) / (
-                        baseline_qty
-                        / max(1, (df["date"].max() - df["date"].min()).days)
+                        baseline_qty / max(1, (df["date"].max() - df["date"].min()).days)
                     ) - 1
                 else:
                     qty_lift = 0
 
                 if baseline_revenue > 0:
                     revenue_lift = (promo_revenue / duration) / (
-                        baseline_revenue
-                        / max(1, (df["date"].max() - df["date"].min()).days)
+                        baseline_revenue / max(1, (df["date"].max() - df["date"].min()).days)
                     ) - 1
                 else:
                     revenue_lift = 0
@@ -226,13 +222,9 @@ def calculate_promotional_lift(
     if len(promo_trans) > 10 and len(non_promo_trans) > 10:
         # Revenue per transaction
         promo_rev_per_txn = promo_trans.groupby("transaction_id")["revenue"].sum()
-        non_promo_rev_per_txn = non_promo_trans.groupby("transaction_id")[
-            "revenue"
-        ].sum()
+        non_promo_rev_per_txn = non_promo_trans.groupby("transaction_id")["revenue"].sum()
 
-        t_stat, p_val = ttest_ind(
-            promo_rev_per_txn, non_promo_rev_per_txn, equal_var=False
-        )
+        t_stat, p_val = ttest_ind(promo_rev_per_txn, non_promo_rev_per_txn, equal_var=False)
         results["t_statistic"] = t_stat
         results["p_value"] = p_val
         results["significant"] = p_val < 0.05
@@ -244,9 +236,7 @@ def calculate_promotional_lift(
         non_promo_prod = non_promo_trans[non_promo_trans["stockcode"] == product]
 
         if len(promo_prod) > 0 and len(non_promo_prod) > 0:
-            promo_rev = promo_prod["revenue"].sum() / max(
-                promo_prod["date"].nunique(), 1
-            )
+            promo_rev = promo_prod["revenue"].sum() / max(promo_prod["date"].nunique(), 1)
             non_promo_rev = non_promo_prod["revenue"].sum() / max(
                 non_promo_prod["date"].nunique(), 1
             )
@@ -267,9 +257,7 @@ def calculate_promotional_lift(
                 }
             )
 
-    results["product_lifts"] = pd.DataFrame(product_lifts).sort_values(
-        "lift_pct", ascending=False
-    )
+    results["product_lifts"] = pd.DataFrame(product_lifts).sort_values("lift_pct", ascending=False)
 
     return results
 
@@ -307,9 +295,7 @@ def calculate_incremental_revenue(
         baseline_end = start - pd.Timedelta(days=1)
 
         # Promo sales
-        promo_sales = df[
-            (df["stockcode"] == product) & (df["date"] >= start) & (df["date"] <= end)
-        ]
+        promo_sales = df[(df["stockcode"] == product) & (df["date"] >= start) & (df["date"] <= end)]
 
         # Baseline sales
         baseline_sales = df[
@@ -332,9 +318,7 @@ def calculate_incremental_revenue(
         inc_orders = promo_orders - baseline_orders
 
         # Lift
-        revenue_lift = (
-            (promo_revenue / baseline_revenue - 1) * 100 if baseline_revenue > 0 else 0
-        )
+        revenue_lift = (promo_revenue / baseline_revenue - 1) * 100 if baseline_revenue > 0 else 0
         qty_lift = (promo_qty / baseline_qty - 1) * 100 if baseline_qty > 0 else 0
 
         incremental.append(
@@ -485,9 +469,7 @@ def halo_effect_analysis(
             .reset_index()
         )
 
-        merged = halo_products.merge(
-            baseline_products, on="stockcode", how="outer"
-        ).fillna(0)
+        merged = halo_products.merge(baseline_products, on="stockcode", how="outer").fillna(0)
         merged["revenue_lift"] = (
             merged["halo_revenue"] / merged["base_revenue"].replace(0, np.nan) - 1
         ) * 100
@@ -567,9 +549,7 @@ def promotion_timing_analysis(
     month_analysis = (
         df[df["is_promo"]]
         .groupby("month")
-        .agg(
-            promo_revenue=("revenue", "sum"), promo_orders=("transaction_id", "nunique")
-        )
+        .agg(promo_revenue=("revenue", "sum"), promo_orders=("transaction_id", "nunique"))
         .reset_index()
     )
 
@@ -582,8 +562,7 @@ def promotion_timing_analysis(
 
     month_merged = month_analysis.merge(month_base, on="month", how="outer").fillna(0)
     month_merged["revenue_lift"] = (
-        month_merged["promo_revenue"] / month_merged["base_revenue"].replace(0, np.nan)
-        - 1
+        month_merged["promo_revenue"] / month_merged["base_revenue"].replace(0, np.nan) - 1
     ) * 100
 
     return {"by_day_of_week": dow_merged, "by_month": month_merged}

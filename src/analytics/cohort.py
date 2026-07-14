@@ -30,9 +30,7 @@ def compute_cohorts(
     df["revenue"] = df["price"] * df["quantity"]
 
     # Determine cohort for each customer (first purchase period)
-    customer_cohorts = (
-        df.groupby("customer_id")["date"].min().dt.to_period(cohort_period)
-    )
+    customer_cohorts = df.groupby("customer_id")["date"].min().dt.to_period(cohort_period)
     df["cohort"] = df["customer_id"].map(customer_cohorts)
 
     # Determine period number for each transaction
@@ -44,17 +42,13 @@ def compute_cohorts(
 
     if metric == "retention":
         # Count unique customers per cohort per period
-        cohort_data = (
-            df.groupby(["cohort", "period_number"])["customer_id"]
-            .nunique()
-            .reset_index()
-        )
+        cohort_data = df.groupby(["cohort", "period_number"])["customer_id"].nunique().reset_index()
         cohort_data.columns = ["cohort", "period_number", "customers"]
 
         # Get cohort sizes (period 0)
-        cohort_sizes = cohort_data[cohort_data["period_number"] == 0].set_index(
-            "cohort"
-        )["customers"]
+        cohort_sizes = cohort_data[cohort_data["period_number"] == 0].set_index("cohort")[
+            "customers"
+        ]
 
         # Calculate retention rate
         cohort_data["retention_rate"] = cohort_data.apply(
@@ -67,17 +61,11 @@ def compute_cohorts(
         )
 
         # Pivot to matrix
-        matrix = cohort_data.pivot(
-            index="cohort", columns="period_number", values="retention_rate"
-        )
+        matrix = cohort_data.pivot(index="cohort", columns="period_number", values="retention_rate")
 
     elif metric == "revenue":
-        cohort_data = (
-            df.groupby(["cohort", "period_number"])["revenue"].sum().reset_index()
-        )
-        cohort_sizes = (
-            df[df["period_number"] == 0].groupby("cohort")["customer_id"].nunique()
-        )
+        cohort_data = df.groupby(["cohort", "period_number"])["revenue"].sum().reset_index()
+        cohort_sizes = df[df["period_number"] == 0].groupby("cohort")["customer_id"].nunique()
         cohort_data["revenue_per_customer"] = cohort_data.apply(
             lambda row: (
                 row["revenue"] / cohort_sizes[row["cohort"]]
@@ -92,14 +80,10 @@ def compute_cohorts(
 
     elif metric == "orders":
         cohort_data = (
-            df.groupby(["cohort", "period_number"])["transaction_id"]
-            .nunique()
-            .reset_index()
+            df.groupby(["cohort", "period_number"])["transaction_id"].nunique().reset_index()
         )
         cohort_data.columns = ["cohort", "period_number", "orders"]
-        cohort_sizes = (
-            df[df["period_number"] == 0].groupby("cohort")["customer_id"].nunique()
-        )
+        cohort_sizes = df[df["period_number"] == 0].groupby("cohort")["customer_id"].nunique()
         cohort_data["orders_per_customer"] = cohort_data.apply(
             lambda row: (
                 row["orders"] / cohort_sizes[row["cohort"]]
@@ -118,9 +102,9 @@ def compute_cohorts(
             .agg(revenue=("revenue", "sum"), orders=("transaction_id", "nunique"))
             .reset_index()
         )
-        cohort_data["avg_order_value"] = cohort_data["revenue"] / cohort_data[
-            "orders"
-        ].replace(0, np.nan)
+        cohort_data["avg_order_value"] = cohort_data["revenue"] / cohort_data["orders"].replace(
+            0, np.nan
+        )
         matrix = cohort_data.pivot(
             index="cohort", columns="period_number", values="avg_order_value"
         )
@@ -136,17 +120,13 @@ def compute_cohorts(
     return matrix
 
 
-def compute_cohort_sizes(
-    transactions_df: pd.DataFrame, cohort_period: str = "M"
-) -> pd.DataFrame:
+def compute_cohort_sizes(transactions_df: pd.DataFrame, cohort_period: str = "M") -> pd.DataFrame:
     """Get cohort sizes and basic stats."""
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
 
-    customer_cohorts = (
-        df.groupby("customer_id")["date"].min().dt.to_period(cohort_period)
-    )
+    customer_cohorts = df.groupby("customer_id")["date"].min().dt.to_period(cohort_period)
     df["cohort"] = df["customer_id"].map(customer_cohorts)
 
     cohort_stats = (
@@ -247,9 +227,7 @@ def year_over_year_comparison(
     )
 
     yoy_stats["period"] = (
-        yoy_stats["year"].astype(str)
-        + "-"
-        + yoy_stats["month"].astype(str).str.zfill(2)
+        yoy_stats["year"].astype(str) + "-" + yoy_stats["month"].astype(str).str.zfill(2)
     )
 
     # Pivot for YoY comparison
@@ -285,10 +263,7 @@ def year_over_year_comparison(
             prev = years[i - 1]
             curr = years[i]
             for metric in ["revenue", "orders", "customers", "avg_order_value"]:
-                if (
-                    f"{metric}_{prev}" in result.columns
-                    and f"{metric}_{curr}" in result.columns
-                ):
+                if f"{metric}_{prev}" in result.columns and f"{metric}_{curr}" in result.columns:
                     result[f"{metric}_yoy_pct_{curr}_vs_{prev}"] = (
                         (result[f"{metric}_{curr}"] - result[f"{metric}_{prev}"])
                         / result[f"{metric}_{prev}"]
@@ -308,9 +283,7 @@ def cohort_comparison_summary(
     df["revenue"] = df["price"] * df["quantity"]
 
     # Get retention matrix
-    retention_matrix = compute_cohorts(
-        df, cohort_period=cohort_period, metric="retention"
-    )
+    retention_matrix = compute_cohorts(df, cohort_period=cohort_period, metric="retention")
     revenue_matrix = compute_cohorts(df, cohort_period=cohort_period, metric="revenue")
 
     # Limit to max_periods
@@ -322,39 +295,25 @@ def cohort_comparison_summary(
         "n_cohorts": len(retention_matrix),
         "cohort_period": cohort_period,
         "avg_retention_period_1": (
-            retention_matrix["Period 1"].mean()
-            if "Period 1" in retention_matrix.columns
-            else 0
+            retention_matrix["Period 1"].mean() if "Period 1" in retention_matrix.columns else 0
         ),
         "avg_retention_period_3": (
-            retention_matrix["Period 3"].mean()
-            if "Period 3" in retention_matrix.columns
-            else 0
+            retention_matrix["Period 3"].mean() if "Period 3" in retention_matrix.columns else 0
         ),
         "avg_retention_period_6": (
-            retention_matrix["Period 6"].mean()
-            if "Period 6" in retention_matrix.columns
-            else 0
+            retention_matrix["Period 6"].mean() if "Period 6" in retention_matrix.columns else 0
         ),
         "avg_retention_period_12": (
-            retention_matrix["Period 12"].mean()
-            if "Period 12" in retention_matrix.columns
-            else 0
+            retention_matrix["Period 12"].mean() if "Period 12" in retention_matrix.columns else 0
         ),
         "avg_revenue_per_customer_period_1": (
-            revenue_matrix["Period 1"].mean()
-            if "Period 1" in revenue_matrix.columns
-            else 0
+            revenue_matrix["Period 1"].mean() if "Period 1" in revenue_matrix.columns else 0
         ),
         "avg_revenue_per_customer_period_3": (
-            revenue_matrix["Period 3"].mean()
-            if "Period 3" in revenue_matrix.columns
-            else 0
+            revenue_matrix["Period 3"].mean() if "Period 3" in revenue_matrix.columns else 0
         ),
         "best_cohort_retention": (
-            retention_matrix.mean(axis=1).idxmax()
-            if len(retention_matrix) > 0
-            else None
+            retention_matrix.mean(axis=1).idxmax() if len(retention_matrix) > 0 else None
         ),
         "best_cohort_revenue": (
             revenue_matrix.mean(axis=1).idxmax() if len(revenue_matrix) > 0 else None

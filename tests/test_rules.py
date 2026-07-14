@@ -4,11 +4,11 @@ import pandas as pd
 import pytest
 
 from src.rules.generator import (
+    _empty_rules_df,
     add_extended_metrics,
     filter_rules,
     format_rules_for_display,
     generate_rules,
-    _empty_rules_df,
 )
 
 

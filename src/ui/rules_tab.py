@@ -37,12 +37,8 @@ def render_rules_tab(rules: pd.DataFrame, product_lookup: dict, params: dict):
             )
 
         with col2:
-            min_lift = st.number_input(
-                "Min Lift", 0.0, 10.0, params.get("min_lift", 1.0), 0.1
-            )
-            max_lift = st.number_input(
-                "Max Lift", 0.0, 100.0, params.get("max_lift", 100.0), 0.5
-            )
+            min_lift = st.number_input("Min Lift", 0.0, 10.0, params.get("min_lift", 1.0), 0.1)
+            max_lift = st.number_input("Max Lift", 0.0, 100.0, params.get("max_lift", 100.0), 0.5)
 
         with col3:
             min_lev = st.number_input(
@@ -140,9 +136,7 @@ def _render_rules_network_tab(filtered: pd.DataFrame, product_lookup: dict, min_
             "Min Lift for Network", 1.0, 5.0, min_lift, 0.1, key="net_min_lift"
         )
         max_nodes = st.slider("Max Nodes", 10, 100, 40, key="net_max_nodes")
-        max_edges = st.slider(
-            "Max Edges", 20, 200, min(100, len(filtered)), key="net_max_edges"
-        )
+        max_edges = st.slider("Max Edges", 20, 200, min(100, len(filtered)), key="net_max_edges")
 
         fig = create_network_graph(
             filtered,

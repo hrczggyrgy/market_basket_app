@@ -363,9 +363,7 @@ def tree_to_treemap_data(
         if size_metric == "size":
             values.append(node.size)
         elif size_metric == "similarity_within":
-            values.append(
-                max(node.similarity_within, 0.01) * 100
-            )  # Scale for visibility
+            values.append(max(node.similarity_within, 0.01) * 100)  # Scale for visibility
         else:
             values.append(node.size)
 
@@ -568,9 +566,7 @@ def plot_switching_network(
         Plotly Figure
     """
     if switching_df.empty:
-        return go.Figure().add_annotation(
-            text="No switching data", x=0.5, y=0.5, showarrow=False
-        )
+        return go.Figure().add_annotation(text="No switching data", x=0.5, y=0.5, showarrow=False)
 
     # Filter and limit edges
     df = switching_df[switching_df["switch_rate"] >= min_rate].copy()
@@ -617,9 +613,7 @@ def plot_switching_network(
             x=x_coords,
             y=y_coords,
             mode="markers+text",
-            marker=dict(
-                size=20, color="lightblue", line=dict(width=2, color="darkblue")
-            ),
+            marker=dict(size=20, color="lightblue", line=dict(width=2, color="darkblue")),
             text=[product_lookup.get(n, n)[:15] for n in node_list],
             textposition="top center",
             textfont=dict(size=9),
@@ -634,9 +628,7 @@ def plot_switching_network(
         height=height,
         showlegend=False,
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(
-            showgrid=False, zeroline=False, showticklabels=False, scaleanchor="x"
-        ),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, scaleanchor="x"),
         margin=dict(t=60, b=20, l=20, r=20),
         plot_bgcolor="white",
     )

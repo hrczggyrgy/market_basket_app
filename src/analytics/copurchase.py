@@ -23,12 +23,8 @@ def compute_affinity_matrix(
     """
     # Filter to top N products if specified
     if top_n_products:
-        top_products = (
-            transactions_df["stockcode"].value_counts().head(top_n_products).index
-        )
-        transactions_df = transactions_df[
-            transactions_df["stockcode"].isin(top_products)
-        ]
+        top_products = transactions_df["stockcode"].value_counts().head(top_n_products).index
+        transactions_df = transactions_df[transactions_df["stockcode"].isin(top_products)]
 
     # Create basket matrix
     basket = create_basket_matrix(transactions_df)
@@ -84,12 +80,8 @@ def get_top_affinity_pairs(
         DataFrame with product_a, product_b, support, confidence, lift, leverage
     """
     if top_n_products:
-        top_products = (
-            transactions_df["stockcode"].value_counts().head(top_n_products).index
-        )
-        transactions_df = transactions_df[
-            transactions_df["stockcode"].isin(top_products)
-        ]
+        top_products = transactions_df["stockcode"].value_counts().head(top_n_products).index
+        transactions_df = transactions_df[transactions_df["stockcode"].isin(top_products)]
 
     basket = create_basket_matrix(transactions_df)
     freq_items = run_fpgrowth(basket, min_support=min_support, max_len=2)
@@ -137,9 +129,7 @@ def get_top_affinity_pairs(
 
             if lift >= min_lift:
                 leverage = support - (p_a * p_b)
-                conviction = (
-                    (1 - p_b) / (1 - support / p_a) if support / p_a < 1 else np.inf
-                )
+                conviction = (1 - p_b) / (1 - support / p_a) if support / p_a < 1 else np.inf
 
                 results.append(
                     {

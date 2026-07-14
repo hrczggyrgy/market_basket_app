@@ -62,18 +62,14 @@ def build_customer_features(
     history_start = prediction_start - pd.Timedelta(days=min_history_days)
 
     # Split data
-    history_df = df[
-        (df["date"] >= history_start) & (df["date"] < prediction_start)
-    ].copy()
+    history_df = df[(df["date"] >= history_start) & (df["date"] < prediction_start)].copy()
     future_df = df[df["date"] >= prediction_start].copy()
 
     # Get all customers from history
     all_customers = history_df["customer_id"].unique()
 
     # Target: did customer buy target_product in future period?
-    future_target = future_df[future_df["stockcode"] == target_product][
-        "customer_id"
-    ].unique()
+    future_target = future_df[future_df["stockcode"] == target_product]["customer_id"].unique()
     y = pd.Series(0, index=all_customers, name="will_buy")
     y.loc[y.index.intersection(future_target)] = 1
 
@@ -106,9 +102,7 @@ def build_customer_features(
             else ("stockcode", "nunique")
         ),
         n_unique_brands=(
-            ("brand", "nunique")
-            if "brand" in history_df.columns
-            else ("stockcode", "nunique")
+            ("brand", "nunique") if "brand" in history_df.columns else ("stockcode", "nunique")
         ),
         # Temporal
         first_purchase=("date", "min"),
@@ -123,9 +117,7 @@ def build_customer_features(
     )
 
     # Derived RFM features
-    rfm["customer_lifetime_days"] = (
-        rfm["last_purchase"] - rfm["first_purchase"]
-    ).dt.days
+    rfm["customer_lifetime_days"] = (rfm["last_purchase"] - rfm["first_purchase"]).dt.days
     rfm["purchase_interval"] = np.where(
         rfm["frequency"] > 1,
         rfm["customer_lifetime_days"] / (rfm["frequency"] - 1),
@@ -174,9 +166,7 @@ def build_customer_features(
 
         # Category spend share
         cat_revenue = (
-            history_df.groupby(["customer_id", "category"])["revenue"]
-            .sum()
-            .unstack(fill_value=0)
+            history_df.groupby(["customer_id", "category"])["revenue"].sum().unstack(fill_value=0)
         )
         cat_revenue.columns = [f"cat_rev_{col}" for col in cat_revenue.columns]
         cat_total = cat_revenue.sum(axis=1)
@@ -192,9 +182,7 @@ def build_customer_features(
         brand_purchases.columns = [f"brand_{col}" for col in brand_purchases.columns]
 
         brand_revenue = (
-            history_df.groupby(["customer_id", "brand"])["revenue"]
-            .sum()
-            .unstack(fill_value=0)
+            history_df.groupby(["customer_id", "brand"])["revenue"].sum().unstack(fill_value=0)
         )
         brand_revenue.columns = [f"brand_rev_{col}" for col in brand_revenue.columns]
         brand_total = brand_revenue.sum(axis=1)
@@ -245,12 +233,8 @@ def build_customer_features(
         features = features.join(hour_share, how="left").fillna(0)
 
     # Time since first/last purchase
-    features["days_since_first_purchase"] = (
-        prediction_start - features["first_purchase"]
-    ).dt.days
-    features["days_since_last_purchase"] = (
-        prediction_start - features["last_purchase"]
-    ).dt.days
+    features["days_since_first_purchase"] = (prediction_start - features["first_purchase"]).dt.days
+    features["days_since_last_purchase"] = (prediction_start - features["last_purchase"]).dt.days
 
     # Purchase regularity (CV of intervals)
     customer_intervals = (
@@ -279,9 +263,7 @@ def build_customer_features(
     # ------------------------------------------------------------
     # Herfindahl-Hirschman Index for product concentration
     product_shares = (
-        history_df.groupby(["customer_id", "stockcode"])["quantity"]
-        .sum()
-        .unstack(fill_value=0)
+        history_df.groupby(["customer_id", "stockcode"])["quantity"].sum().unstack(fill_value=0)
     )
     product_shares = product_shares.div(product_shares.sum(axis=1), axis=0).fillna(0)
     hhi = (product_shares**2).sum(axis=1)
@@ -291,9 +273,7 @@ def build_customer_features(
     # Category HHI
     if "category" in history_df.columns:
         cat_shares = (
-            history_df.groupby(["customer_id", "category"])["quantity"]
-            .sum()
-            .unstack(fill_value=0)
+            history_df.groupby(["customer_id", "category"])["quantity"].sum().unstack(fill_value=0)
         )
         cat_shares = cat_shares.div(cat_shares.sum(axis=1), axis=0).fillna(0)
         cat_hhi = (cat_shares**2).sum(axis=1)
@@ -301,9 +281,7 @@ def build_customer_features(
         features["effective_categories"] = 1 / cat_hhi.replace(0, np.nan)
 
     # Average basket size per transaction
-    basket_sizes = history_df.groupby(["customer_id", "transaction_id"])[
-        "quantity"
-    ].sum()
+    basket_sizes = history_df.groupby(["customer_id", "transaction_id"])["quantity"].sum()
     features["avg_basket_size"] = basket_sizes.groupby("customer_id").mean()
     features["max_basket_size"] = basket_sizes.groupby("customer_id").max()
     features["basket_size_std"] = basket_sizes.groupby("customer_id").std().fillna(0)
@@ -318,9 +296,7 @@ def build_customer_features(
         labels=["budget", "value", "premium", "luxury"],
         duplicates="drop",
     )
-    tier_dist = (
-        history_df.groupby(["customer_id", price_tiers]).size().unstack(fill_value=0)
-    )
+    tier_dist = history_df.groupby(["customer_id", price_tiers]).size().unstack(fill_value=0)
     tier_dist.columns = [f"tier_{col}" for col in tier_dist.columns]
     tier_total = tier_dist.sum(axis=1)
     tier_share = tier_dist.div(tier_total, axis=0).fillna(0)
@@ -329,18 +305,14 @@ def build_customer_features(
 
     # Price elasticity proxy: correlation between price and quantity
     price_qty_corr = history_df.groupby("customer_id").apply(
-        lambda x: (
-            x["price"].corr(x["quantity"]) if len(x) > 2 and x["price"].std() > 0 else 0
-        )
+        lambda x: x["price"].corr(x["quantity"]) if len(x) > 2 and x["price"].std() > 0 else 0
     )
     features["price_quantity_corr"] = price_qty_corr.fillna(0)
 
     # Avg discount/promotion sensitivity (if multiple prices for same product)
     if len(history_df) > 0:
         price_variation = (
-            history_df.groupby(["customer_id", "stockcode"])["price"]
-            .std()
-            .unstack(fill_value=0)
+            history_df.groupby(["customer_id", "stockcode"])["price"].std().unstack(fill_value=0)
         )
         features["avg_price_variation"] = price_variation.mean(axis=1)
         features["max_price_variation"] = price_variation.max(axis=1)
@@ -354,9 +326,7 @@ def build_customer_features(
     features["estimated_annual_orders"] = features["frequency"] / (
         features["customer_lifetime_days"] / 365
     ).replace(0, np.nan)
-    features["predicted_clv"] = (
-        features["estimated_annual_revenue"] * 3
-    )  # 3-year horizon
+    features["predicted_clv"] = features["estimated_annual_revenue"] * 3  # 3-year horizon
 
     # ------------------------------------------------------------
     # 8. CHURN RISK INDICATORS
@@ -375,12 +345,8 @@ def build_customer_features(
         .nunique()
     )
     features["recent_frequency"] = recent_freq.reindex(features.index).fillna(0)
-    monthly_freq = features["frequency"] / (
-        features["customer_lifetime_days"] / 30
-    ).clip(lower=1)
-    features["freq_velocity"] = features["recent_frequency"] / monthly_freq.replace(
-        0, np.nan
-    )
+    monthly_freq = features["frequency"] / (features["customer_lifetime_days"] / 30).clip(lower=1)
+    features["freq_velocity"] = features["recent_frequency"] / monthly_freq.replace(0, np.nan)
 
     # ------------------------------------------------------------
     # 9. PRODUCT-SPECIFIC FEATURES (Target Product Context)
@@ -388,9 +354,7 @@ def build_customer_features(
     # Global product stats
     product_stats = df[df["stockcode"] == target_product]
     if len(product_stats) > 0:
-        features["target_product_popularity"] = (
-            len(product_stats) / df["transaction_id"].nunique()
-        )
+        features["target_product_popularity"] = len(product_stats) / df["transaction_id"].nunique()
         features["target_product_avg_price"] = product_stats["price"].mean()
         features["target_product_avg_qty"] = product_stats["quantity"].mean()
         features["target_product_revenue_share"] = (
@@ -412,9 +376,7 @@ def build_customer_features(
             .groupby("customer_id")["revenue"]
             .sum()
         )
-        features["target_category_affinity"] = cat_affinity.reindex(
-            features.index
-        ).fillna(0)
+        features["target_category_affinity"] = cat_affinity.reindex(features.index).fillna(0)
 
     if "brand" in history_df.columns and "target_brand" in features.columns:
         brand_affinity = (
@@ -422,9 +384,7 @@ def build_customer_features(
             .groupby("customer_id")["revenue"]
             .sum()
         )
-        features["target_brand_affinity"] = brand_affinity.reindex(
-            features.index
-        ).fillna(0)
+        features["target_brand_affinity"] = brand_affinity.reindex(features.index).fillna(0)
 
     # ------------------------------------------------------------
     # 10. CO-PURCHASE / CROSS-SELL FEATURES
@@ -445,32 +405,26 @@ def build_customer_features(
                 (history_df["customer_id"].isin(features.index))
                 & (history_df["stockcode"] == coprod)
             ]["customer_id"].unique()
-            features[f"bought_with_target_{coprod}"] = features.index.isin(
-                coprod_bought
-            ).astype(int)
+            features[f"bought_with_target_{coprod}"] = features.index.isin(coprod_bought).astype(
+                int
+            )
 
     # ------------------------------------------------------------
     # 11. CUSTOMER-PRODUCT INTERACTION FEATURES
     # ------------------------------------------------------------
     # Historical purchase probability for target product
     target_history = (
-        history_df[history_df["stockcode"] == target_product]
-        .groupby("customer_id")
-        .size()
+        history_df[history_df["stockcode"] == target_product].groupby("customer_id").size()
     )
     features["target_purchase_count"] = target_history.reindex(features.index).fillna(0)
     features["target_purchase_freq"] = features["target_purchase_count"] / features[
         "frequency"
     ].replace(0, np.nan)
-    features["has_bought_target_before"] = (
-        features["target_purchase_count"] > 0
-    ).astype(int)
+    features["has_bought_target_before"] = (features["target_purchase_count"] > 0).astype(int)
 
     # Days since last target purchase
     last_target_purchase = (
-        history_df[history_df["stockcode"] == target_product]
-        .groupby("customer_id")["date"]
-        .max()
+        history_df[history_df["stockcode"] == target_product].groupby("customer_id")["date"].max()
     )
     features["days_since_target_purchase"] = (
         prediction_start - last_target_purchase
@@ -480,20 +434,12 @@ def build_customer_features(
     # 12. SEQUENTIAL PATTERNS
     # ------------------------------------------------------------
     # First/last product purchased
-    first_product = (
-        history_df.sort_values("date").groupby("customer_id")["stockcode"].first()
-    )
-    last_product = (
-        history_df.sort_values("date").groupby("customer_id")["stockcode"].last()
-    )
+    first_product = history_df.sort_values("date").groupby("customer_id")["stockcode"].first()
+    last_product = history_df.sort_values("date").groupby("customer_id")["stockcode"].last()
     features["first_product"] = first_product
     features["last_product"] = last_product
-    features["first_is_target"] = (features["first_product"] == target_product).astype(
-        int
-    )
-    features["last_is_target"] = (features["last_product"] == target_product).astype(
-        int
-    )
+    features["first_is_target"] = (features["first_product"] == target_product).astype(int)
+    features["last_is_target"] = (features["last_product"] == target_product).astype(int)
 
     # Drop raw date columns and non-numeric
     drop_cols = ["first_purchase", "last_purchase", "first_product", "last_product"]
@@ -568,9 +514,7 @@ def train_decision_tree(
         "feature_importances": dict(zip(X.columns, model.feature_importances_)),
         "tree_depth": model.get_depth(),
         "n_leaves": model.get_n_leaves(),
-        "classification_report": classification_report(
-            y_test, y_pred, output_dict=True
-        ),
+        "classification_report": classification_report(y_test, y_pred, output_dict=True),
         "confusion_matrix": confusion_matrix(y_test, y_pred).tolist(),
     }
 
@@ -662,9 +606,7 @@ def predict_for_customer(
     feature_names = features.columns.tolist()
     path_conditions = []
 
-    for node_id in node_indicator.indices[
-        node_indicator.indptr[0] : node_indicator.indptr[1]
-    ]:
+    for node_id in node_indicator.indices[node_indicator.indptr[0] : node_indicator.indptr[1]]:
         if model.tree_.feature[node_id] != -2:
             feature_idx = model.tree_.feature[node_id]
             threshold = model.tree_.threshold[node_id]
@@ -672,13 +614,9 @@ def predict_for_customer(
 
             value = cust_features.iloc[0, feature_idx]
             if value <= threshold:
-                path_conditions.append(
-                    f"{feature_name} <= {threshold:.2f} (value: {value:.2f})"
-                )
+                path_conditions.append(f"{feature_name} <= {threshold:.2f} (value: {value:.2f})")
             else:
-                path_conditions.append(
-                    f"{feature_name} > {threshold:.2f} (value: {value:.2f})"
-                )
+                path_conditions.append(f"{feature_name} > {threshold:.2f} (value: {value:.2f})")
 
     return {
         "customer_id": customer_id,
@@ -773,10 +711,7 @@ def get_feature_groups(features: pd.DataFrame) -> Dict[str, List[str]]:
             groups["Product_Specific"].append(col)
         elif "bought_with_target" in col:
             groups["CoPurchase"].append(col)
-        elif any(
-            kw in col
-            for kw in ["target_purchase", "has_bought_target", "days_since_target"]
-        ):
+        elif any(kw in col for kw in ["target_purchase", "has_bought_target", "days_since_target"]):
             groups["Interaction"].append(col)
         elif any(kw in col for kw in ["first_is_target", "last_is_target"]):
             groups["Sequential"].append(col)

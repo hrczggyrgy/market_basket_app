@@ -16,9 +16,7 @@ from sklearn.metrics import silhouette_score
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-def similarity_to_distance(
-    similarity_matrix: pd.DataFrame, method: str = "yules_q"
-) -> np.ndarray:
+def similarity_to_distance(similarity_matrix: pd.DataFrame, method: str = "yules_q") -> np.ndarray:
     """
     Convert similarity matrix to distance matrix for clustering.
 
@@ -72,9 +70,7 @@ def perform_hierarchical_clustering(
         linkage_method = "average"
         import logging
 
-        logging.warning(
-            "Ward linkage requires Euclidean distances; using average instead."
-        )
+        logging.warning("Ward linkage requires Euclidean distances; using average instead.")
 
     linkage_matrix = linkage(condensed_dist, method=linkage_method)
 
@@ -304,9 +300,7 @@ def compute_unconstrained_baseline(
     max_clusters = min(20, len(similarity_matrix) - 1)
 
     for k in range(2, max_clusters + 1):
-        assignments = get_cluster_assignments(
-            linkage_matrix, similarity_matrix, n_clusters=k
-        )
+        assignments = get_cluster_assignments(linkage_matrix, similarity_matrix, n_clusters=k)
         quality = compute_weighted_within_similarity(similarity_matrix, assignments)
         if quality > best_quality:
             best_quality = quality

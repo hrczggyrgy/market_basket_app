@@ -51,9 +51,7 @@ def create_network_graph(
 
     # Add nodes
     for item in items:
-        label = (
-            product_lookup.get(str(item), str(item)) if product_lookup else str(item)
-        )
+        label = product_lookup.get(str(item), str(item)) if product_lookup else str(item)
         G.add_node(item, label=label[:30])
 
     # Add edges from rules
@@ -110,9 +108,7 @@ def create_network_graph(
     if max(node_sizes) > min(node_sizes):
         node_sizes = [
             min_size
-            + (max_size - min_size)
-            * (s - min(node_sizes))
-            / (max(node_sizes) - min(node_sizes))
+            + (max_size - min_size) * (s - min(node_sizes)) / (max(node_sizes) - min(node_sizes))
             for s in node_sizes
         ]
 
@@ -161,9 +157,7 @@ def create_network_graph(
     node_x = [pos[n][0] for n in G.nodes()]
     node_y = [pos[n][1] for n in G.nodes()]
     node_labels = [G.nodes[n]["label"] for n in G.nodes()]
-    node_text = [
-        f"{G.nodes[n]['label']}<br>Connections: {G.degree(n)}" for n in G.nodes()
-    ]
+    node_text = [f"{G.nodes[n]['label']}<br>Connections: {G.degree(n)}" for n in G.nodes()]
 
     node_trace = go.Scatter(
         x=node_x,

@@ -108,9 +108,7 @@ def compute_attribute_split_quality(
         (mutual_information, dict of attribute_value -> product_list)
     """
     # Filter to products in this set with valid attribute values
-    relevant_products = [
-        p for p in products if p in attribute_values and p in cluster_assignments
-    ]
+    relevant_products = [p for p in products if p in attribute_values and p in cluster_assignments]
     if len(relevant_products) < min_cluster_size:
         return 0.0, {}
 
@@ -439,9 +437,7 @@ def build_cdt(
     tree_quality = score_tree(root, similarity_matrix)
 
     # Compare to baseline
-    quality_ratio = (
-        tree_quality / unconstrained_baseline if unconstrained_baseline > 0 else 0
-    )
+    quality_ratio = tree_quality / unconstrained_baseline if unconstrained_baseline > 0 else 0
     passed_threshold = quality_ratio >= quality_threshold
 
     metadata = {

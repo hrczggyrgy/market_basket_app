@@ -28,9 +28,7 @@ def render_addon_tab(transactions_df: pd.DataFrame, product_lookup: dict, params
         render_multi_addon(transactions_df, product_lookup, params)
 
 
-def render_single_addon(
-    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
-):
+def render_single_addon(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Single anchor product add-on analysis."""
     st.subheader("Add-on Recommendations for Anchor Product")
 
@@ -67,9 +65,7 @@ def render_single_addon(
                 "addon_avg_price",
             ]
 
-            st.dataframe(
-                addons[display_cols].round(4), width="stretch", hide_index=True
-            )
+            st.dataframe(addons[display_cols].round(4), width="stretch", hide_index=True)
 
             render_analytics_export(addons, f"AddOns_{anchor}")
 
@@ -92,9 +88,7 @@ def render_single_addon(
             st.info("No strong add-on products found for this anchor")
 
 
-def render_multi_addon(
-    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
-):
+def render_multi_addon(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Multiple anchor products add-on matrix."""
     st.subheader("Add-on Matrix for Top Products")
 

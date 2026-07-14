@@ -91,9 +91,7 @@ def plot_decision_tree(
         )
 
         if parent_id is not None:
-            edges.append(
-                {"source": parent_id, "target": node_id, "condition": condition}
-            )
+            edges.append({"source": parent_id, "target": node_id, "condition": condition})
 
         if not is_leaf:
             left_child = tree.children_left[node_id]
@@ -145,11 +143,7 @@ def plot_decision_tree(
             for n in nodes
             if (node_type == "internal" and not n["is_leaf"])
             or (node_type == "leaf_buy" and n["is_leaf"] and n["predicted_class"] == 1)
-            or (
-                node_type == "leaf_not_buy"
-                and n["is_leaf"]
-                and n["predicted_class"] == 0
-            )
+            or (node_type == "leaf_not_buy" and n["is_leaf"] and n["predicted_class"] == 0)
         ]
 
         if not type_nodes:
@@ -178,9 +172,7 @@ def plot_decision_tree(
                 text=text,
                 textposition="middle center",
                 textfont=dict(size=10, color="black"),
-                marker=dict(
-                    size=size, color=color, line=dict(width=2, color="darkgray")
-                ),
+                marker=dict(size=size, color=color, line=dict(width=2, color="darkgray")),
                 hoverinfo="text",
                 hovertext=hover,
                 showlegend=False,
@@ -196,9 +188,7 @@ def plot_decision_tree(
         hovermode="closest",
         margin=dict(b=20, l=5, r=5, t=40),
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(
-            showgrid=False, zeroline=False, showticklabels=False, autorange="reversed"
-        ),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, autorange="reversed"),
         height=height,
         plot_bgcolor="white",
     )
@@ -321,9 +311,7 @@ def plot_tree_rules(
             x=probs[::-1],
             orientation="h",
             marker=dict(color=colors[::-1], opacity=0.7),
-            text=[
-                f"P(Buy)={p:.1%}<br>N={s}" for p, s in zip(probs[::-1], samples[::-1])
-            ],
+            text=[f"P(Buy)={p:.1%}<br>N={s}" for p, s in zip(probs[::-1], samples[::-1])],
             textposition="auto",
             hoverinfo="text",
             hovertext=[

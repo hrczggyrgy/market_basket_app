@@ -24,9 +24,7 @@ def render_export_buttons(
 
         export_df["antecedents_str"] = export_df["antecedents"].apply(format_items)
         export_df["consequents_str"] = export_df["consequents"].apply(format_items)
-        export_df["rule"] = (
-            export_df["antecedents_str"] + " → " + export_df["consequents_str"]
-        )
+        export_df["rule"] = export_df["antecedents_str"] + " → " + export_df["consequents_str"]
 
     # CSV export
     csv = export_df.to_csv(index=False)

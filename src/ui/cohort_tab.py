@@ -12,20 +12,24 @@ from src.ui.export import render_analytics_export
 
 
 @st.cache_data
-def _cached_compute_cohorts(transactions_df: pd.DataFrame, cohort_period: str, metric: str) -> pd.DataFrame:
+def _cached_compute_cohorts(
+    transactions_df: pd.DataFrame, cohort_period: str, metric: str
+) -> pd.DataFrame:
     """Cached wrapper for compute_cohorts."""
     return compute_cohorts(transactions_df, cohort_period=cohort_period, metric=metric)
 
 
 @st.cache_data
-def _cached_cohort_comparison_summary(transactions_df: pd.DataFrame, cohort_period: str, max_periods: int) -> dict:
+def _cached_cohort_comparison_summary(
+    transactions_df: pd.DataFrame, cohort_period: str, max_periods: int
+) -> dict:
     """Cached wrapper for cohort_comparison_summary."""
-    return cohort_comparison_summary(transactions_df, cohort_period=cohort_period, max_periods=max_periods)
+    return cohort_comparison_summary(
+        transactions_df, cohort_period=cohort_period, max_periods=max_periods
+    )
 
 
-def render_cohort_tab(
-    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
-):
+def render_cohort_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render cohort analysis tab."""
     # product_lookup is available but not used in cohort analysis
     # Kept for consistency with other tab functions
@@ -57,9 +61,7 @@ def render_cohort_tab(
             key="cohort_metric",
         )
     with col3:
-        max_periods = st.slider(
-            "Max Periods to Show", 3, 24, 12, key="cohort_max_periods"
-        )
+        max_periods = st.slider("Max Periods to Show", 3, 24, 12, key="cohort_max_periods")
 
     # Map metric to internal names
     metric_map = {
@@ -100,7 +102,9 @@ def render_cohort_tab(
     # Summary metrics
     st.subheader("Cohort Summary")
 
-    summary = _cached_cohort_comparison_summary(transactions_df, cohort_period=period_code, max_periods=max_periods)
+    summary = _cached_cohort_comparison_summary(
+        transactions_df, cohort_period=period_code, max_periods=max_periods
+    )
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -194,9 +198,7 @@ def render_cohort_tab(
         width="stretch",
     )
 
-    render_analytics_export(
-        cohort_data[display_cols], f"Cohort_{metric}_{cohort_period}"
-    )
+    render_analytics_export(cohort_data[display_cols], f"Cohort_{metric}_{cohort_period}")
 
     # Cohort size vs performance scatter - not available from compute_cohorts
     # Skip this section as we don't have cohort sizes in the matrix format
@@ -207,9 +209,7 @@ def render_cohort_tab(
     if len(period_cols) >= 2:
         p1, p2 = st.columns(2)
         with p1:
-            period_1 = st.selectbox(
-                "Period 1", period_cols, index=0, key="pop_period_1"
-            )
+            period_1 = st.selectbox("Period 1", period_cols, index=0, key="pop_period_1")
         with p2:
             period_2 = st.selectbox(
                 "Period 2",
@@ -228,9 +228,7 @@ def render_cohort_tab(
                     period_2: cohort_data[period_2],
                     "Change": cohort_data[period_2] - cohort_data[period_1],
                     "Pct Change": (
-                        (cohort_data[period_2] - cohort_data[period_1])
-                        / period_1_vals
-                        * 100
+                        (cohort_data[period_2] - cohort_data[period_1]) / period_1_vals * 100
                     ).round(1),
                 }
             )
@@ -238,15 +236,9 @@ def render_cohort_tab(
             st.dataframe(
                 comparison.style.format(
                     {
-                        period_1: (
-                            "{:.2%}" if metric_internal == "retention" else "${:,.2f}"
-                        ),
-                        period_2: (
-                            "{:.2%}" if metric_internal == "retention" else "${:,.2f}"
-                        ),
-                        "Change": (
-                            "{:.2%}" if metric_internal == "retention" else "${:,.2f}"
-                        ),
+                        period_1: ("{:.2%}" if metric_internal == "retention" else "${:,.2f}"),
+                        period_2: ("{:.2%}" if metric_internal == "retention" else "${:,.2f}"),
+                        "Change": ("{:.2%}" if metric_internal == "retention" else "${:,.2f}"),
                         "Pct Change": "{:.1f}%",
                     }
                 ).background_gradient(cmap="RdYlGn", subset=["Change", "Pct Change"]),
