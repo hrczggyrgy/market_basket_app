@@ -714,7 +714,8 @@ def predict_clv(
     Predict Customer Lifetime Value using ML models.
 
     Returns:
-        DataFrame with predicted CLV and model metrics
+        DataFrame with predicted CLV and a dict of metrics + diagnostics
+        including baseline comparisons, fold-level R², and low-confidence flags.
     """
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
@@ -723,13 +724,11 @@ def predict_clv(
     snapshot_date = df["date"].max()
     cutoff_date = snapshot_date - pd.Timedelta(prediction_horizon_days, unit="D")
 
-    # Historical (before cutoff) and future (after cutoff)
     hist = df[df["date"] < cutoff_date]
     future = df[df["date"] >= cutoff_date]
 
     cat_col_hist = "category" if "category" in hist.columns else "stockcode"
 
-    # Historical features
     features = (
         hist.groupby("customer_id")
         .agg(
@@ -748,40 +747,46 @@ def predict_clv(
         .reset_index()
     )
 
-    # Ensure numeric types
     features["lifetime_days"] = pd.to_numeric(
         (features["last_purchase"] - features["first_purchase"]).dt.days, errors="coerce"
     ).fillna(1)
 
     features["recency"] = pd.to_numeric(features["recency"], errors="coerce").fillna(0).astype(int)
 
-    # Add derived features
     features["monetary_per_order"] = features["monetary"] / features["frequency"].replace(0, 1)
     features["purchase_rate"] = features["frequency"] / features["lifetime_days"].replace(0, 1) * 30
     features["recency_ratio"] = features["recency"] / features["lifetime_days"].replace(0, 1)
 
-    # Future actuals (for validation)
     future_rev = future.groupby("customer_id")["revenue"].sum().reset_index()
     future_rev.columns = ["customer_id", "future_revenue"]
     features = features.merge(future_rev, on="customer_id", how="left").fillna(
         {"future_revenue": 0}
     )
 
-    # Target: future revenue in prediction window
     y = features["future_revenue"]
     X = features.drop(columns=["customer_id", "first_purchase", "last_purchase", "future_revenue"])
-
-    # Select features
     if features_to_use:
         X = X[features_to_use]
-
-    # Handle infinite/NaN
     X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
 
-    # Train-test split
+    # --- Baselines ---
+    naive_mean_pred = np.full_like(y, y.mean())
+    baseline_mae = mean_absolute_error(y, naive_mean_pred)
+    baseline_r2 = r2_score(y, naive_mean_pred)
+    metrics = {
+        "baseline_naive_mean_mae": baseline_mae,
+        "baseline_naive_mean_r2": baseline_r2,
+    }
+
+    # Heuristic baseline: trailing daily revenue rate * horizon
+    daily_rate = features["monetary"] / features["lifetime_days"].clip(lower=1)
+    heuristic_pred = daily_rate * prediction_horizon_days
+    metrics["baseline_heuristic_mae"] = mean_absolute_error(y, heuristic_pred)
+    metrics["baseline_heuristic_r2"] = r2_score(y, heuristic_pred)
+
+    # --- Train / test split ---
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Create model
     if model_type == "xgboost" and XGBOOST_AVAILABLE:
         model = xgb.XGBRegressor(
             n_estimators=200,
@@ -813,14 +818,6 @@ def predict_clv(
             random_state=42,
             n_jobs=-1,
         )
-    elif model_type == "gradient_boosting":
-        model = GradientBoostingRegressor(
-            n_estimators=200,
-            max_depth=5,
-            learning_rate=0.1,
-            min_samples_leaf=10,
-            random_state=42,
-        )
     else:
         model = GradientBoostingRegressor(
             n_estimators=200,
@@ -832,51 +829,44 @@ def predict_clv(
 
     model.fit(X_train, y_train)
 
-    # Predictions
-    y_pred_train = model.predict(X_train)
     y_pred_test = model.predict(X_test)
+    y_pred_train = model.predict(X_train)
 
-    # Metrics
-    metrics = {
-        "train_mae": mean_absolute_error(y_train, y_pred_train),
-        "test_mae": mean_absolute_error(y_test, y_pred_test),
-        "train_rmse": np.sqrt(mean_squared_error(y_train, y_pred_train)),
-        "test_rmse": np.sqrt(mean_squared_error(y_test, y_pred_test)),
-        "train_r2": r2_score(y_train, y_pred_train),
-        "test_r2": r2_score(y_test, y_pred_test),
-    }
+    metrics["train_mae"] = mean_absolute_error(y_train, y_pred_train)
+    metrics["test_mae"] = mean_absolute_error(y_test, y_pred_test)
+    metrics["train_r2"] = r2_score(y_train, y_pred_train)
+    metrics["test_r2"] = r2_score(y_test, y_pred_test)
 
-    # Feature importance
+    # Track holdout customers for audit
+    test_idx = X_test.index
+    features["_in_validation_holdout"] = False
+    features.loc[features.index.isin(test_idx), "_in_validation_holdout"] = True
+
+    # Feature importance (using the train-only model)
     if hasattr(model, "feature_importances_"):
-        feature_importance = pd.DataFrame(
-            {
-                "feature": X.columns,
-                "importance": model.feature_importances_,
-            }
-        ).sort_values("importance", ascending=False)
+        fi = pd.DataFrame({"feature": X.columns, "importance": model.feature_importances_})
+        fi = fi.sort_values("importance", ascending=False)
     elif hasattr(model, "coef_"):
-        feature_importance = pd.DataFrame(
-            {
-                "feature": X.columns,
-                "importance": np.abs(model.coef_),
-            }
-        ).sort_values("importance", ascending=False)
+        fi = pd.DataFrame({"feature": X.columns, "importance": np.abs(model.coef_)})
+        fi = fi.sort_values("importance", ascending=False)
     else:
-        feature_importance = pd.DataFrame()
+        fi = pd.DataFrame()
 
-    # Cross-validation (CV re-fits internally, so model state is unchanged)
-    cv_scores = cross_val_score(model, X, y, cv=5, scoring="neg_mean_absolute_error", n_jobs=-1)
-    metrics["cv_mae_mean"] = -cv_scores.mean()
-    metrics["cv_mae_std"] = cv_scores.std()
+    # Cross-validation — report both MAE and R² per fold
+    cv_mae = cross_val_score(model, X, y, cv=5, scoring="neg_mean_absolute_error", n_jobs=-1)
+    cv_r2 = cross_val_score(model, X, y, cv=5, scoring="r2", n_jobs=-1)
 
-    # Refit on all data for final predictions (avoids mixing in/out-of-sample)
+    metrics["cv_mae_mean"] = -cv_mae.mean()
+    metrics["cv_mae_std"] = cv_mae.std()
+    metrics["cv_r2_mean"] = cv_r2.mean()
+    metrics["cv_r2_std"] = cv_r2.std()
+    metrics["cv_r2_folds"] = [round(s, 4) for s in cv_r2]
+    metrics["cv_negative_r2_folds"] = int((cv_r2 < 0).sum())
+
+    # Refit on ALL data for final deployed predictions
     model.fit(X, y)
+    features["predicted_clv"] = np.clip(model.predict(X), a_min=0, a_max=None)
 
-    # Full predictions
-    features["predicted_clv"] = model.predict(X)
-    features["predicted_clv"] = features["predicted_clv"].clip(lower=0)
-
-    # CLV-based segments
     features["clv_segment"] = pd.qcut(
         features["predicted_clv"],
         q=4,
@@ -884,13 +874,23 @@ def predict_clv(
         duplicates="drop",
     )
 
-    # Return customer_id, predicted_clv, clv_segment, and metrics
-    result_df = features[["customer_id", "predicted_clv", "clv_segment"]].copy()
+    # Low-confidence flags
+    features["clv_low_confidence"] = (features["frequency"] < 3) | (features["lifetime_days"] < 30)
+
+    result_df = features[
+        [
+            "customer_id",
+            "predicted_clv",
+            "clv_segment",
+            "clv_low_confidence",
+            "_in_validation_holdout",
+        ]
+    ].copy()
     result_df = result_df.merge(
         features[["customer_id", "recency", "frequency", "monetary"]], on="customer_id"
     )
 
-    return result_df, {"metrics": metrics, "feature_importance": feature_importance, "model": model}
+    return result_df, {"metrics": metrics, "feature_importance": fi, "model": model}
 
 
 def survival_analysis(
@@ -1043,7 +1043,12 @@ def ensemble_segmentation(
 def value_based_segmentation(
     transactions_df: pd.DataFrame, prediction_horizon_days: int = 90
 ) -> pd.DataFrame:
-    """Value-based segmentation with predicted CLV."""
+    """Value-based segmentation using survival-adjusted revenue projection, not CLV.
+
+    Computes annualized historical revenue adjusted by a survival probability that
+    down-weights customers with long recency relative to their observed lifetime.
+    The result is a forward-looking revenue rate, not a true ML-based CLV prediction.
+    """
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
@@ -1068,13 +1073,17 @@ def value_based_segmentation(
     )
 
     features["lifetime_days"] = pd.to_numeric(features["lifetime_days"], errors="coerce").fillna(1)
-
     features["recency"] = pd.to_numeric(features["recency"], errors="coerce").fillna(0).astype(int)
 
-    # CLV = AOV * annual_purchases * 2-year projection (simple heuristic)
-    aov = features["monetary"] / features["frequency"].replace(0, 1)
-    annual_purchases = features["frequency"] / features["lifetime_days"].replace(0, 1) * 365
-    features["predicted_clv"] = aov * annual_purchases * 2
+    # Annualized historical revenue
+    annual_value = features["monetary"] / (features["lifetime_days"].clip(lower=1) / 365)
+
+    # Survival probability: customers with long recency relative to lifetime likely churned
+    denom = features["lifetime_days"].clip(lower=1) + features["recency"]
+    survival_prob = np.clip(1 - features["recency"] / denom, 0, 1)
+
+    # 2-year projected value = annual rate * survival * 2 (heuristic, not ML)
+    features["predicted_clv"] = annual_value * survival_prob * 2
 
     future_rev = future.groupby("customer_id")["revenue"].sum().reset_index()
     future_rev.columns = ["customer_id", "future_revenue"]

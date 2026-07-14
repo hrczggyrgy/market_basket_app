@@ -293,8 +293,8 @@ def calculate_incremental_revenue(
         duration = (end - start).days + 1
 
         # Baseline period (same duration before promotion)
-        baseline_start = start - pd.Timedelta(duration, unit='D')
-        baseline_end = start - pd.Timedelta(1, unit='D')
+        baseline_start = start - pd.Timedelta(duration, unit="D")
+        baseline_end = start - pd.Timedelta(1, unit="D")
 
         # Promo sales
         promo_sales = df[(df["stockcode"] == product) & (df["date"] >= start) & (df["date"] <= end)]
@@ -434,22 +434,19 @@ def halo_effect_analysis(
 
         # Get transactions with promo product
         promo_trans = df[
-            (df["stockcode"] == promo_product)
-            & (df["date"] >= start)
-            & (df["date"] <= end)
+            (df["stockcode"] == promo_product) & (df["date"] >= start) & (df["date"] <= end)
         ]
 
         promo_txn_ids = promo_trans["transaction_id"].unique()
 
         # Get other products in those transactions
         basket_trans = df[
-            (df["transaction_id"].isin(promo_txn_ids))
-            & (df["stockcode"] != promo_product)
+            (df["transaction_id"].isin(promo_txn_ids)) & (df["stockcode"] != promo_product)
         ]
 
         # Baseline: same basket co-occurrence filter in the 30 days before promo
-        baseline_start = start - pd.Timedelta(window_days * 4, unit='D')
-        baseline_end = start - pd.Timedelta(1, unit='D')
+        baseline_start = start - pd.Timedelta(window_days * 4, unit="D")
+        baseline_end = start - pd.Timedelta(1, unit="D")
         pre_promo_products = df[
             (df["stockcode"] == promo_product)
             & (df["date"] >= baseline_start)
@@ -458,8 +455,7 @@ def halo_effect_analysis(
         pre_promo_txn_ids = pre_promo_products["transaction_id"].unique()
 
         baseline_basket_trans = df[
-            (df["transaction_id"].isin(pre_promo_txn_ids))
-            & (df["stockcode"] != promo_product)
+            (df["transaction_id"].isin(pre_promo_txn_ids)) & (df["stockcode"] != promo_product)
         ]
 
         halo_products = (
