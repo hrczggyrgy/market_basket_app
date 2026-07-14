@@ -17,7 +17,7 @@ def compute_rfm_features(
     df["revenue"] = df["price"] * df["quantity"]
 
     if snapshot_date is None:
-        snapshot_date = df["date"].max() + pd.Timedelta(days=1)
+        snapshot_date = df["date"].max() + pd.Timedelta(1, unit='D')
 
     cat_col = "category" if "category" in df.columns else "stockcode"
 
@@ -288,7 +288,7 @@ def value_based_segmentation(
     df["revenue"] = df["price"] * df["quantity"]
 
     snapshot_date = df["date"].max()
-    cutoff_date = snapshot_date - pd.Timedelta(days=prediction_horizon_days)
+    cutoff_date = snapshot_date - pd.Timedelta(prediction_horizon_days, unit='D')
 
     # Historical (before cutoff) and future (after cutoff)
     hist = df[df["date"] < cutoff_date]

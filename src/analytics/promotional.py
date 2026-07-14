@@ -293,8 +293,8 @@ def calculate_incremental_revenue(
         duration = (end - start).days + 1
 
         # Baseline period (same duration before promotion)
-        baseline_start = start - pd.Timedelta(days=duration)
-        baseline_end = start - pd.Timedelta(days=1)
+        baseline_start = start - pd.Timedelta(duration, unit='D')
+        baseline_end = start - pd.Timedelta(1, unit='D')
 
         # Promo sales
         promo_sales = df[(df["stockcode"] == product) & (df["date"] >= start) & (df["date"] <= end)]
@@ -433,33 +433,33 @@ def halo_effect_analysis(
         end = promo["end_date"]
 
         # Get transactions with promo product
-        promo_trans = transactions_df[
-            (transactions_df["stockcode"] == promo_product)
-            & (transactions_df["date"] >= start)
-            & (transactions_df["date"] <= end)
+        promo_trans = df[
+            (df["stockcode"] == promo_product)
+            & (df["date"] >= start)
+            & (df["date"] <= end)
         ]
 
         promo_txn_ids = promo_trans["transaction_id"].unique()
 
         # Get other products in those transactions
-        basket_trans = transactions_df[
-            (transactions_df["transaction_id"].isin(promo_txn_ids))
-            & (transactions_df["stockcode"] != promo_product)
+        basket_trans = df[
+            (df["transaction_id"].isin(promo_txn_ids))
+            & (df["stockcode"] != promo_product)
         ]
 
         # Baseline: same basket co-occurrence filter in the 30 days before promo
-        baseline_start = start - pd.Timedelta(days=window_days * 4)
-        baseline_end = start - pd.Timedelta(days=1)
-        pre_promo_products = transactions_df[
-            (transactions_df["stockcode"] == promo_product)
-            & (transactions_df["date"] >= baseline_start)
-            & (transactions_df["date"] <= baseline_end)
+        baseline_start = start - pd.Timedelta(window_days * 4, unit='D')
+        baseline_end = start - pd.Timedelta(1, unit='D')
+        pre_promo_products = df[
+            (df["stockcode"] == promo_product)
+            & (df["date"] >= baseline_start)
+            & (df["date"] <= baseline_end)
         ]
         pre_promo_txn_ids = pre_promo_products["transaction_id"].unique()
 
-        baseline_basket_trans = transactions_df[
-            (transactions_df["transaction_id"].isin(pre_promo_txn_ids))
-            & (transactions_df["stockcode"] != promo_product)
+        baseline_basket_trans = df[
+            (df["transaction_id"].isin(pre_promo_txn_ids))
+            & (df["stockcode"] != promo_product)
         ]
 
         halo_products = (

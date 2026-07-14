@@ -174,7 +174,7 @@ def add_rfm_features(df: pd.DataFrame, snapshot_date: pd.Timestamp = None) -> pd
         DataFrame with RFM features per customer
     """
     if snapshot_date is None:
-        snapshot_date = df["date"].max() + pd.Timedelta(days=1)
+        snapshot_date = df["date"].max() + pd.Timedelta(1, unit='D')
 
     # BUG 3 FIX: Compute revenue column first instead of using broken lambda
     df_with_revenue = df.copy()

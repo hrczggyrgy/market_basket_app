@@ -58,8 +58,8 @@ def build_customer_features(
 
     # Determine cutoff dates
     max_date = df["date"].max()
-    prediction_start = max_date - pd.Timedelta(days=prediction_window_days)
-    history_start = prediction_start - pd.Timedelta(days=min_history_days)
+    prediction_start = max_date - pd.Timedelta(prediction_window_days, unit='D')
+    history_start = prediction_start - pd.Timedelta(min_history_days, unit='D')
 
     # Split data
     history_df = df[(df["date"] >= history_start) & (df["date"] < prediction_start)].copy()
@@ -338,7 +338,7 @@ def build_customer_features(
     features["is_churned"] = (features["recency_to_interval_ratio"] > 4).astype(int)
 
     # Velocity change (recent vs historical frequency)
-    recent_cutoff = prediction_start - pd.Timedelta(days=30)
+    recent_cutoff = prediction_start - pd.Timedelta(30, unit='D')
     recent_freq = (
         history_df[history_df["date"] >= recent_cutoff]
         .groupby("customer_id")["transaction_id"]

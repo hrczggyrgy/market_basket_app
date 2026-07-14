@@ -43,7 +43,7 @@ def compute_rfm_features(
     df["revenue"] = df["price"] * df["quantity"]
 
     if snapshot_date is None:
-        snapshot_date = df["date"].max() + pd.Timedelta(days=1)
+        snapshot_date = df["date"].max() + pd.Timedelta(1, unit='D')
 
     cat_col_rfm = "category" if "category" in df.columns else "stockcode"
     rfm = (
@@ -356,7 +356,7 @@ def predict_clv(
     df["revenue"] = df["price"] * df["quantity"]
 
     snapshot_date = df["date"].max()
-    cutoff_date = snapshot_date - pd.Timedelta(days=prediction_horizon_days)
+    cutoff_date = snapshot_date - pd.Timedelta(prediction_horizon_days, unit='D')
 
     # Historical (before cutoff) and future (after cutoff)
     hist = df[df["date"] < cutoff_date]
@@ -551,7 +551,7 @@ def survival_analysis(
     df["days_to_next"] = (df["next_purchase"] - df[time_col]).dt.days
 
     # For last purchase, censor at snapshot date
-    snapshot = df[time_col].max() + pd.Timedelta(days=1)
+    snapshot = df[time_col].max() + pd.Timedelta(1, unit='D')
     df["days_to_next"] = df["days_to_next"].fillna((snapshot - df[time_col]).dt.days)
 
     # Event: 1 if made another purchase, 0 if censored
@@ -684,7 +684,7 @@ def value_based_segmentation(
     df["revenue"] = df["price"] * df["quantity"]
 
     snapshot_date = df["date"].max()
-    cutoff_date = snapshot_date - pd.Timedelta(days=prediction_horizon_days)
+    cutoff_date = snapshot_date - pd.Timedelta(prediction_horizon_days, unit='D')
 
     hist = df[df["date"] < cutoff_date]
     future = df[df["date"] >= cutoff_date]
