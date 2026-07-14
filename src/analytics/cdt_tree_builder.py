@@ -1,4 +1,4 @@
-"""Oracle-style CDT: Bottom-Up Tree Builder.
+"""CDT: Bottom-Up Tree Builder.
 
 Constructs the Customer Decision Tree by:
 1. Starting from hierarchical clusters (bottom level = products)

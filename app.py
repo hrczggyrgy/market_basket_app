@@ -10,6 +10,7 @@ from src.algorithms.fpgrowth import (
     get_product_lookup,
     run_fpgrowth,
 )
+from src.config import Config
 from src.data.generator import generate_transactions
 
 # Import all modules
@@ -27,6 +28,8 @@ from src.ui.segmentation_tab import render_segmentation_tab
 from src.ui.sidebar import render_sidebar
 from src.ui.switching_tab import render_switching_tab
 from src.ui.tree_tab import render_tree_tab
+from src.viz.heatmap import create_heatmap, create_scatter_heatmap
+from src.viz.network import create_network_graph
 
 # Page config
 st.set_page_config(
@@ -36,46 +39,13 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom CSS
-st.markdown(
-    """
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: 700;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 1rem;
-    }
-    .sub-header {
-        font-size: 1.2rem;
-        color: #666;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .stMetric {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-    }
-    .tab-content {
-        padding: 1rem 0;
-    }
-</style>
-""",
-    unsafe_allow_html=True,
-)
-
 
 def main():
     # Header
-    st.markdown(
-        '<div class="main-header">🛒 Market Basket Analysis</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="sub-header">Association Rules • Co-purchase • Add-ons • Switching • Customer Choice Modelling • Customer Segmentation • Product Performance • Cohort Analysis • Promotional Analytics</div>',
-        unsafe_allow_html=True,
+    st.title("🛒 Market Basket Analysis")
+    st.caption(
+        "Association Rules • Co-purchase • Add-ons • Switching • Customer Choice Modelling • "
+        "Customer Segmentation • Product Performance • Cohort Analysis • Promotional Analytics"
     )
 
     # Render sidebar and get config
@@ -93,7 +63,9 @@ def main():
                 )
         elif config["uploaded_file"] is not None:
             with st.spinner("Loading transaction data..."):
-                transactions_df = load_transactions(config["uploaded_file"], config["column_mapping"])
+                transactions_df = load_transactions(
+                    config["uploaded_file"], config["column_mapping"]
+                )
 
         if transactions_df is not None and not transactions_df.empty:
             # Create product lookup
@@ -125,7 +97,7 @@ def main():
         st.code(traceback.format_exc())
 
 
-def run_analysis(transactions_df: pd.DataFrame, product_lookup: dict, config: dict):
+def run_analysis(transactions_df: pd.DataFrame, product_lookup: dict, config: Config):
     """Run the selected analysis."""
 
     analysis_mode = config["analysis_mode"]
@@ -228,7 +200,6 @@ def render_rules_analysis(
 
     with tab2:
         st.subheader("Association Rules Network")
-        from src.viz.network import create_network_graph
 
         net_fig = create_network_graph(
             filtered_rules,
@@ -241,7 +212,6 @@ def render_rules_analysis(
 
     with tab3:
         st.subheader("Rules Heatmap")
-        from src.viz.heatmap import create_heatmap
 
         heat_fig = create_heatmap(
             filtered_rules,
@@ -253,7 +223,6 @@ def render_rules_analysis(
 
     with tab4:
         st.subheader("Rules Scatter Plot")
-        from src.viz.heatmap import create_scatter_heatmap
 
         scatter_fig = create_scatter_heatmap(
             filtered_rules,

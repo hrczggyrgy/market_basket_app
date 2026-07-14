@@ -1,4 +1,4 @@
-"""Oracle-style CDT: Hierarchical Clustering & Dendrogram.
+"""CDT: Hierarchical Clustering & Dendrogram.
 
 Performs agglomerative clustering on the similarity matrix using
 scipy's hierarchical clustering with precomputed distances.

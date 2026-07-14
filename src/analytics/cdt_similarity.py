@@ -1,4 +1,4 @@
-"""Oracle-style Customer Decision Tree: Similarity Engine.
+"""Customer Decision Tree: Similarity Engine.
 
 Builds pairwise product similarity from customer purchase sequences using
 Yule's Q coefficient derived from co-purchase patterns.

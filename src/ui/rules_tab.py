@@ -4,9 +4,11 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from src.rules.generator import filter_rules, format_rules_for_display
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
 from src.viz.heatmap import create_heatmap, create_scatter_heatmap
+from src.viz.network import create_network_graph
 
 
 def render_rules_tab(rules: pd.DataFrame, product_lookup: dict, params: dict):
@@ -59,8 +61,6 @@ def render_rules_tab(rules: pd.DataFrame, product_lookup: dict, params: dict):
             )
 
     # Apply filters
-    from src.rules.generator import filter_rules, format_rules_for_display
-
     filtered = filter_rules(
         rules,
         min_support=min_supp,
@@ -144,7 +144,6 @@ def _render_rules_network_tab(filtered: pd.DataFrame, product_lookup: dict, min_
             "Max Edges", 20, 200, min(100, len(filtered)), key="net_max_edges"
         )
 
-        from src.viz.network import create_network_graph
         fig = create_network_graph(
             filtered,
             product_lookup=product_lookup,

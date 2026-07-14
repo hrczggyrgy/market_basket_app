@@ -1,7 +1,7 @@
-"""Oracle-style CDT: Behavioral Metrics Engine.
+"""CDT: Behavioral Metrics Engine.
 
 Computes switching, substitution, and bundling matrices from transaction data.
-These are the three core behavioral patterns Oracle's CDT identifies.
+These are the three core behavioral patterns CDT identifies.
 """
 
 from collections import defaultdict

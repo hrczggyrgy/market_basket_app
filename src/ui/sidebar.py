@@ -5,8 +5,10 @@ from typing import Any, Dict
 import pandas as pd
 import streamlit as st
 
+from src.config import Config
 
-def render_sidebar() -> Dict[str, Any]:
+
+def render_sidebar() -> Config:
     """Render sidebar with file upload and analysis parameters."""
     st.sidebar.header("📁 Data Upload")
 
@@ -157,7 +159,7 @@ def render_sidebar() -> Dict[str, Any]:
         analysis_mode = "Association Rules"
 
     # Analysis-specific options
-    analysis_params = {}
+    analysis_params: Dict[str, Any] = {}
 
     if analysis_mode == "Co-purchase":
         analysis_params["top_n_products"] = st.sidebar.slider(
@@ -250,7 +252,7 @@ def render_sidebar() -> Dict[str, Any]:
             "Cohort Period",
             ["Weekly", "Monthly", "Quarterly"],
             index=1,
-            key="cohort_period",
+            key="sidebar_cohort_period",
         )
         analysis_params["cohort_metric"] = st.sidebar.selectbox(
             "Metric",
@@ -261,10 +263,10 @@ def render_sidebar() -> Dict[str, Any]:
                 "Average Order Value",
             ],
             index=0,
-            key="cohort_metric",
+            key="sidebar_cohort_metric",
         )
         analysis_params["max_periods"] = st.sidebar.slider(
-            "Max Periods to Show", 3, 24, 12, key="cohort_max_periods"
+            "Max Periods to Show", 3, 24, 12, key="sidebar_cohort_max_periods"
         )
 
     elif analysis_mode == "Promotional Analytics":
@@ -284,20 +286,22 @@ def render_sidebar() -> Dict[str, Any]:
             "Promo Window (days)", 7, 30, 14, key="promo_window"
         )
 
-    run_analysis = st.sidebar.button("🚀 Run Analysis", type="primary", width="stretch")
+    run_analysis = st.sidebar.button(
+        "🚀 Run Analysis", type="primary", width="stretch"
+    )
 
-    return {
-        "uploaded_file": uploaded_file,
-        "use_sample": use_sample,
-        "column_mapping": column_mapping,
-        "min_support": min_support,
-        "min_confidence": min_confidence,
-        "max_itemset_len": max_itemset_len,
-        "min_lift": min_lift,
-        "analysis_mode": analysis_mode,
-        "analysis_params": analysis_params,
-        "run_analysis": run_analysis,
-    }
+    return Config(
+        uploaded_file=uploaded_file,
+        use_sample=use_sample,
+        column_mapping=column_mapping,
+        min_support=min_support,
+        min_confidence=min_confidence,
+        max_itemset_len=max_itemset_len,
+        min_lift=min_lift,
+        analysis_mode=analysis_mode,
+        analysis_params=analysis_params,
+        run_analysis=run_analysis,
+    )
 
 
 def render_data_info(df: pd.DataFrame):

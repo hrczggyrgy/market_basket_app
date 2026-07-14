@@ -1,6 +1,6 @@
-# 🛒 Market Basket Analysis — Oracle-Style Customer Decision Intelligence
+# 🛒 Market Basket Analysis — Customer Decision Intelligence
 
-> **A full-featured Streamlit application for market basket analysis, customer choice modeling, and Oracle-style Customer Decision Tree (CDT) construction.**
+> **A full-featured Streamlit application for market basket analysis, customer choice modeling, and Customer Decision Tree (CDT) construction.**
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.30+-red.svg)
@@ -119,7 +119,7 @@ market_basket_app/
 | **Add-on / Impulse** | `addon_tab` | Anchor → add-on recommendations; lift-ranked impulse items |
 | **Switching** | `switching_tab` | Brand/product switching flows; Sankey diagrams; defector/loyalist identification |
 | **Choice Prediction** | `tree_tab` | Supervised decision tree: predicts next product choice from customer history |
-| **Decision Tree & Patterns (CDT)** | `cdt_tab` | **Oracle-style CDT**: unsupervised hierarchical clustering → attribute-labeled tree; substitution/bundle detection; dendrogram, sunburst, treemap |
+| **Decision Tree & Patterns (CDT)** | `cdt_tab` | **Customer Decision Tree**: unsupervised hierarchical clustering → attribute-labeled tree; substitution/bundle detection; dendrogram, sunburst, treemap |
 | **Customer Segmentation** | `segmentation_tab` | RFM (quantile/k-means), behavioral clustering, CLV estimation |
 | **Product Performance** | `product_performance_tab` | Lifecycle curves, price elasticity, ABC/XYZ classification |
 | **Cohort Analysis** | `cohort_tab` | Retention heatmaps, revenue per customer, AOV by cohort |
@@ -214,7 +214,7 @@ Tracks customer brand/product transitions over time. Sankey diagrams show flow; 
 Trains a decision tree to predict **next product choice** from customer history (RFM, favorite categories, recency). Outputs: tree visualization, feature importance, prediction accuracy.
 
 ### 6. Decision Tree & Patterns — **Customer Decision Tree (CDT)** ⭐
-**Oracle-style unsupervised hierarchy:**
+**Enterprise-grade unsupervised hierarchy:**
 1. **Similarity Matrix** — Yule's Q / Jaccard on co-purchase
 2. **Hierarchical Clustering** — Agglomerative with silhouette optimization
 3. **Attribute Labeling** — Mutual information splits on category/brand/size/flavor
@@ -423,7 +423,6 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ## 🙏 Acknowledgments
 
-- **Oracle Retail** — Customer Decision Tree methodology (public documentation)
 - **SciPy / scikit-learn** — Clustering, metrics, tree algorithms
 - **Plotly** — Interactive visualizations
 - **Streamlit** — Rapid UI framework
