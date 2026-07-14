@@ -63,12 +63,13 @@ def render_single_addon(transactions_df: pd.DataFrame, product_lookup: dict, par
                 "p_addon_baseline",
                 "lift",
                 "leverage",
-                "confidence",
+                "conviction",
                 "revenue_uplift_per_anchor",
-                "addon_avg_price",
+                "addon_price",
             ]
+            available = [c for c in display_cols if c in addons.columns]
 
-            st.dataframe(addons[display_cols].round(4), width="stretch", hide_index=True)
+            st.dataframe(addons[available].round(4), width="stretch", hide_index=True)
 
             render_analytics_export(addons, f"AddOns_{anchor}")
 

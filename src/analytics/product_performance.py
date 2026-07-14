@@ -1,13 +1,9 @@
 """Product Performance Analytics - Product-level metrics, ABC analysis, lifecycle, seasonality."""
 
-import warnings
 from typing import Dict, Optional
 
 import numpy as np
 import pandas as pd
-from scipy import stats
-
-warnings.filterwarnings("ignore")
 
 
 def compute_product_metrics(
@@ -209,9 +205,11 @@ def product_lifecycle_stage(
         # Calculate growth trend
         x = np.arange(len(rev_series))
         y = rev_series.values
-        slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+        slope, intercept = np.polyfit(x, y, 1)
+        corr_matrix = np.corrcoef(x, y)
+        r_value = corr_matrix[0, 1]
 
-        growth_rate = slope / np.mean(y) if np.mean(y) > 0 else 0
+        growth_rate = slope / max(np.mean(y), 1e-10) if np.mean(y) > 0 else 0
 
         # Peak detection
         peak_idx = np.argmax(y)
@@ -255,7 +253,7 @@ def product_seasonality(transactions_df: pd.DataFrame, product_id: str) -> Dict:
         return {"has_seasonality": False, "message": "Insufficient data"}
 
     # Monthly aggregation
-    monthly = prod_df.set_index("date").groupby(pd.Grouper(freq="M"))["quantity"].sum()
+    monthly = prod_df.set_index("date").groupby(pd.Grouper(freq="ME"))["quantity"].sum()
 
     if len(monthly) < 12:
         return {"has_seasonality": False, "message": "Less than 12 months of data"}
@@ -402,8 +400,10 @@ def price_elasticity_analysis(
     if len(log_price) < min_periods:
         return {"elasticity": None, "message": "Insufficient valid data after cleaning"}
 
-    # Linear regression
-    slope, intercept, r_value, p_value, std_err = stats.linregress(log_price, log_qty)
+    # Linear regression via numpy (avoids statsmodels dependency)
+    slope, intercept = np.polyfit(log_price, log_qty, 1)
+    corr_matrix = np.corrcoef(log_price, log_qty)
+    r_squared = corr_matrix[0, 1] ** 2
 
     elasticity = slope
 
@@ -419,8 +419,7 @@ def price_elasticity_analysis(
 
     return {
         "elasticity": elasticity,
-        "r_squared": r_value**2,
-        "p_value": p_value,
+        "r_squared": r_squared,
         "interpretation": interpretation,
         "n_observations": len(weekly),
         "avg_price": weekly["avg_price"].mean(),

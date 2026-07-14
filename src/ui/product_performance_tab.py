@@ -198,7 +198,7 @@ def render_lifecycle_analysis(transactions_df: pd.DataFrame, product_lookup: dic
 
         # First compute product metrics
         product_metrics = compute_product_metrics(transactions_df)
-        lifecycle_df = product_lifecycle_stage(product_metrics, transactions_df, period="ME")
+        lifecycle_df = product_lifecycle_stage(product_metrics, transactions_df, period="M")
 
     if lifecycle_df.empty:
         st.warning("Insufficient data for lifecycle analysis")
@@ -575,14 +575,12 @@ def render_price_elasticity(transactions_df: pd.DataFrame, product_lookup: dict,
                 f"Cannot estimate elasticity: {elasticity.get('message', 'Insufficient data')}"
             )
         else:
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Elasticity", f"{elasticity['elasticity']:.3f}")
             with col2:
                 st.metric("R²", f"{elasticity['r_squared']:.3f}")
             with col3:
-                st.metric("P-value", f"{elasticity['p_value']:.4f}")
-            with col4:
                 st.metric("Observations", elasticity["n_observations"])
 
             st.info(f"**Interpretation:** {elasticity['interpretation']}")
@@ -600,16 +598,23 @@ def render_price_elasticity(transactions_df: pd.DataFrame, product_lookup: dict,
             )
 
             if len(weekly) > 0:
+                import numpy as np
                 fig = px.scatter(
                     weekly,
                     x="avg_price",
                     y="total_qty",
-                    trendline="ols",
                     title=f"Price vs Quantity (Weekly): {product_lookup.get(selected_product, selected_product)}",
                     labels={
                         "avg_price": "Average Price ($)",
                         "total_qty": "Total Quantity",
                     },
+                )
+                slope, intercept = np.polyfit(weekly["avg_price"], weekly["total_qty"], 1)
+                x_range = np.linspace(weekly["avg_price"].min(), weekly["avg_price"].max(), 2)
+                fig.add_scatter(
+                    x=x_range, y=slope * x_range + intercept,
+                    mode="lines", name=f"Trend (slope={slope:.2f})",
+                    line=dict(dash="dash", color="red"),
                 )
                 st.plotly_chart(fig, width="stretch")
 
