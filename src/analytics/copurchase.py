@@ -2,7 +2,6 @@
 
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 
 from src.algorithms.fpgrowth import create_basket_matrix, run_fpgrowth
@@ -59,9 +58,6 @@ def compute_affinity_matrix(
                 lift = p_ab / (p_a * p_b)
                 affinity.loc[a, b] = lift
                 affinity.loc[b, a] = lift
-
-    # Set diagonal to 1 (self-affinity)
-    np.fill_diagonal(affinity.values, 1.0)
 
     return affinity
 
