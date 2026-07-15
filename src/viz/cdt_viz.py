@@ -18,7 +18,7 @@ from scipy.cluster.hierarchy import dendrogram as scipy_dendrogram
 
 from src.analytics.cdt_tree_builder import tree_to_dataframe
 
-# Matplotlib color cycle to Plotly color mapping
+# Matplotlib color cycle -> Plotly color mapping
 MPL_TO_PLOTLY = {
     "C0": "#1f77b4",
     "C1": "#ff7f0e",
@@ -43,19 +43,7 @@ def plot_dendrogram(
 ) -> go.Figure:
     """
     Create interactive dendrogram using scipy's dendrogram + Plotly.
-
-    Args:
-        linkage_matrix: Output from hierarchical clustering
-        labels: Product labels for leaves
-        height: Figure height
-        width: Figure width
-        color_threshold: Distance threshold for coloring clusters
-        orientation: 'bottom' (horizontal) or 'left' (vertical)
-
-    Returns:
-        Plotly Figure
     """
-    # Generate dendrogram data using scipy
     dendro = scipy_dendrogram(
         linkage_matrix,
         labels=labels,
@@ -65,22 +53,18 @@ def plot_dendrogram(
 
     icoord = np.array(dendro["icoord"])
     dcoord = np.array(dendro["dcoord"])
-    ivl = dendro["ivl"]  # leaf labels in order
+    ivl = dendro["ivl"]
     color_list = dendro["color_list"]
 
     fig = go.Figure()
 
-    # Plot horizontal lines (cluster branches)
     for i in range(len(icoord)):
         x_vals = icoord[i]
         y_vals = dcoord[i]
-
-        # Color based on cluster - convert matplotlib colors to Plotly
         color = color_list[i] if i < len(color_list) else "gray"
-        color = MPL_TO_PLOTLY.get(color, color)  # Convert C0, C1, etc. to hex
+        color = MPL_TO_PLOTLY.get(color, color)
 
         if orientation == "bottom":
-            # Horizontal dendrogram (distance on x-axis)
             fig.add_trace(
                 go.Scatter(
                     x=y_vals,
@@ -92,7 +76,6 @@ def plot_dendrogram(
                 )
             )
         else:
-            # Vertical dendrogram (distance on y-axis)
             fig.add_trace(
                 go.Scatter(
                     x=x_vals,
@@ -104,8 +87,7 @@ def plot_dendrogram(
                 )
             )
 
-    # Add leaf labels
-    leaf_x = [icoord[i][1] for i in range(len(icoord))]  # middle of each leaf
+    leaf_x = [icoord[i][1] for i in range(len(icoord))]
 
     if orientation == "bottom":
         fig.add_trace(
@@ -136,7 +118,6 @@ def plot_dendrogram(
             )
         )
 
-    # Add color threshold line if specified
     if color_threshold is not None:
         if orientation == "bottom":
             fig.add_vline(
@@ -180,23 +161,11 @@ def plot_silhouette_scores(
     optimal_k: int,
     height: int = 400,
 ) -> go.Figure:
-    """
-    Plot silhouette scores across different k values.
-
-    Args:
-        silhouette_scores: Dict of k -> score
-        optimal_k: Recommended optimal k
-        height: Figure height
-
-    Returns:
-        Plotly Figure
-    """
+    """Plot silhouette scores across different k values."""
     k_values = sorted(silhouette_scores.keys())
     scores = [silhouette_scores[k] for k in k_values]
 
     fig = go.Figure()
-
-    # Bar chart
     fig.add_trace(
         go.Bar(
             x=k_values,
@@ -208,7 +177,6 @@ def plot_silhouette_scores(
         )
     )
 
-    # Highlight optimal
     if optimal_k in silhouette_scores:
         fig.add_annotation(
             x=optimal_k,
@@ -231,58 +199,37 @@ def plot_silhouette_scores(
         plot_bgcolor="white",
         showlegend=False,
     )
-
     return fig
 
 
 def tree_to_sunburst_data(
     root,
 ) -> Tuple[List[str], List[str], List[str], List[float], List[str]]:
-    """
-    Convert TreeNode hierarchy to sunburst data format.
+    """Convert TreeNode hierarchy to sunburst data format."""
+    ids: List[str] = []
+    labels: List[str] = []
+    parents: List[str] = []
+    values: List[float] = []
+    colors: List[str] = []
 
-    Returns:
-        (ids, labels, parents, values, colors)
-    """
-    ids = []
-    labels = []
-    parents = []
-    values = []
-    colors = []
+    _COLOR_MAP = [
+        "lightblue", "lightcoral", "lightyellow", "lightpink", "lightcyan",
+        "lightsalmon", "lightgreen", "lightgray", "lavender", "wheat",
+    ]
 
-    def traverse(node, parent_id=""):
-        node_id = node.node_id
-        ids.append(node_id)
+    def traverse(node, parent_id: str = "") -> None:
+        ids.append(node.node_id)
         labels.append(node.name)
         parents.append(parent_id)
-
-        # Value = number of products (for sizing)
         values.append(node.size)
-
-        # Color by attribute or depth
         if node.is_leaf:
             colors.append("lightgreen")
         elif node.attribute:
-            # Hash attribute name to consistent color
-            attr_hash = hash(node.attribute) % 10
-            color_map = [
-                "lightblue",
-                "lightcoral",
-                "lightyellow",
-                "lightpink",
-                "lightcyan",
-                "lightsalmon",
-                "lightgreen",
-                "lightgray",
-                "lavender",
-                "wheat",
-            ]
-            colors.append(color_map[attr_hash])
+            colors.append(_COLOR_MAP[hash(node.attribute) % 10])
         else:
             colors.append("lightgray")
-
         for child in node.children:
-            traverse(child, node_id)
+            traverse(child, node.node_id)
 
     traverse(root)
     return ids, labels, parents, values, colors
@@ -294,18 +241,7 @@ def plot_sunburst(
     height: int = 700,
     width: int = 900,
 ) -> go.Figure:
-    """
-    Create interactive Sunburst chart of CDT hierarchy.
-
-    Args:
-        root: TreeNode root of CDT
-        title: Chart title
-        height: Figure height
-        width: Figure width
-
-    Returns:
-        Plotly Figure
-    """
+    """Create interactive Sunburst chart of CDT hierarchy."""
     ids, labels, parents, values, colors = tree_to_sunburst_data(root)
 
     fig = go.Figure(
@@ -315,14 +251,15 @@ def plot_sunburst(
             parents=parents,
             values=values,
             branchvalues="total",
-            maxdepth=-1,  # Show all levels
+            maxdepth=-1,
             insidetextorientation="radial",
             marker=dict(colors=colors, line=dict(width=1, color="white")),
-            hovertemplate="<b>%{label}</b><br>Products: %{value}<br>Path: %{id}<extra></extra>",
+            hovertemplate=(
+                "<b>%{label}</b><br>Products: %{value}<br>Path: %{id}<extra></extra>"
+            ),
             textinfo="label+value",
         )
     )
-
     fig.update_layout(
         title=dict(text=title, x=0.5, font=dict(size=16)),
         height=height,
@@ -330,66 +267,40 @@ def plot_sunburst(
         margin=dict(t=60, l=10, r=10, b=10),
         sunburstcolorway=["lightblue", "lightgreen", "lightcoral", "lightyellow"],
     )
-
     return fig
 
 
 def tree_to_treemap_data(
     root, size_metric: str = "size"
 ) -> Tuple[List[str], List[str], List[str], List[float], List[str]]:
-    """
-    Convert TreeNode hierarchy to treemap data format.
+    """Convert TreeNode hierarchy to treemap data format."""
+    ids: List[str] = []
+    labels: List[str] = []
+    parents: List[str] = []
+    values: List[float] = []
+    colors: List[str] = []
 
-    Args:
-        root: TreeNode root
-        size_metric: 'size' (product count) or 'similarity_within' or custom
+    _COLOR_MAP = [
+        "lightblue", "lightcoral", "lightyellow", "lightpink", "lightcyan",
+        "lightsalmon", "lightgreen", "lightgray", "lavender", "wheat",
+    ]
 
-    Returns:
-        (ids, labels, parents, values, colors)
-    """
-    ids = []
-    labels = []
-    parents = []
-    values = []
-    colors = []
-
-    def traverse(node, parent_id=""):
-        node_id = node.node_id
-        ids.append(node_id)
+    def traverse(node, parent_id: str = "") -> None:
+        ids.append(node.node_id)
         labels.append(node.name)
         parents.append(parent_id)
-
-        # Value for area sizing
-        if size_metric == "size":
-            values.append(node.size)
-        elif size_metric == "similarity_within":
-            values.append(max(node.similarity_within, 0.01) * 100)  # Scale for visibility
+        if size_metric == "similarity_within":
+            values.append(max(node.similarity_within, 0.01) * 100)
         else:
             values.append(node.size)
-
-        # Color coding
         if node.is_leaf:
             colors.append("lightgreen")
         elif node.attribute:
-            attr_hash = hash(node.attribute) % 10
-            color_map = [
-                "lightblue",
-                "lightcoral",
-                "lightyellow",
-                "lightpink",
-                "lightcyan",
-                "lightsalmon",
-                "lightgreen",
-                "lightgray",
-                "lavender",
-                "wheat",
-            ]
-            colors.append(color_map[attr_hash])
+            colors.append(_COLOR_MAP[hash(node.attribute) % 10])
         else:
             colors.append("lightgray")
-
         for child in node.children:
-            traverse(child, node_id)
+            traverse(child, node.node_id)
 
     traverse(root)
     return ids, labels, parents, values, colors
@@ -402,19 +313,7 @@ def plot_treemap(
     height: int = 700,
     width: int = 900,
 ) -> go.Figure:
-    """
-    Create interactive Treemap of CDT hierarchy.
-
-    Args:
-        root: TreeNode root of CDT
-        size_metric: 'size' (product count), 'similarity_within', or 'revenue'
-        title: Chart title
-        height: Figure height
-        width: Figure width
-
-    Returns:
-        Plotly Figure
-    """
+    """Create interactive Treemap of CDT hierarchy."""
     ids, labels, parents, values, colors = tree_to_treemap_data(root, size_metric)
 
     fig = go.Figure(
@@ -425,19 +324,19 @@ def plot_treemap(
             values=values,
             branchvalues="total",
             marker=dict(colors=colors, line=dict(width=1, color="white")),
-            hovertemplate="<b>%{label}</b><br>Value: %{value}<br>Path: %{id}<extra></extra>",
+            hovertemplate=(
+                "<b>%{label}</b><br>Value: %{value}<br>Path: %{id}<extra></extra>"
+            ),
             textinfo="label+value",
             textfont=dict(size=11),
         )
     )
-
     fig.update_layout(
         title=dict(text=title, x=0.5, font=dict(size=16)),
         height=height,
         width=width,
         margin=dict(t=60, l=10, r=10, b=10),
     )
-
     return fig
 
 
@@ -448,23 +347,10 @@ def plot_similarity_heatmap(
     height: int = 600,
     colorscale: str = "RdBu",
 ) -> go.Figure:
-    """
-    Plot similarity matrix as heatmap.
-
-    Args:
-        similarity_matrix: Square similarity matrix
-        top_n: Limit to top N products by average similarity
-        title: Chart title
-        height: Figure height
-        colorscale: Plotly colorscale name
-
-    Returns:
-        Plotly Figure
-    """
+    """Plot similarity matrix as heatmap."""
     if similarity_matrix.empty:
         return go.Figure().add_annotation(text="No data", x=0.5, y=0.5, showarrow=False)
 
-    # Select top N products by average similarity
     if top_n and len(similarity_matrix) > top_n:
         avg_sim = similarity_matrix.mean(axis=1).sort_values(ascending=False)
         top_products = avg_sim.head(top_n).index.tolist()
@@ -485,7 +371,6 @@ def plot_similarity_heatmap(
             hovertemplate="%{y} vs %{x}<br>Similarity: %{z:.3f}<extra></extra>",
         )
     )
-
     fig.update_layout(
         title=dict(text=title, x=0.5),
         height=height,
@@ -493,7 +378,6 @@ def plot_similarity_heatmap(
         yaxis=dict(autorange="reversed"),
         margin=dict(l=100, r=50, t=80, b=100),
     )
-
     return fig
 
 
@@ -501,25 +385,27 @@ def plot_behavioral_heatmap(
     matrix_df: pd.DataFrame,
     title: str = "Behavioral Matrix",
     height: int = 500,
-    colorscale: str = "Viridis",
+    colorscale: str = "Reds",
     zmin: Optional[float] = None,
     zmax: Optional[float] = None,
 ) -> go.Figure:
     """
     Plot square behavioral matrix (switching, substitution, bundling) as heatmap.
 
-    Args:
-        matrix_df: Square matrix DataFrame
-        title: Chart title
-        height: Figure height
-        colorscale: Plotly colorscale
-        zmin, zmax: Color scale bounds
-
-    Returns:
-        Plotly Figure
+    Bug-fix: always set zmin=0 and zmax=data_max so that small switch_rate
+    values (e.g. 0.001-0.03) are not collapsed to a flat colour by Plotly
+    autoscaling.
     """
     if matrix_df.empty:
-        return go.Figure().add_annotation(text="No data", x=0.5, y=0.5, showarrow=False)
+        return go.Figure().add_annotation(
+            text="No data", x=0.5, y=0.5, showarrow=False
+        )
+
+    data_max = float(matrix_df.values.max())
+    resolved_zmin = 0.0 if zmin is None else zmin
+    # Use a small positive zmax floor so the scale isn't degenerate when
+    # all values are zero (shouldn't happen, but defensive)
+    resolved_zmax = max(data_max, 1e-6) if zmax is None else zmax
 
     fig = go.Figure(
         go.Heatmap(
@@ -527,13 +413,12 @@ def plot_behavioral_heatmap(
             x=matrix_df.columns.tolist(),
             y=matrix_df.index.tolist(),
             colorscale=colorscale,
-            zmin=zmin,
-            zmax=zmax,
+            zmin=resolved_zmin,
+            zmax=resolved_zmax,
             colorbar=dict(title=title),
-            hovertemplate="%{y} vs %{x}<br>Value: %{z:.3f}<extra></extra>",
+            hovertemplate="%{y} \u2192 %{x}<br>Switch Rate: %{z:.3f}<extra></extra>",
         )
     )
-
     fig.update_layout(
         title=dict(text=title, x=0.5),
         height=height,
@@ -541,7 +426,6 @@ def plot_behavioral_heatmap(
         yaxis=dict(autorange="reversed"),
         margin=dict(l=100, r=50, t=80, b=100),
     )
-
     return fig
 
 
@@ -554,71 +438,69 @@ def plot_switching_network(
 ) -> go.Figure:
     """
     Plot switching flows as directed network graph.
-
-    Args:
-        switching_df: DataFrame with from_product, to_product, switch_rate
-        product_lookup: Dict mapping product_id -> product_name
-        min_rate: Minimum switch rate to show edge
-        max_edges: Maximum number of edges to display
-        height: Figure height
-
-    Returns:
-        Plotly Figure
     """
     if switching_df.empty:
-        return go.Figure().add_annotation(text="No switching data", x=0.5, y=0.5, showarrow=False)
+        return go.Figure().add_annotation(
+            text="No switching data", x=0.5, y=0.5, showarrow=False
+        )
 
-    # Filter and limit edges
     df = switching_df[switching_df["switch_rate"] >= min_rate].copy()
+
+    # If no edges survive the min_rate filter, relax to show top-50 by rate
+    if df.empty:
+        df = switching_df.sort_values("switch_rate", ascending=False).head(50)
+
     df = df.sort_values("switch_rate", ascending=False).head(max_edges)
 
-    # Get unique nodes
-    nodes = set(df["from_product"]) | set(df["to_product"])
-    node_list = list(nodes)
-    node_pos = {node: i for i, node in enumerate(node_list)}
-
-    # Circular layout
-    n_nodes = len(node_list)
+    nodes = list(set(df["from_product"]) | set(df["to_product"]))
+    node_pos = {node: i for i, node in enumerate(nodes)}
+    n_nodes = len(nodes)
     angles = np.linspace(0, 2 * np.pi, n_nodes, endpoint=False)
     x_coords = np.cos(angles)
     y_coords = np.sin(angles)
 
     fig = go.Figure()
 
-    # Add edges
+    max_rate = float(df["switch_rate"].max()) or 1.0
     for _, row in df.iterrows():
-        from_idx = node_pos[row["from_product"]]
-        to_idx = node_pos[row["to_product"]]
-
+        fi = node_pos[row["from_product"]]
+        ti = node_pos[row["to_product"]]
+        norm = row["switch_rate"] / max_rate
         fig.add_trace(
             go.Scatter(
-                x=[x_coords[from_idx], x_coords[to_idx]],
-                y=[y_coords[from_idx], y_coords[to_idx]],
+                x=[x_coords[fi], x_coords[ti]],
+                y=[y_coords[fi], y_coords[ti]],
                 mode="lines",
                 line=dict(
-                    width=1 + row["switch_rate"] * 10,
-                    color=f"rgba(200, 0, 0, {0.3 + row['switch_rate'] * 0.7})",
+                    width=1 + norm * 6,
+                    color=f"rgba(200, 0, 0, {0.25 + norm * 0.75})",
                 ),
                 hoverinfo="text",
-                hovertext=f"{product_lookup.get(row['from_product'], row['from_product'])} → "
-                f"{product_lookup.get(row['to_product'], row['to_product'])}<br>"
-                f"Rate: {row['switch_rate']:.1%}",
+                hovertext=(
+                    f"{product_lookup.get(row['from_product'], row['from_product'])}"
+                    f" \u2192 "
+                    f"{product_lookup.get(row['to_product'], row['to_product'])}"
+                    f"<br>Rate: {row['switch_rate']:.1%}"
+                ),
                 showlegend=False,
             )
         )
 
-    # Add nodes
     fig.add_trace(
         go.Scatter(
             x=x_coords,
             y=y_coords,
             mode="markers+text",
-            marker=dict(size=20, color="lightblue", line=dict(width=2, color="darkblue")),
-            text=[product_lookup.get(n, n)[:15] for n in node_list],
+            marker=dict(
+                size=20,
+                color="lightblue",
+                line=dict(width=2, color="darkblue"),
+            ),
+            text=[product_lookup.get(n, n)[:15] for n in nodes],
             textposition="top center",
             textfont=dict(size=9),
             hoverinfo="text",
-            hovertext=[product_lookup.get(n, n) for n in node_list],
+            hovertext=[product_lookup.get(n, n) for n in nodes],
             showlegend=False,
         )
     )
@@ -628,11 +510,12 @@ def plot_switching_network(
         height=height,
         showlegend=False,
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, scaleanchor="x"),
+        yaxis=dict(
+            showgrid=False, zeroline=False, showticklabels=False, scaleanchor="x"
+        ),
         margin=dict(t=60, b=20, l=20, r=20),
         plot_bgcolor="white",
     )
-
     return fig
 
 

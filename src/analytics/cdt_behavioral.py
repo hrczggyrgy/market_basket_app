@@ -18,48 +18,38 @@ def compute_switching_matrix(
     """
     Compute product-to-product switching rates from customer sequences.
 
-    Switching rate from A to B = (customers who bought A then B) / (customers who bought A)
+    Switching rate from A->B = customers who bought A then B / customers who bought A.
 
     Args:
-        sequences: Customer sequences from build_customer_sequences
-        top_n_products: Limit to top N products by frequency
+        sequences: {customer_id: [product_id, ...]} from build_customer_sequences
+        top_n_products: Limit to top-N products by purchase frequency
 
     Returns:
-        DataFrame with from_product, to_product, switch_count, switch_rate
+        DataFrame with columns: from_product, to_product, switch_count, switch_rate
     """
-    # Count transitions
-    switch_counts = defaultdict(lambda: defaultdict(int))
-    from_counts = defaultdict(int)
+    switch_counts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    from_counts: Dict[str, int] = defaultdict(int)
 
-    for customer, products in sequences.items():
+    for _customer, products in sequences.items():
         for i in range(len(products) - 1):
             if products[i] != products[i + 1]:
                 switch_counts[products[i]][products[i + 1]] += 1
                 from_counts[products[i]] += 1
 
     if top_n_products:
-        # Filter to top products
-        all_products = set()
-        for d in switch_counts.values():
-            all_products.update(d.keys())
-        all_products.update(switch_counts.keys())
-
-        product_freq = defaultdict(int)
-        for products in sequences.values():
-            for p in products:
+        product_freq: Dict[str, int] = defaultdict(int)
+        for prods in sequences.values():
+            for p in prods:
                 product_freq[p] += 1
-        top_products = set(
-            sorted(all_products, key=lambda x: product_freq.get(x, 0), reverse=True)[
-                :top_n_products
-            ]
+        top_set = set(
+            sorted(product_freq, key=product_freq.get, reverse=True)[:top_n_products]  # type: ignore[arg-type]
         )
-
         switch_counts = {
-            k: {k2: v2 for k2, v2 in v.items() if k2 in top_products}
+            k: {k2: v2 for k2, v2 in v.items() if k2 in top_set}
             for k, v in switch_counts.items()
-            if k in top_products
+            if k in top_set
         }
-        from_counts = {k: v for k, v in from_counts.items() if k in top_products}
+        from_counts = {k: v for k, v in from_counts.items() if k in top_set}
 
     rows = []
     for from_prod, targets in switch_counts.items():
@@ -75,11 +65,12 @@ def compute_switching_matrix(
             )
 
     if not rows:
-        return pd.DataFrame(columns=["from_product", "to_product", "switch_count", "switch_rate"])
+        return pd.DataFrame(
+            columns=["from_product", "to_product", "switch_count", "switch_rate"]
+        )
 
     df = pd.DataFrame(rows)
-    df = df.sort_values("switch_count", ascending=False).reset_index(drop=True)
-    return df
+    return df.sort_values("switch_count", ascending=False).reset_index(drop=True)
 
 
 def switching_matrix_to_heatmap(
@@ -87,34 +78,48 @@ def switching_matrix_to_heatmap(
     top_n: int = 30,
 ) -> pd.DataFrame:
     """
-    Convert switching DataFrame to square matrix for heatmap.
+    Convert switching DataFrame to a square (from x to) pivot matrix for heatmap.
+
+    Uses vectorised pivot_table instead of iterrows to ensure all cells are filled.
+    top_products is a set for O(1) membership tests.
 
     Args:
         switching_df: Output from compute_switching_matrix
-        top_n: Limit to top N products by total switches
+        top_n: Limit to top-N products by total switch activity
 
     Returns:
-        Square matrix (from x to) with switch_rate values
+        Square DataFrame (from_product x to_product) with switch_rate values, or
+        empty DataFrame if no data.
     """
     if switching_df.empty:
         return pd.DataFrame()
 
-    product_activity = defaultdict(int)
+    # Rank products by total switch activity (sum of counts as source + destination)
+    from_totals = switching_df.groupby("from_product")["switch_count"].sum()
+    to_totals = switching_df.groupby("to_product")["switch_count"].sum()
+    activity = from_totals.add(to_totals, fill_value=0).sort_values(ascending=False)
+    top_products: set = set(activity.head(top_n).index.tolist())
 
-    for _, row in switching_df.iterrows():
-        product_activity[row["from_product"]] += row["switch_count"]
-        product_activity[row["to_product"]] += row["switch_count"]
-
-    top_products = sorted(product_activity.keys(), key=lambda x: product_activity[x], reverse=True)[
-        :top_n
+    filtered = switching_df[
+        switching_df["from_product"].isin(top_products)
+        & switching_df["to_product"].isin(top_products)
     ]
 
-    matrix = pd.DataFrame(0.0, index=top_products, columns=top_products, dtype=float)
+    if filtered.empty:
+        return pd.DataFrame()
 
-    for _, row in switching_df.iterrows():
-        if row["from_product"] in top_products and row["to_product"] in top_products:
-            matrix.loc[row["from_product"], row["to_product"]] = row["switch_rate"]
+    # Vectorised pivot — fills all cells, NaN -> 0
+    matrix = filtered.pivot_table(
+        index="from_product",
+        columns="to_product",
+        values="switch_rate",
+        aggfunc="mean",
+        fill_value=0.0,
+    )
 
+    # Make square: ensure all top products appear on both axes
+    ordered = sorted(top_products & set(matrix.index) | top_products & set(matrix.columns))
+    matrix = matrix.reindex(index=ordered, columns=ordered, fill_value=0.0)
     return matrix
 
 
@@ -124,14 +129,8 @@ def get_substitution_matrix(
     """
     Get substitution scores directly from similarity matrix.
 
-    In CDT, substitution score = similarity coefficient (Phi).
-    High similarity = high substitutability.
-
-    Args:
-        similarity_matrix: Output from build_similarity_matrix
-
-    Returns:
-        Square matrix of substitution scores (same as similarity matrix)
+    In CDT, substitution score = similarity coefficient (Phi or Jaccard).
+    High similarity == high substitutability.
     """
     return similarity_matrix.copy()
 
@@ -146,39 +145,36 @@ def compute_bundling_matrix(
     """
     Compute bundling scores: high lift (co-purchase) + low substitution = true complements.
 
-    Bundle Score = Lift * (1 - Substitution)  [normalized to 0-1]
+    Bundle Score = log(1+lift) / log(1+max_lift)  *  (1 - substitution)
 
     Args:
-        affinity_matrix: Lift-based co-purchase matrix from copurchase.py
+        affinity_matrix: Lift-based co-purchase matrix
         substitution_matrix: Similarity/substitution matrix
-        top_n_products: Limit to top N products
+        top_n_products: Limit to top-N products
         min_lift: Minimum lift to consider
         max_substitution: Maximum substitution to consider complementary
 
     Returns:
         DataFrame with product_a, product_b, lift, substitution, bundle_score
     """
-    # Ensure matrices aligned
     common_products = list(set(affinity_matrix.index) & set(substitution_matrix.index))
 
     if top_n_products:
-        # Use affinity sum as importance
         importance = affinity_matrix.loc[common_products].sum(axis=1)
         common_products = importance.nlargest(top_n_products).index.tolist()
 
+    max_lift = float(affinity_matrix.values.max())
+    log_max = np.log1p(max_lift) if max_lift > 0 else 1.0
+
     rows = []
     for i, prod_a in enumerate(common_products):
-        for prod_b in common_products[i + 1 :]:
-            lift = affinity_matrix.loc[prod_a, prod_b]
-            sub = substitution_matrix.loc[prod_a, prod_b]
+        for prod_b in common_products[i + 1:]:
+            lift = float(affinity_matrix.loc[prod_a, prod_b])
+            sub = float(substitution_matrix.loc[prod_a, prod_b])
 
             if lift >= min_lift and sub <= max_substitution:
-                # Normalized bundle score: high lift, low substitution
-                # Scale lift (typically 1-10+) to [0,1] via log
-                lift_score = np.log1p(lift) / np.log1p(affinity_matrix.values.max())
-                sub_penalty = 1 - sub  # sub in [-1,1] for Phi, so 1-sub in [0,2]
-                bundle_score = lift_score * sub_penalty
-
+                lift_score = np.log1p(lift) / log_max
+                bundle_score = lift_score * (1.0 - sub)
                 rows.append(
                     {
                         "product_a": prod_a,
@@ -195,8 +191,7 @@ def compute_bundling_matrix(
         )
 
     df = pd.DataFrame(rows)
-    df = df.sort_values("bundle_score", ascending=False).reset_index(drop=True)
-    return df
+    return df.sort_values("bundle_score", ascending=False).reset_index(drop=True)
 
 
 def build_behavioral_matrices(
@@ -209,13 +204,22 @@ def build_behavioral_matrices(
     """
     Build all three behavioral matrices in one call.
 
+    Args:
+        transactions_df: Raw transaction DataFrame (unused here, kept for API compat)
+        similarity_matrix: Product similarity matrix from cdt_similarity
+        affinity_matrix: Lift-based co-purchase matrix from fpgrowth step
+        sequences: {customer_id: [product_id, ...]} from build_customer_sequences
+        top_n_products: Limit matrices to top-N products by frequency
+
     Returns:
         (switching_df, substitution_df, bundling_df)
     """
+    # Bug-fix: pass sequences dict (not transactions_df) to compute_switching_matrix
     switching_df = compute_switching_matrix(sequences, top_n_products)
     substitution_df = get_substitution_matrix(similarity_matrix)
-    bundling_df = compute_bundling_matrix(affinity_matrix, substitution_df, top_n_products)
-
+    bundling_df = compute_bundling_matrix(
+        affinity_matrix, substitution_df, top_n_products
+    )
     return switching_df, substitution_df, bundling_df
 
 
@@ -236,42 +240,29 @@ def get_top_substitution_pairs(
         DataFrame with product_a, product_b, substitution_score
     """
     products = substitution_matrix.index.tolist()
-    pairs = []
-
-    for i, prod_a in enumerate(products):
-        for prod_b in products[i + 1 :]:
-            score = substitution_matrix.loc[prod_a, prod_b]
-            if score >= min_similarity:
-                pairs.append(
-                    {
-                        "product_a": prod_a,
-                        "product_b": prod_b,
-                        "substitution_score": score,
-                    }
-                )
+    pairs = [
+        {
+            "product_a": prod_a,
+            "product_b": prod_b,
+            "substitution_score": substitution_matrix.loc[prod_a, prod_b],
+        }
+        for i, prod_a in enumerate(products)
+        for prod_b in products[i + 1:]
+        if substitution_matrix.loc[prod_a, prod_b] >= min_similarity
+    ]
 
     if not pairs:
         return pd.DataFrame(columns=["product_a", "product_b", "substitution_score"])
 
     df = pd.DataFrame(pairs)
-    df = df.sort_values("substitution_score", ascending=False).head(top_n).reset_index(drop=True)
-    return df
+    return df.sort_values("substitution_score", ascending=False).head(top_n).reset_index(drop=True)
 
 
 def get_top_bundling_pairs(
     bundling_df: pd.DataFrame,
     top_n: int = 20,
 ) -> pd.DataFrame:
-    """
-    Get top bundling pairs from bundling DataFrame.
-
-    Args:
-        bundling_df: Output from compute_bundling_matrix
-        top_n: Number of pairs to return
-
-    Returns:
-        Top N bundling pairs
-    """
+    """Return top bundling pairs (already sorted by bundle_score)."""
     if bundling_df.empty:
         return bundling_df
     return bundling_df.head(top_n).reset_index(drop=True)
@@ -283,19 +274,18 @@ def get_top_switching_paths(
     min_rate: float = 0.0,
 ) -> pd.DataFrame:
     """
-    Get top switching paths.
+    Get top switching paths by switch_count.
 
     Args:
         switching_df: Output from compute_switching_matrix
         top_n: Number of paths to return
-        min_rate: Minimum switch rate threshold
+        min_rate: Minimum switch_rate to include
 
     Returns:
-        Top N switching paths
+        Top-N paths sorted by switch_count descending
     """
     if switching_df.empty:
         return switching_df
-
     df = switching_df[switching_df["switch_rate"] >= min_rate]
     return df.head(top_n).reset_index(drop=True)
 
@@ -305,7 +295,7 @@ def compute_customer_switching_profiles(
     top_n_products: Optional[int] = None,
 ) -> pd.DataFrame:
     """
-    Compute switching behavior profile per customer.
+    Compute switching behaviour profile per customer.
 
     Useful for segmentation: loyalists vs switchers.
 
@@ -319,10 +309,11 @@ def compute_customer_switching_profiles(
         if len(products) < 2:
             continue
 
-        switches = []
-        for i in range(len(products) - 1):
-            if products[i] != products[i + 1]:
-                switches.append((products[i], products[i + 1]))
+        switches = [
+            (products[i], products[i + 1])
+            for i in range(len(products) - 1)
+            if products[i] != products[i + 1]
+        ]
 
         if not switches:
             profiles.append(
@@ -338,11 +329,10 @@ def compute_customer_switching_profiles(
             )
             continue
 
-        switch_counts = defaultdict(int)
-        for from_p, to_p in switches:
-            switch_counts[(from_p, to_p)] += 1
-
-        top_switch = max(switch_counts.items(), key=lambda x: x[1])[0]
+        switch_freq: Dict[Tuple[str, str], int] = defaultdict(int)
+        for pair in switches:
+            switch_freq[pair] += 1
+        top_switch = max(switch_freq, key=switch_freq.get)  # type: ignore[arg-type]
 
         profiles.append(
             {
@@ -359,16 +349,16 @@ def compute_customer_switching_profiles(
     df = pd.DataFrame(profiles)
 
     if top_n_products and not df.empty:
-        # Filter customers who bought top products
-        product_freq = defaultdict(int)
-        for products in sequences.values():
-            for p in products:
-                product_freq[p] += 1
-        top_products = set(
-            sorted(product_freq, key=product_freq.get, reverse=True)[:top_n_products]
+        product_freq_: Dict[str, int] = defaultdict(int)
+        for prods in sequences.values():
+            for p in prods:
+                product_freq_[p] += 1
+        top_set = set(
+            sorted(product_freq_, key=product_freq_.get, reverse=True)[:top_n_products]  # type: ignore[arg-type]
         )
-
-        df = df[df["top_from_product"].isin(top_products) | df["top_to_product"].isin(top_products)]
+        df = df[
+            df["top_from_product"].isin(top_set) | df["top_to_product"].isin(top_set)
+        ]
 
     return df
 
@@ -404,16 +394,12 @@ def detect_brand_switching(
     df = df.sort_values([customer_col, date_col])
 
     switches = []
-
     for customer, group in df.groupby(customer_col):
         group = group.sort_values(date_col)
-
         for i in range(len(group) - 1):
             curr = group.iloc[i]
             nxt = group.iloc[i + 1]
-
             days_diff = (nxt[date_col] - curr[date_col]).days
-
             if (
                 days_diff <= window_days
                 and curr[category_col] == nxt[category_col]
@@ -453,13 +439,15 @@ def compute_brand_switching_matrix(
         .reset_index()
     )
 
-    # Add rate per category
-    from_totals = matrix.groupby(["category", "from_brand"])["switch_count"].sum().reset_index()
-    from_totals.columns = ["category", "from_brand", "total_switches_from"]
-
+    from_totals = (
+        matrix.groupby(["category", "from_brand"])["switch_count"]
+        .sum()
+        .reset_index()
+        .rename(columns={"switch_count": "total_switches_from"})
+    )
     matrix = matrix.merge(from_totals, on=["category", "from_brand"])
     matrix["switch_rate"] = matrix["switch_count"] / matrix["total_switches_from"]
 
-    return matrix.sort_values(["category", "switch_count"], ascending=[True, False]).reset_index(
-        drop=True
-    )
+    return matrix.sort_values(
+        ["category", "switch_count"], ascending=[True, False]
+    ).reset_index(drop=True)
