@@ -13,7 +13,7 @@ from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
 
 
-# Bug 1: Cached wrappers for heavy computations
+# Cached wrappers for heavy computations
 @st.cache_data
 def _cached_compute_affinity_matrix(transactions_df, min_support, min_lift, top_n_products):
     return compute_affinity_matrix(
@@ -41,7 +41,12 @@ def _cached_get_product_affinity_profile(transactions_df, target_product, min_li
 
 def render_copurchase_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render co-purchase/affinity analysis tab with persistent sub-tabs."""
-    st.header(" Co-purchase / Affinity Analysis")
+    st.header("🛒 Co-purchase / Affinity Analysis")
+    st.caption(
+        "Measures how often products are bought **in the same basket**. "
+        "Lift > 1 = complementary pair. A high **Confidence A→B** means B is almost always "
+        "bought when A is in the basket."
+    )
 
     if transactions_df.empty:
         st.warning("No transaction data available")
@@ -64,6 +69,15 @@ def render_copurchase_tab(transactions_df: pd.DataFrame, product_lookup: dict, p
     if top_pairs.empty:
         st.warning("No significant co-purchase pairs found. Try lowering min_lift or min_support.")
         return
+
+    # KPI summary bar
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Pairs Found", len(top_pairs))
+    col2.metric("Max Lift", f"{top_pairs['lift'].max():.2f}")
+    col3.metric(
+        "Avg Confidence A→B",
+        f"{top_pairs['confidence_a_to_b'].mean():.2%}",
+    )
 
     # Add product names
     top_pairs["Product A Name"] = top_pairs["product_a"].map(product_lookup)
@@ -99,16 +113,32 @@ def _render_top_pairs_tab(top_pairs: pd.DataFrame, min_lift: float):
 
     st.dataframe(top_pairs[display_cols].round(4), width="stretch", hide_index=True)
 
+    # Best bundle candidate callout
+    if not top_pairs.empty:
+        best = top_pairs.nlargest(1, "lift").iloc[0]
+        name_a = best.get("Product A Name", best["product_a"])
+        name_b = best.get("Product B Name", best["product_b"])
+        st.success(
+            f"🏆 **Best bundle candidate:** `{name_a}` + `{name_b}`  \n"
+            f"Lift **{best['lift']:.2f}** · Support **{best['support']:.4f}** · "
+            f"Confidence A→B **{best['confidence_a_to_b']:.2%}**"
+        )
+
     render_analytics_export(top_pairs, "CoPurchase_Pairs")
 
     # Scatter plot
     st.subheader("Support vs Lift")
+    top_pairs["label"] = (
+        top_pairs["Product A Name"].str[:20] + " + " + top_pairs["Product B Name"].str[:20]
+    )
     fig = px.scatter(
         top_pairs,
         x="support",
         y="lift",
         color="confidence_a_to_b",
         size="confidence_a_to_b",
+        color_continuous_scale="Blues",
+        hover_name="label",
         hover_data=[
             "Product A Name",
             "Product B Name",
@@ -122,7 +152,14 @@ def _render_top_pairs_tab(top_pairs: pd.DataFrame, min_lift: float):
             "confidence_a_to_b": "Confidence A→B",
         },
     )
-    st.plotly_chart(fig, width="stretch")
+    fig.add_hline(
+        y=1.0,
+        line_dash="dot",
+        line_color="red",
+        annotation_text="Lift = 1 (random co-occurrence)",
+        annotation_position="bottom right",
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def _render_heatmap_tab(affinity_matrix: pd.DataFrame, product_lookup: dict, top_n_products: int):

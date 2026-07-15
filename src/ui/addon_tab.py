@@ -11,7 +11,11 @@ from src.ui.export import render_analytics_export
 
 def render_addon_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render add-on analysis tab."""
-    st.header(" Add-on / Complementary Products")
+    st.header("➕ Add-on / Complementary Products")
+    st.caption(
+        "Finds products that are bought **alongside** an anchor item in the same basket. "
+        "**Revenue uplift per anchor** estimates incremental value per transaction."
+    )
 
     if transactions_df.empty:
         st.warning("No transaction data available")
@@ -56,6 +60,15 @@ def render_single_addon(transactions_df: pd.DataFrame, product_lookup: dict, par
         if not addons.empty:
             addons["Add-on Name"] = addons["addon_product"].map(product_lookup)
             addons["Anchor Name"] = addons["anchor_product"].map(product_lookup)
+
+            # Best revenue add-on callout
+            if "revenue_uplift_per_anchor" in addons.columns:
+                best_addon = addons.nlargest(1, "revenue_uplift_per_anchor").iloc[0]
+                st.success(
+                    f"💰 **Highest revenue add-on:** `{best_addon['Add-on Name']}`  \n"
+                    f"Expected uplift **${best_addon['revenue_uplift_per_anchor']:.2f}** per anchor transaction · "
+                    f"Lift **{best_addon['lift']:.2f}**"
+                )
 
             display_cols = [
                 "Add-on Name",
@@ -124,6 +137,8 @@ def render_multi_addon(transactions_df: pd.DataFrame, product_lookup: dict, para
                 y=pivot.index,
                 colorscale="RdYlGn",
                 zmid=1.0,
+                zmin=0.5,
+                zmax=min(float(pivot.values.max()), 10.0),
                 text=pivot.values.round(2),
                 texttemplate="%{text}",
                 textfont={"size": 10},

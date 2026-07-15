@@ -17,7 +17,11 @@ from src.ui.tabs import persistent_tabs
 
 def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render product switching analysis tab with persistent sub-tabs."""
-    st.header(" Product Switching Analysis")
+    st.header("🔀 Product Switching Analysis")
+    st.caption(
+        "Tracks when a customer buys product A on one visit, then product B on the next. "
+        "High **switch rate** from A → B suggests substitutability or a sequential need."
+    )
 
     if transactions_df.empty:
         st.warning("No transaction data available")
@@ -54,7 +58,6 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
             )
 
     with st.spinner("Computing switching patterns..."):
-        # Compute switching matrix
         switch_matrix = compute_switching_matrix(
             transactions_df, window_days=window_days, min_transactions=min_transactions
         )
@@ -73,38 +76,38 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
 
     top_paths = get_top_paths_cached(transactions_df, min_switches)
 
-    # Overview metrics
+    # Overview metrics with deltas
     st.subheader("Switching Overview")
-    col1, col2, col3, col4 = st.columns(4)
 
-    with col1:
-        st.metric(
-            "Total Switching Events",
-            len(switch_matrix) if not switch_matrix.empty else 0,
-        )
-    with col2:
-        st.metric(
-            "Avg Switch Rate",
-            (f"{switch_matrix['switch_rate'].mean():.1%}" if not switch_matrix.empty else "0%"),
-        )
-    with col3:
-        st.metric(
-            "Loyal Customers",
-            (
-                int(loyalty["loyalty_segment"].eq("Loyal").sum())
-                if "loyalty_segment" in loyalty.columns
-                else 0
-            ),
-        )
-    with col4:
-        st.metric(
-            "Switchers",
-            (
-                int(loyalty["loyalty_segment"].eq("Switcher").sum())
-                if "loyalty_segment" in loyalty.columns
-                else 0
-            ),
-        )
+    total_events = len(switch_matrix) if not switch_matrix.empty else 0
+    avg_switch = switch_matrix["switch_rate"].mean() if not switch_matrix.empty else 0
+    total_customers = len(loyalty)
+    loyal_n = (
+        int(loyalty["loyalty_segment"].eq("Loyal").sum())
+        if "loyalty_segment" in loyalty.columns
+        else 0
+    )
+    switcher_n = (
+        int(loyalty["loyalty_segment"].eq("Switcher").sum())
+        if "loyalty_segment" in loyalty.columns
+        else 0
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Switching Events", total_events)
+    col2.metric("Avg Switch Rate", f"{avg_switch:.1%}")
+    col3.metric(
+        "Loyal Customers",
+        loyal_n,
+        delta=f"{loyal_n / total_customers:.0%} of base" if total_customers else None,
+        delta_color="normal",
+    )
+    col4.metric(
+        "Switchers",
+        switcher_n,
+        delta=f"{switcher_n / total_customers:.0%} of base" if total_customers else None,
+        delta_color="inverse",
+    )
 
     # Persistent tabs
     tab_labels = [
@@ -159,6 +162,23 @@ def _render_heatmap_tab(
             height=600,
         )
         st.plotly_chart(fig, width="stretch")
+
+        # Top exit products callout
+        if not switch_matrix.empty and "from_product" in switch_matrix.columns:
+            top_exits = (
+                switch_matrix.groupby("from_product")["switch_count"]
+                .sum()
+                .nlargest(3)
+                .reset_index()
+            )
+            top_exits["name"] = top_exits["from_product"].map(
+                lambda x: product_lookup.get(x, x) if product_lookup else x
+            )
+            exit_str = " · ".join(
+                f"**{row['name']}** ({int(row['switch_count'])})"
+                for _, row in top_exits.iterrows()
+            )
+            st.info(f"📤 **Top switch-away products:** {exit_str}")
 
         # Show raw data
         with st.expander("View Raw Matrix"):
@@ -240,6 +260,20 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
             for p in all_products
         ]
 
+        # Node opacity scales with total outgoing switch volume
+        max_val = max(values) if values else 1
+        node_outgoing = {
+            p: sum(
+                top_switches.loc[top_switches["from_product"] == p, "switch_count"].sum()
+                for _ in [None]
+            )
+            for p in all_products
+        }
+        node_colors = [
+            f"rgba(70, 130, 180, {min(0.4 + node_outgoing.get(p, 0) / max_val * 0.6, 1.0):.2f})"
+            for p in all_products
+        ]
+
         fig = go.Figure(
             data=[
                 go.Sankey(
@@ -248,7 +282,7 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
                         thickness=20,
                         line=dict(color="black", width=0.5),
                         label=labels,
-                        color="lightblue",
+                        color=node_colors,
                         hovertemplate="%{label}<extra></extra>",
                     ),
                     link=dict(
@@ -311,7 +345,6 @@ def _render_loyalty_tab(loyalty: pd.DataFrame):
         st.write("**Top Customers by Loyalty**")
         top_loyal = loyalty[loyalty["loyalty_segment"] == "Loyal"].nlargest(20, "repeat_rate")
         if not top_loyal.empty:
-            # Only display columns that exist
             available_cols = [
                 "transaction_count",
                 "unique_products",

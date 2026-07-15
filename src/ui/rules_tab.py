@@ -1,5 +1,6 @@
 """Association rules tab with persistent tab state."""
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -13,7 +14,11 @@ from src.viz.network import create_network_graph
 
 def render_rules_tab(rules: pd.DataFrame, product_lookup: dict, params: dict):
     """Render association rules analysis tab with persistent sub-tabs."""
-    st.header(" Association Rules")
+    st.header("📋 Association Rules")
+    st.caption(
+        "Discovers product combinations that occur together more than chance. "
+        "**Lift > 1** = positive association. **Conviction → ∞** = near-deterministic rule."
+    )
 
     if rules.empty:
         st.warning("No rules generated. Try lowering min_support or min_confidence.")
@@ -31,21 +36,51 @@ def render_rules_tab(rules: pd.DataFrame, product_lookup: dict, params: dict):
                 params.get("min_support", 0.0),
                 0.001,
                 format="%.4f",
+                help="Fraction of transactions containing both items. Higher = more frequent pairs.",
             )
             min_conf = st.number_input(
-                "Min Confidence", 0.0, 1.0, params.get("min_confidence", 0.5), 0.05
+                "Min Confidence",
+                0.0,
+                1.0,
+                params.get("min_confidence", 0.5),
+                0.05,
+                help="P(B|A): probability of B given A was bought. Higher = more reliable rules.",
             )
 
         with col2:
-            min_lift = st.number_input("Min Lift", 0.0, 10.0, params.get("min_lift", 1.0), 0.1)
-            max_lift = st.number_input("Max Lift", 0.0, 100.0, params.get("max_lift", 100.0), 0.5)
+            min_lift = st.number_input(
+                "Min Lift",
+                0.0,
+                10.0,
+                params.get("min_lift", 1.0),
+                0.1,
+                help="Lift > 1 means items co-occur more than by chance. Lift = 1 means independence.",
+            )
+            max_lift = st.number_input(
+                "Max Lift",
+                0.0,
+                100.0,
+                params.get("max_lift", 100.0),
+                0.5,
+                help="Caps very high lift values that may arise from rare items.",
+            )
 
         with col3:
             min_lev = st.number_input(
-                "Min Leverage", -1.0, 1.0, params.get("min_leverage", -1.0), 0.01
+                "Min Leverage",
+                -1.0,
+                1.0,
+                params.get("min_leverage", -1.0),
+                0.01,
+                help="Leverage = support(A,B) − support(A)×support(B). Positive = synergy above baseline.",
             )
             min_conv = st.number_input(
-                "Min Conviction", 0.0, 10.0, params.get("min_conviction", 0.0), 0.1
+                "Min Conviction",
+                0.0,
+                10.0,
+                params.get("min_conviction", 0.0),
+                0.1,
+                help="Conviction → ∞ as confidence → 1. Values > 1.5 indicate a strong directional rule.",
             )
 
         with col4:
@@ -69,7 +104,14 @@ def render_rules_tab(rules: pd.DataFrame, product_lookup: dict, params: dict):
         max_consequent_len=max_cons_len,
     )
 
-    st.metric("Filtered Rules", len(filtered))
+    total_rules = len(rules)
+    filtered_count = len(filtered)
+    st.metric(
+        "Filtered Rules",
+        filtered_count,
+        delta=f"{filtered_count - total_rules} from total {total_rules}",
+        delta_color="off",
+    )
 
     if filtered.empty:
         st.warning("No rules match the current filters")
@@ -98,6 +140,17 @@ def _render_rules_table_tab(display_rules: pd.DataFrame, filtered: pd.DataFrame)
     """Render the rules table view."""
     st.subheader("Rules Table")
 
+    # Top rule insight callout
+    if not display_rules.empty and "lift" in filtered.columns:
+        top = filtered.nlargest(1, "lift").iloc[0]
+        ant = ", ".join(str(x) for x in top["antecedents"])
+        con = ", ".join(str(x) for x in top["consequents"])
+        st.info(
+            f"💡 **Strongest rule:** `{ant}` → `{con}`  \n"
+            f"Lift **{top['lift']:.2f}** · Confidence **{top['confidence']:.2%}** · "
+            f"Support **{top['support']:.4f}**"
+        )
+
     # Column selector
     available_cols = display_rules.columns.tolist()
     default_cols = [
@@ -117,6 +170,19 @@ def _render_rules_table_tab(display_rules: pd.DataFrame, filtered: pd.DataFrame)
     )
 
     if selected_cols:
+        numeric_cols = [
+            c for c in selected_cols if display_rules[c].dtype in ["float64", "int64"]
+        ]
+        if numeric_cols:
+            sort_col = st.selectbox(
+                "Sort by",
+                numeric_cols,
+                index=numeric_cols.index("lift") if "lift" in numeric_cols else 0,
+                key="rules_sort_col",
+            )
+            sort_asc = st.checkbox("Ascending", value=False, key="rules_sort_asc")
+            display_rules = display_rules.sort_values(sort_col, ascending=sort_asc)
+
         st.dataframe(
             display_rules[selected_cols],
             width="stretch",
@@ -221,7 +287,7 @@ def _create_3d_scatter(rules: pd.DataFrame) -> go.Figure:
     # Limit points
     plot_rules = rules.nlargest(500, "lift") if len(rules) > 500 else rules
 
-    # Format hover text - vectorized approach (Bug 6 fix)
+    # Format hover text - vectorized approach
     ant_str = plot_rules["antecedents"].apply(lambda x: ", ".join(map(str, x)))
     cons_str = plot_rules["consequents"].apply(lambda x: ", ".join(map(str, x)))
     hover_text = (
@@ -251,8 +317,25 @@ def _create_3d_scatter(rules: pd.DataFrame) -> go.Figure:
         ]
     )
 
+    # Lift = 1 reference plane
+    x_range = [float(plot_rules["support"].min()), float(plot_rules["support"].max())]
+    y_range = [float(plot_rules["confidence"].min()), float(plot_rules["confidence"].max())]
+    xx, yy = np.meshgrid(x_range, y_range)
+    fig.add_trace(
+        go.Surface(
+            x=xx,
+            y=yy,
+            z=np.ones_like(xx),
+            opacity=0.15,
+            colorscale=[[0, "red"], [1, "red"]],
+            showscale=False,
+            name="Lift = 1 (independence)",
+            hoverinfo="skip",
+        )
+    )
+
     fig.update_layout(
-        title="3D Rule Space: Support × Confidence × Lift",
+        title="3D Rule Space: Support × Confidence × Lift  (red plane = Lift 1.0)",
         scene={"xaxis_title": "Support", "yaxis_title": "Confidence", "zaxis_title": "Lift"},
         height=600,
         margin={"l": 0, "r": 0, "t": 40, "b": 0},

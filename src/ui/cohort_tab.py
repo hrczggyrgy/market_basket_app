@@ -33,7 +33,12 @@ def render_cohort_tab(transactions_df: pd.DataFrame, product_lookup: dict, param
     """Render cohort analysis tab."""
     # product_lookup is available but not used in cohort analysis
     # Kept for consistency with other tab functions
-    st.header(" Cohort Analysis")
+    st.header("📅 Cohort Analysis")
+    st.caption(
+        "Groups customers by their **first purchase month**. "
+        "Each cell shows the % of that cohort still purchasing in that period. "
+        "Diagonal fade = natural churn; flat rows = high retention."
+    )
 
     if transactions_df.empty:
         st.warning("No transaction data available")
@@ -93,7 +98,7 @@ def render_cohort_tab(transactions_df: pd.DataFrame, product_lookup: dict, param
 
     # Reset index to get Cohort as column
     cohort_data = cohort_matrix.reset_index()
-    # Bug 7 fix: safety check for Cohort column name
+    # Safety check for Cohort column name
     if "Cohort" not in cohort_data.columns:
         cohort_data = cohort_data.rename(columns={cohort_data.columns[0]: "Cohort"})
     else:
@@ -169,7 +174,6 @@ def render_cohort_tab(transactions_df: pd.DataFrame, product_lookup: dict, param
 
     # Line chart of each cohort's metric over periods
     if not cohort_matrix.empty:
-        # Prepare data for line chart
         line_data = cohort_matrix.reset_index().melt(
             id_vars="cohort", var_name="Period", value_name=metric
         )
@@ -202,9 +206,6 @@ def render_cohort_tab(transactions_df: pd.DataFrame, product_lookup: dict, param
 
     render_analytics_export(cohort_data[display_cols], f"Cohort_{metric}_{cohort_period}")
 
-    # Cohort size vs performance scatter - not available from compute_cohorts
-    # Skip this section as we don't have cohort sizes in the matrix format
-
     # Period-over-period comparison
     st.subheader("Period-over-Period Comparison")
 
@@ -221,7 +222,7 @@ def render_cohort_tab(transactions_df: pd.DataFrame, product_lookup: dict, param
             )
 
         if period_1 in cohort_data.columns and period_2 in cohort_data.columns:
-            # Bug 4 fix: replace 0 with NaN before division to avoid inf/NaN
+            # Replace 0 with NaN before division to avoid inf/NaN
             period_1_vals = cohort_data[period_1].replace(0, np.nan)
             comparison = pd.DataFrame(
                 {
