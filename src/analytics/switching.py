@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 
+
 def compute_switching_matrix(
     transactions_df: pd.DataFrame,
     product_col: str = "stockcode",
@@ -17,6 +18,7 @@ def compute_switching_matrix(
 
     Returns:
         DataFrame with columns: from_product, to_product, switch_count, switch_rate
+        plus asymmetry-oriented metrics useful in directed switching analysis.
     """
     df = transactions_df.copy()
     df[date_col] = pd.to_datetime(df[date_col])
@@ -62,6 +64,11 @@ def compute_switching_matrix(
                 "switch_count",
                 "switch_rate",
                 "avg_days_between",
+                "unique_customers",
+                "total_switches_from",
+                "reverse_count",
+                "asymmetry_ratio",
+                "switches_per_customer",
             ]
         )
 
@@ -87,12 +94,32 @@ def compute_switching_matrix(
         switch_matrix["switch_count"] / switch_matrix["total_switches_from"]
     )
 
+    # Add reverse flow count to detect asymmetry / net winning direction
+    reverse = switch_matrix.rename(
+        columns={
+            "from_product": "to_product",
+            "to_product": "from_product",
+            "switch_count": "reverse_count",
+        }
+    )[["from_product", "to_product", "reverse_count"]]
+
+    switch_matrix = switch_matrix.merge(reverse, on=["from_product", "to_product"], how="left")
+    switch_matrix["reverse_count"] = switch_matrix["reverse_count"].fillna(0)
+    switch_matrix["asymmetry_ratio"] = (
+        (switch_matrix["switch_count"] - switch_matrix["reverse_count"])
+        / (switch_matrix["switch_count"] + switch_matrix["reverse_count"] + 1e-9)
+    )
+    switch_matrix["switches_per_customer"] = (
+        switch_matrix["switch_count"] / switch_matrix["unique_customers"].replace(0, np.nan)
+    ).fillna(0)
+
     # Sort by switch count
     switch_matrix = switch_matrix.sort_values("switch_count", ascending=False).reset_index(
         drop=True
     )
 
     return switch_matrix
+
 
 
 def get_customer_loyalty_metrics(
@@ -191,6 +218,37 @@ def get_customer_loyalty_metrics(
     return loyalty_df
 
 
+
+def compute_transition_matrix(
+    transactions_df: pd.DataFrame,
+    product_col: str = "stockcode",
+    customer_col: str = "customer_id",
+    date_col: str = "date",
+    top_n: int = 15,
+) -> pd.DataFrame:
+    """Compute a simple first-order Markov transition matrix across top products."""
+    if transactions_df.empty or product_col not in transactions_df.columns:
+        return pd.DataFrame()
+
+    top_products = transactions_df[product_col].value_counts().head(top_n).index
+    df = transactions_df[transactions_df[product_col].isin(top_products)].copy()
+    df[date_col] = pd.to_datetime(df[date_col])
+    df = df.sort_values([customer_col, date_col])
+    df["next_product"] = df.groupby(customer_col)[product_col].shift(-1)
+    df = df[df["next_product"].notna()]
+    df = df[df["next_product"].isin(top_products)]
+
+    if df.empty:
+        return pd.DataFrame()
+
+    transitions = df.groupby([product_col, "next_product"]).size().unstack(fill_value=0)
+    row_sums = transitions.sum(axis=1).replace(0, np.nan)
+    transition_probs = transitions.div(row_sums, axis=0).fillna(0)
+
+    return transition_probs
+
+
+
 def detect_brand_switching(
     transactions_df: pd.DataFrame,
     brand_col: str = "brand",
@@ -273,6 +331,7 @@ def detect_brand_switching(
     ]
 
 
+
 def get_top_switching_paths(
     transactions_df: pd.DataFrame, min_switches: int = 5, top_n: int = 20
 ) -> pd.DataFrame:
@@ -284,6 +343,7 @@ def get_top_switching_paths(
 
     filtered = switch_matrix[switch_matrix["switch_count"] >= min_switches]
     return filtered.head(top_n)
+
 
 
 def get_switching_heatmap_data(

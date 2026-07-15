@@ -1,7 +1,8 @@
-"""Co-purchase / Affinity analysis tab with persistent tab state."""
+"""Co-purchase / Affinity analysis tab."""
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from src.analytics.copurchase import (
@@ -13,11 +14,13 @@ from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
 
 
-# Cached wrappers for heavy computations
 @st.cache_data
 def _cached_compute_affinity_matrix(transactions_df, min_support, min_lift, top_n_products):
     return compute_affinity_matrix(
-        transactions_df, min_support=min_support, min_lift=min_lift, top_n_products=top_n_products
+        transactions_df,
+        min_support=min_support,
+        min_lift=min_lift,
+        top_n_products=top_n_products,
     )
 
 
@@ -35,8 +38,12 @@ def _cached_get_top_affinity_pairs(transactions_df, min_support, min_lift, top_n
 @st.cache_data
 def _cached_get_product_affinity_profile(transactions_df, target_product, min_lift, top_n):
     return get_product_affinity_profile(
-        transactions_df, target_product, min_lift=min_lift, top_n=top_n
+        transactions_df,
+        target_product=target_product,
+        min_lift=min_lift,
+        top_n=top_n,
     )
+
 
 
 def render_copurchase_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
@@ -44,26 +51,37 @@ def render_copurchase_tab(transactions_df: pd.DataFrame, product_lookup: dict, p
     st.header("🛒 Co-purchase / Affinity Analysis")
     st.caption(
         "Measures how often products are bought **in the same basket**. "
-        "Lift > 1 = complementary pair. A high **Confidence A→B** means B is almost always "
-        "bought when A is in the basket."
+        "Lift > 1 = complementary pair. Jaccard and Kulczynski add more robust, "
+        "symmetric evidence for scientifically stronger pair ranking."
     )
 
     if transactions_df.empty:
         st.warning("No transaction data available")
         return
 
-    min_support = params.get("min_support", 0.005)
-    min_lift = params.get("min_lift", 1.2)
-    top_n = params.get("top_n", 50)
-    top_n_products = params.get("top_n_products", 50)
+    # Parameters
+    with st.expander("Affinity Parameters", expanded=False):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            min_support = st.number_input(
+                "Min Support", 0.001, 1.0, params.get("min_support", 0.005), 0.001
+            )
+        with col2:
+            min_lift = st.number_input(
+                "Min Lift", 0.1, 20.0, params.get("min_lift", 1.2), 0.1
+            )
+        with col3:
+            top_n_products = st.slider(
+                "Top N Products", 10, 100, params.get("top_n_products", 30)
+            )
 
-    with st.spinner("Computing affinity matrix..."):
+    # Compute metrics
+    with st.spinner("Computing co-purchase patterns..."):
         affinity_matrix = _cached_compute_affinity_matrix(
             transactions_df, min_support, min_lift, top_n_products
         )
-
         top_pairs = _cached_get_top_affinity_pairs(
-            transactions_df, min_support, min_lift, top_n, top_n_products
+            transactions_df, min_support, min_lift, 50, top_n_products
         )
 
     if top_pairs.empty:
@@ -71,35 +89,38 @@ def render_copurchase_tab(transactions_df: pd.DataFrame, product_lookup: dict, p
         return
 
     # KPI summary bar
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("Pairs Found", len(top_pairs))
     col2.metric("Max Lift", f"{top_pairs['lift'].max():.2f}")
-    col3.metric(
-        "Avg Confidence A→B",
-        f"{top_pairs['confidence_a_to_b'].mean():.2%}",
-    )
+    col3.metric("Avg Jaccard", f"{top_pairs['jaccard'].mean():.3f}")
+    col4.metric("Avg Kulczynski", f"{top_pairs['kulczynski'].mean():.3f}")
 
     # Add product names
     top_pairs["Product A Name"] = top_pairs["product_a"].map(product_lookup)
     top_pairs["Product B Name"] = top_pairs["product_b"].map(product_lookup)
 
-    # Persistent tabs for different views
-    tab_labels = [" Top Pairs", " Affinity Heatmap", " Sankey Flow", " Product Profile"]
-    selected_tab = persistent_tabs(tab_labels, "copurchase_view_tabs", default_tab=0)
+    tab_labels = [
+        "Top Pairs",
+        "Quadrant View",
+        "Heatmap",
+        "Product Profile",
+    ]
+    active_tab = persistent_tabs(tab_labels, "copurchase_tabs", default_tab=0)
 
-    if selected_tab == 0:
-        _render_top_pairs_tab(top_pairs, min_lift)
-    elif selected_tab == 1:
+    if active_tab == 0:
+        _render_top_pairs_tab(top_pairs)
+    elif active_tab == 1:
+        _render_quadrant_tab(top_pairs)
+    elif active_tab == 2:
         _render_heatmap_tab(affinity_matrix, product_lookup, top_n_products)
-    elif selected_tab == 2:
-        _render_sankey_tab(affinity_matrix, product_lookup, top_n_products)
-    elif selected_tab == 3:
-        _render_product_profile_tab(transactions_df, product_lookup, min_lift)
+    elif active_tab == 3:
+        _render_profile_tab(transactions_df, top_pairs, product_lookup, min_lift)
 
 
-def _render_top_pairs_tab(top_pairs: pd.DataFrame, min_lift: float):
-    """Render the top co-purchase pairs tab."""
-    st.subheader(f"Top {len(top_pairs)} Co-purchase Pairs (Lift ≥ {min_lift})")
+
+def _render_top_pairs_tab(top_pairs: pd.DataFrame):
+    """Render top co-purchase pairs table and classical scatter."""
+    st.subheader("Top Co-purchase Pairs")
 
     display_cols = [
         "Product A Name",
@@ -108,25 +129,27 @@ def _render_top_pairs_tab(top_pairs: pd.DataFrame, min_lift: float):
         "confidence_a_to_b",
         "confidence_b_to_a",
         "lift",
+        "jaccard",
+        "kulczynski",
+        "cosine",
+        "phi_coefficient",
         "leverage",
     ]
+    available = [c for c in display_cols if c in top_pairs.columns]
+    st.dataframe(top_pairs[available].round(4), width="stretch", hide_index=True)
 
-    st.dataframe(top_pairs[display_cols].round(4), width="stretch", hide_index=True)
-
-    # Best bundle candidate callout
     if not top_pairs.empty:
         best = top_pairs.nlargest(1, "lift").iloc[0]
         name_a = best.get("Product A Name", best["product_a"])
         name_b = best.get("Product B Name", best["product_b"])
         st.success(
             f"🏆 **Best bundle candidate:** `{name_a}` + `{name_b}`  \n"
-            f"Lift **{best['lift']:.2f}** · Support **{best['support']:.4f}** · "
-            f"Confidence A→B **{best['confidence_a_to_b']:.2%}**"
+            f"Lift **{best['lift']:.2f}** · Jaccard **{best['jaccard']:.3f}** · "
+            f"Kulczynski **{best['kulczynski']:.3f}**"
         )
 
     render_analytics_export(top_pairs, "CoPurchase_Pairs")
 
-    # Scatter plot
     st.subheader("Support vs Lift")
     top_pairs["label"] = (
         top_pairs["Product A Name"].str[:20] + " + " + top_pairs["Product B Name"].str[:20]
@@ -136,16 +159,18 @@ def _render_top_pairs_tab(top_pairs: pd.DataFrame, min_lift: float):
         x="support",
         y="lift",
         color="confidence_a_to_b",
-        size="confidence_a_to_b",
+        size="jaccard",
         color_continuous_scale="Blues",
         hover_name="label",
         hover_data=[
             "Product A Name",
             "Product B Name",
+            "support",
+            "lift",
             "confidence_a_to_b",
-            "confidence_b_to_a",
+            "jaccard",
+            "kulczynski",
         ],
-        title="Co-purchase Pairs: Support vs Lift",
         labels={
             "support": "Support",
             "lift": "Lift",
@@ -162,94 +187,120 @@ def _render_top_pairs_tab(top_pairs: pd.DataFrame, min_lift: float):
     st.plotly_chart(fig, use_container_width=True)
 
 
-def _render_heatmap_tab(affinity_matrix: pd.DataFrame, product_lookup: dict, top_n_products: int):
-    """Render the affinity heatmap tab."""
-    st.subheader("Product Affinity Heatmap")
 
-    if not affinity_matrix.empty:
-        from src.viz.heatmap import create_affinity_heatmap
-
-        fig = create_affinity_heatmap(
-            affinity_matrix,
-            product_lookup=product_lookup,
-            min_lift=1.0,
-            max_products=top_n_products,
-        )
-        st.plotly_chart(fig, width="stretch")
-    else:
-        st.info("Affinity matrix not available")
-
-
-def _render_sankey_tab(affinity_matrix: pd.DataFrame, product_lookup: dict, top_n_products: int):
-    """Render the Sankey flow tab."""
-    st.subheader("Co-purchase Flow (Sankey)")
-
-    if not affinity_matrix.empty:
-        from src.viz.network import create_sankey_from_matrix
-
-        fig = create_sankey_from_matrix(
-            affinity_matrix.head(min(top_n_products, 15)),
-            product_lookup=product_lookup,
-        )
-        st.plotly_chart(fig, width="stretch")
-    else:
-        st.info("Not enough data for Sankey diagram")
-
-
-def _render_product_profile_tab(
-    transactions_df: pd.DataFrame, product_lookup: dict, min_lift: float
-):
-    """Render the single product affinity profile tab."""
-    st.subheader("Single Product Affinity Profile")
-
-    products = transactions_df["stockcode"].unique()
-    selected_product = st.selectbox(
-        "Select Product",
-        options=products,
-        format_func=lambda x: product_lookup.get(x, x),
-        key="copurchase_tab_product_select",
+def _render_quadrant_tab(top_pairs: pd.DataFrame):
+    """Render academic quadrant view using Jaccard and Kulczynski."""
+    st.subheader("Quadrant View: Breadth vs Strength")
+    st.caption(
+        "Jaccard measures breadth of overlap; Kulczynski averages both directional confidences. "
+        "Top-right pairs are typically the strongest candidates for bundling or adjacency."
     )
 
-    if selected_product:
-        profile = _cached_get_product_affinity_profile(
-            transactions_df, selected_product, min_lift, 20
+    qdata = top_pairs.copy()
+    qdata["label"] = qdata["Product A Name"].str[:20] + " + " + qdata["Product B Name"].str[:20]
+    median_j = qdata["jaccard"].median()
+    median_k = qdata["kulczynski"].median()
+
+    fig = px.scatter(
+        qdata,
+        x="jaccard",
+        y="kulczynski",
+        size="support",
+        color="phi_coefficient",
+        color_continuous_scale="RdYlGn",
+        hover_name="label",
+        hover_data=["lift", "support", "confidence_a_to_b", "confidence_b_to_a"],
+        labels={
+            "jaccard": "Jaccard (breadth of overlap)",
+            "kulczynski": "Kulczynski (average directional confidence)",
+            "phi_coefficient": "Phi coefficient",
+        },
+        title="Quadrant Map of Complementarity",
+    )
+    fig.add_vline(
+        x=median_j,
+        line_dash="dash",
+        line_color="gray",
+        annotation_text="Median Jaccard",
+    )
+    fig.add_hline(
+        y=median_k,
+        line_dash="dash",
+        line_color="gray",
+        annotation_text="Median Kulczynski",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+
+def _render_heatmap_tab(affinity_matrix: pd.DataFrame, product_lookup: dict, top_n_products: int):
+    """Render lift heatmap."""
+    st.subheader("Affinity Matrix Heatmap")
+
+    if affinity_matrix.empty:
+        st.info("No affinity matrix available")
+        return
+
+    labels = [product_lookup.get(col, col) if product_lookup else col for col in affinity_matrix.columns]
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=affinity_matrix.values,
+            x=labels,
+            y=labels,
+            colorscale="RdYlGn",
+            zmid=1.0,
+            hoverongaps=False,
         )
+    )
+    fig.update_layout(
+        title=f"Lift-based Affinity Matrix (Top {top_n_products} Products)",
+        height=700,
+        xaxis_title="Product",
+        yaxis_title="Product",
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-        if not profile.empty:
-            profile["Co-purchase Product Name"] = profile["co_purchase_product"].map(product_lookup)
-            profile["Target Product"] = product_lookup.get(selected_product, selected_product)
 
-            display_cols = [
-                "Co-purchase Product Name",
-                "support",
-                "confidence_target_to_other",
-                "confidence_other_to_target",
-                "lift",
-                "leverage",
-            ]
 
-            st.dataframe(
-                profile[display_cols].round(4),
-                width="stretch",
-                hide_index=True,
-            )
+def _render_profile_tab(
+    transactions_df: pd.DataFrame,
+    top_pairs: pd.DataFrame,
+    product_lookup: dict,
+    min_lift: float,
+):
+    """Render single-product affinity profile."""
+    st.subheader("Affinity Profile for a Single Product")
 
-            render_analytics_export(profile, f"Affinity_{selected_product}")
+    products = sorted(set(top_pairs["product_a"]).union(set(top_pairs["product_b"])))
+    target_product = st.selectbox(
+        "Select Product",
+        options=products,
+        format_func=lambda x: product_lookup.get(x, x) if product_lookup else x,
+        key="copurchase_target_product",
+    )
 
-            # Bar chart
-            st.subheader("Top Co-purchases by Lift")
-            fig = px.bar(
-                profile.head(15),
-                x="lift",
-                y="Co-purchase Product Name",
-                orientation="h",
-                color="confidence_target_to_other",
-                title=f"Products co-purchased with {product_lookup.get(selected_product, selected_product)}",
-                labels={"lift": "Lift", "confidence_target_to_other": "Confidence"},
-            )
-            fig.update_layout(yaxis={"categoryorder": "total ascending"})
-            st.plotly_chart(fig, width="stretch")
-        else:
-            st.info(
-                f"No strong co-purchases found for {product_lookup.get(selected_product, selected_product)}"
-            )
+    if not target_product:
+        return
+
+    profile = _cached_get_product_affinity_profile(transactions_df, target_product, min_lift, 20)
+
+    if profile.empty:
+        st.info("No affinity profile found for this product")
+        return
+
+    profile["Co-purchase Name"] = profile["co_purchase_product"].map(product_lookup)
+    st.dataframe(profile.round(4), width="stretch", hide_index=True)
+
+    fig = px.bar(
+        profile,
+        x="lift",
+        y="Co-purchase Name",
+        orientation="h",
+        color="kulczynski",
+        color_continuous_scale="Blues",
+        title=f"Affinity Profile for {product_lookup.get(target_product, target_product)}",
+        labels={"lift": "Lift", "Co-purchase Name": "Co-purchase Product"},
+    )
+    fig.update_layout(yaxis={"categoryorder": "total ascending"})
+    st.plotly_chart(fig, use_container_width=True)

@@ -7,6 +7,7 @@ import streamlit as st
 
 from src.analytics.switching import (
     compute_switching_matrix,
+    compute_transition_matrix,
     get_customer_loyalty_metrics,
     get_switching_heatmap_data,
     get_top_switching_paths,
@@ -15,12 +16,14 @@ from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
 
 
+
 def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render product switching analysis tab with persistent sub-tabs."""
     st.header("🔀 Product Switching Analysis")
     st.caption(
         "Tracks when a customer buys product A on one visit, then product B on the next. "
-        "High **switch rate** from A → B suggests substitutability or a sequential need."
+        "High **switch rate** from A → B suggests substitutability or a sequential need. "
+        "A new Markov view summarizes transition probabilities among the most important products."
     )
 
     if transactions_df.empty:
@@ -47,7 +50,7 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
             )
         with col2:
             top_n_products = st.slider(
-                "Top Products for Heatmap", 10, 50, 30, key="switch_tab_top_n_products"
+                "Top Products for Heatmap / Markov", 10, 50, 30, key="switch_tab_top_n_products"
             )
             min_switches = st.number_input(
                 "Min Switch Count",
@@ -62,33 +65,30 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
             transactions_df, window_days=window_days, min_transactions=min_transactions
         )
 
-    # Customer loyalty metrics (cached)
     @st.cache_data
     def get_loyalty_cached(df):
         return get_customer_loyalty_metrics(df)
 
-    loyalty = get_loyalty_cached(transactions_df)
-
-    # Top switching paths (cached)
     @st.cache_data
     def get_top_paths_cached(df, min_sw):
         return get_top_switching_paths(df, min_switches=min_sw)
 
-    top_paths = get_top_paths_cached(transactions_df, min_switches)
+    @st.cache_data
+    def get_transition_cached(df, top_n):
+        return compute_transition_matrix(df, top_n=top_n)
 
-    # Overview metrics with deltas
+    loyalty = get_loyalty_cached(transactions_df)
+    top_paths = get_top_paths_cached(transactions_df, min_switches)
+    transition_matrix = get_transition_cached(transactions_df, top_n_products)
+
     st.subheader("Switching Overview")
 
     total_events = len(switch_matrix) if not switch_matrix.empty else 0
     avg_switch = switch_matrix["switch_rate"].mean() if not switch_matrix.empty else 0
+    mean_asym = switch_matrix["asymmetry_ratio"].abs().mean() if not switch_matrix.empty else 0
     total_customers = len(loyalty)
     loyal_n = (
         int(loyalty["loyalty_segment"].eq("Loyal").sum())
-        if "loyalty_segment" in loyalty.columns
-        else 0
-    )
-    switcher_n = (
-        int(loyalty["loyalty_segment"].eq("Switcher").sum())
         if "loyalty_segment" in loyalty.columns
         else 0
     )
@@ -96,23 +96,19 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total Switching Events", total_events)
     col2.metric("Avg Switch Rate", f"{avg_switch:.1%}")
-    col3.metric(
+    col3.metric("Avg Flow Asymmetry", f"{mean_asym:.2f}")
+    col4.metric(
         "Loyal Customers",
         loyal_n,
         delta=f"{loyal_n / total_customers:.0%} of base" if total_customers else None,
         delta_color="normal",
     )
-    col4.metric(
-        "Switchers",
-        switcher_n,
-        delta=f"{switcher_n / total_customers:.0%} of base" if total_customers else None,
-        delta_color="inverse",
-    )
 
-    # Persistent tabs
     tab_labels = [
         " Switching Heatmap",
         " Top Switch Paths",
+        " Asymmetry View",
+        " Markov Chain",
         " Sankey Flow",
         " Customer Loyalty",
     ]
@@ -123,9 +119,14 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
     elif selected == 1:
         _render_top_paths_tab(top_paths, product_lookup)
     elif selected == 2:
-        _render_sankey_tab(switch_matrix, product_lookup)
+        _render_asymmetry_tab(top_paths, product_lookup)
     elif selected == 3:
+        _render_markov_tab(transition_matrix, product_lookup)
+    elif selected == 4:
+        _render_sankey_tab(switch_matrix, product_lookup)
+    elif selected == 5:
         _render_loyalty_tab(loyalty)
+
 
 
 def _render_heatmap_tab(
@@ -163,7 +164,6 @@ def _render_heatmap_tab(
         )
         st.plotly_chart(fig, width="stretch")
 
-        # Top exit products callout
         if not switch_matrix.empty and "from_product" in switch_matrix.columns:
             top_exits = (
                 switch_matrix.groupby("from_product")["switch_count"]
@@ -181,11 +181,11 @@ def _render_heatmap_tab(
             )
             st.info(f"📤 **Top switch-away products:** {exit_str}")
 
-        # Show raw data
         with st.expander("View Raw Matrix"):
             st.dataframe(heatmap_data.round(2), width="stretch")
     else:
         st.info("No switching data available for heatmap")
+
 
 
 def _render_top_paths_tab(top_paths: pd.DataFrame, product_lookup: dict):
@@ -193,10 +193,10 @@ def _render_top_paths_tab(top_paths: pd.DataFrame, product_lookup: dict):
     st.subheader("Top Switching Paths")
 
     if not top_paths.empty:
-        # Add product names
         top_paths = top_paths.copy()
         top_paths["From Product"] = top_paths["from_product"].map(product_lookup)
         top_paths["To Product"] = top_paths["to_product"].map(product_lookup)
+        top_paths["path"] = top_paths["From Product"] + " → " + top_paths["To Product"]
 
         display_cols = [
             "From Product",
@@ -204,25 +204,28 @@ def _render_top_paths_tab(top_paths: pd.DataFrame, product_lookup: dict):
             "switch_count",
             "switch_rate",
             "avg_days_between",
+            "asymmetry_ratio",
+            "switches_per_customer",
         ]
+        available = [c for c in display_cols if c in top_paths.columns]
         st.dataframe(
-            top_paths[display_cols].round(4),
+            top_paths[available].round(4),
             width="stretch",
             hide_index=True,
         )
 
         render_analytics_export(top_paths, "Top_Switching_Paths")
 
-        # Bar chart
         st.subheader("Top 20 Switches by Count")
         chart_data = top_paths.head(20).copy()
-        chart_data["path"] = chart_data["From Product"] + " → " + chart_data["To Product"]
 
         fig = px.bar(
             chart_data,
             x="switch_count",
             y="path",
             orientation="h",
+            color="asymmetry_ratio",
+            color_continuous_scale="RdYlGn",
             title="Top Switching Paths",
             labels={"switch_count": "Switch Count", "path": "Path"},
         )
@@ -232,15 +235,99 @@ def _render_top_paths_tab(top_paths: pd.DataFrame, product_lookup: dict):
         st.info("No significant switching paths found")
 
 
+
+def _render_asymmetry_tab(top_paths: pd.DataFrame, product_lookup: dict):
+    """Render asymmetry scatter for directional winning/losing flows."""
+    st.subheader("Asymmetry View: Who Is Winning the Switch?")
+    st.caption(
+        "Positive asymmetry means the displayed direction dominates its reverse path. "
+        "Values near zero indicate balanced switching."
+    )
+
+    if top_paths.empty:
+        st.info("No significant switching paths found")
+        return
+
+    data = top_paths.copy()
+    data["From Product"] = data["from_product"].map(product_lookup)
+    data["To Product"] = data["to_product"].map(product_lookup)
+    data["path"] = data["From Product"] + " → " + data["To Product"]
+
+    fig = px.scatter(
+        data,
+        x="switch_count",
+        y="asymmetry_ratio",
+        color="asymmetry_ratio",
+        size="switches_per_customer",
+        color_continuous_scale="RdYlGn",
+        range_color=[-1, 1],
+        hover_name="path",
+        hover_data=["avg_days_between", "switch_rate"],
+        title="Asymmetry Ratio: +1 = shown direction dominates, 0 = balanced",
+        labels={
+            "asymmetry_ratio": "Asymmetry Ratio",
+            "switch_count": "Switch Count",
+            "switches_per_customer": "Switches / Customer",
+        },
+    )
+    fig.add_hline(
+        y=0,
+        line_dash="dot",
+        line_color="black",
+        annotation_text="Balanced reverse flow",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+
+def _render_markov_tab(transition_matrix: pd.DataFrame, product_lookup: dict):
+    """Render first-order Markov transition matrix."""
+    st.subheader("Markov Transition Matrix")
+    st.caption(
+        "Each row sums to 1.0 and shows the probability of the next purchase, conditional on the "
+        "current product. This is a lightweight sequential model that strengthens the scientific basis "
+        "of switching analysis without changing app usage."
+    )
+
+    if transition_matrix.empty:
+        st.info("Not enough sequential transitions to build the Markov matrix")
+        return
+
+    row_labels = [product_lookup.get(idx, idx) if product_lookup else idx for idx in transition_matrix.index]
+    col_labels = [product_lookup.get(col, col) if product_lookup else col for col in transition_matrix.columns]
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=transition_matrix.values,
+            x=col_labels,
+            y=row_labels,
+            colorscale="Blues",
+            zmin=0,
+            zmax=max(float(transition_matrix.values.max()), 0.05),
+            text=transition_matrix.round(2).values,
+            texttemplate="%{text}",
+            hovertemplate="Current: %{y}<br>Next: %{x}<br>Prob: %{z:.2f}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title="First-order Product Transition Probabilities",
+        height=650,
+        xaxis_title="Next Product",
+        yaxis_title="Current Product",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    with st.expander("View Transition Table"):
+        st.dataframe(transition_matrix.round(3), width="stretch")
+
+
+
 def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
     """Render the Sankey flow tab."""
     st.subheader("Switching Flow (Sankey)")
 
     if not switch_matrix.empty:
-        # Create Sankey from switching matrix
         top_switches = switch_matrix.nlargest(30, "switch_count")
-
-        # Get unique products
         all_products = list(
             set(top_switches["from_product"].tolist() + top_switches["to_product"].tolist())
         )
@@ -261,7 +348,6 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
             for p in all_products
         ]
 
-        # Node opacity scales with total outgoing switch volume
         max_val = max(values) if values else 1
         node_outgoing = {
             p: top_switches.loc[top_switches["from_product"] == p, "switch_count"].sum()
@@ -305,12 +391,12 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
         st.info("No switching data for Sankey diagram")
 
 
+
 def _render_loyalty_tab(loyalty: pd.DataFrame):
     """Render the customer loyalty segments tab."""
     st.subheader("Customer Loyalty Segments")
 
     if not loyalty.empty and "loyalty_segment" in loyalty.columns:
-        # Segment distribution
         segment_counts = loyalty["loyalty_segment"].value_counts()
 
         col1, col2 = st.columns(2)
@@ -339,7 +425,6 @@ def _render_loyalty_tab(loyalty: pd.DataFrame):
             )
             st.dataframe(segment_metrics, width="stretch")
 
-        # Loyalty details table
         st.write("**Top Customers by Loyalty**")
         top_loyal = loyalty[loyalty["loyalty_segment"] == "Loyal"].nlargest(20, "repeat_rate")
         if not top_loyal.empty:
