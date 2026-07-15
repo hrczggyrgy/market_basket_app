@@ -16,13 +16,12 @@ from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
 
 
-
 def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render product switching analysis tab with persistent sub-tabs."""
     st.header("🔀 Product Switching Analysis")
     st.caption(
         "Tracks when a customer buys product A on one visit, then product B on the next. "
-        "High **switch rate** from A → B suggests substitutability or a sequential need. "
+        "High **switch rate** from A \u2192 B suggests substitutability or a sequential need. "
         "A new Markov view summarizes transition probabilities among the most important products."
     )
 
@@ -30,7 +29,6 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
         st.warning("No transaction data available")
         return
 
-    # Parameters
     with st.expander(" Switching Parameters", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
@@ -50,7 +48,11 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
             )
         with col2:
             top_n_products = st.slider(
-                "Top Products for Heatmap / Markov", 10, 50, 30, key="switch_tab_top_n_products"
+                "Top Products for Heatmap / Markov",
+                10,
+                50,
+                30,
+                key="switch_tab_top_n_products",
             )
             min_switches = st.number_input(
                 "Min Switch Count",
@@ -85,7 +87,9 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
 
     total_events = len(switch_matrix) if not switch_matrix.empty else 0
     avg_switch = switch_matrix["switch_rate"].mean() if not switch_matrix.empty else 0
-    mean_asym = switch_matrix["asymmetry_ratio"].abs().mean() if not switch_matrix.empty else 0
+    mean_asym = (
+        switch_matrix["asymmetry_ratio"].abs().mean() if not switch_matrix.empty else 0
+    )
     total_customers = len(loyalty)
     loyal_n = (
         int(loyalty["loyalty_segment"].eq("Loyal").sum())
@@ -126,7 +130,6 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
         _render_sankey_tab(switch_matrix, product_lookup)
     elif selected == 5:
         _render_loyalty_tab(loyalty)
-
 
 
 def _render_heatmap_tab(
@@ -175,17 +178,16 @@ def _render_heatmap_tab(
                 product_lookup if product_lookup else {}
             )
             top_exits["name"] = top_exits["name"].fillna(top_exits["from_product"])
-            exit_str = " · ".join(
+            exit_str = " \u00b7 ".join(
                 f"**{row['name']}** ({int(row['switch_count'])})"
                 for _, row in top_exits.iterrows()
             )
-            st.info(f"📤 **Top switch-away products:** {exit_str}")
+            st.info(f"\ud83d\udce4 **Top switch-away products:** {exit_str}")
 
         with st.expander("View Raw Matrix"):
             st.dataframe(heatmap_data.round(2), width="stretch")
     else:
         st.info("No switching data available for heatmap")
-
 
 
 def _render_top_paths_tab(top_paths: pd.DataFrame, product_lookup: dict):
@@ -196,7 +198,7 @@ def _render_top_paths_tab(top_paths: pd.DataFrame, product_lookup: dict):
         top_paths = top_paths.copy()
         top_paths["From Product"] = top_paths["from_product"].map(product_lookup)
         top_paths["To Product"] = top_paths["to_product"].map(product_lookup)
-        top_paths["path"] = top_paths["From Product"] + " → " + top_paths["To Product"]
+        top_paths["path"] = top_paths["From Product"] + " \u2192 " + top_paths["To Product"]
 
         display_cols = [
             "From Product",
@@ -235,7 +237,6 @@ def _render_top_paths_tab(top_paths: pd.DataFrame, product_lookup: dict):
         st.info("No significant switching paths found")
 
 
-
 def _render_asymmetry_tab(top_paths: pd.DataFrame, product_lookup: dict):
     """Render asymmetry scatter for directional winning/losing flows."""
     st.subheader("Asymmetry View: Who Is Winning the Switch?")
@@ -251,7 +252,7 @@ def _render_asymmetry_tab(top_paths: pd.DataFrame, product_lookup: dict):
     data = top_paths.copy()
     data["From Product"] = data["from_product"].map(product_lookup)
     data["To Product"] = data["to_product"].map(product_lookup)
-    data["path"] = data["From Product"] + " → " + data["To Product"]
+    data["path"] = data["From Product"] + " \u2192 " + data["To Product"]
 
     fig = px.scatter(
         data,
@@ -279,22 +280,27 @@ def _render_asymmetry_tab(top_paths: pd.DataFrame, product_lookup: dict):
     st.plotly_chart(fig, use_container_width=True)
 
 
-
 def _render_markov_tab(transition_matrix: pd.DataFrame, product_lookup: dict):
     """Render first-order Markov transition matrix."""
     st.subheader("Markov Transition Matrix")
     st.caption(
-        "Each row sums to 1.0 and shows the probability of the next purchase, conditional on the "
-        "current product. This is a lightweight sequential model that strengthens the scientific basis "
-        "of switching analysis without changing app usage."
+        "Each row sums to 1.0 and shows the probability of the next purchase, "
+        "conditional on the current product. This is a lightweight sequential model "
+        "that strengthens the scientific basis of switching analysis."
     )
 
     if transition_matrix.empty:
         st.info("Not enough sequential transitions to build the Markov matrix")
         return
 
-    row_labels = [product_lookup.get(idx, idx) if product_lookup else idx for idx in transition_matrix.index]
-    col_labels = [product_lookup.get(col, col) if product_lookup else col for col in transition_matrix.columns]
+    row_labels = [
+        product_lookup.get(idx, idx) if product_lookup else idx
+        for idx in transition_matrix.index
+    ]
+    col_labels = [
+        product_lookup.get(col, col) if product_lookup else col
+        for col in transition_matrix.columns
+    ]
 
     fig = go.Figure(
         data=go.Heatmap(
@@ -319,7 +325,6 @@ def _render_markov_tab(transition_matrix: pd.DataFrame, product_lookup: dict):
 
     with st.expander("View Transition Table"):
         st.dataframe(transition_matrix.round(3), width="stretch")
-
 
 
 def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
@@ -354,7 +359,8 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
             for p in all_products
         }
         node_colors = [
-            f"rgba(70, 130, 180, {min(0.4 + node_outgoing.get(p, 0) / max_val * 0.6, 1.0):.2f})"
+            "rgba(70, 130, 180, "
+            f"{min(0.4 + node_outgoing.get(p, 0) / max_val * 0.6, 1.0):.2f})"
             for p in all_products
         ]
 
@@ -374,7 +380,10 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
                         target=targets,
                         value=values,
                         color="rgba(100, 100, 100, 0.3)",
-                        hovertemplate="%{source.label} → %{target.label}: %{value} switches<extra></extra>",
+                        hovertemplate=(
+                            "%{source.label} \u2192 %{target.label}: "
+                            "%{value} switches<extra></extra>"
+                        ),
                     ),
                 )
             ]
@@ -389,7 +398,6 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
         st.plotly_chart(fig, width="stretch")
     else:
         st.info("No switching data for Sankey diagram")
-
 
 
 def _render_loyalty_tab(loyalty: pd.DataFrame):

@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 
 
-
 def compute_switching_matrix(
     transactions_df: pd.DataFrame,
     product_col: str = "stockcode",
@@ -23,11 +22,9 @@ def compute_switching_matrix(
     df = transactions_df.copy()
     df[date_col] = pd.to_datetime(df[date_col])
 
-    # Filter customers with minimum transactions
     cust_counts = df.groupby(customer_col).size()
     valid_customers = cust_counts[cust_counts >= min_transactions].index
     df = df[df[customer_col].isin(valid_customers)]
-
     df = df.sort_values([customer_col, date_col])
 
     switches = []
@@ -74,7 +71,6 @@ def compute_switching_matrix(
 
     switch_df = pd.DataFrame(switches)
 
-    # Aggregate
     switch_matrix = (
         switch_df.groupby(["from_product", "to_product"])
         .agg(
@@ -85,16 +81,13 @@ def compute_switching_matrix(
         .reset_index()
     )
 
-    # Add total switches from each product for rate calculation
     from_totals = switch_matrix.groupby("from_product")["switch_count"].sum().reset_index()
     from_totals.columns = ["from_product", "total_switches_from"]
-
     switch_matrix = switch_matrix.merge(from_totals, on="from_product")
     switch_matrix["switch_rate"] = (
         switch_matrix["switch_count"] / switch_matrix["total_switches_from"]
     )
 
-    # Add reverse flow count to detect asymmetry / net winning direction
     reverse = switch_matrix.rename(
         columns={
             "from_product": "to_product",
@@ -113,13 +106,11 @@ def compute_switching_matrix(
         switch_matrix["switch_count"] / switch_matrix["unique_customers"].replace(0, np.nan)
     ).fillna(0)
 
-    # Sort by switch count
     switch_matrix = switch_matrix.sort_values("switch_count", ascending=False).reset_index(
         drop=True
     )
 
     return switch_matrix
-
 
 
 def get_customer_loyalty_metrics(
@@ -144,23 +135,18 @@ def get_customer_loyalty_metrics(
         products = group[product_col].values
         n_purchases = len(products)
 
-        # Unique products purchased
         unique_products = len(set(products))
 
-        # Repeat purchase rate (same product more than once)
         product_counts = pd.Series(products).value_counts()
         repeat_products = (product_counts > 1).sum()
         repeat_rate = repeat_products / unique_products if unique_products > 0 else 0
 
-        # Most purchased product
         top_product = product_counts.index[0] if len(product_counts) > 0 else None
         top_product_share = product_counts.iloc[0] / n_purchases if n_purchases > 0 else 0
 
-        # Brand concentration (HHI) — how concentrated purchases are across products
         shares = product_counts.values / n_purchases
         concentration_hhi = (shares**2).sum()
 
-        # Switching count (exclude same-basket consecutive items)
         txn_ids = group["transaction_id"].values if "transaction_id" in group.columns else None
         switches = 0
         for i in range(n_purchases - 1):
@@ -173,10 +159,9 @@ def get_customer_loyalty_metrics(
             if products[i] != products[i + 1] and not same_basket:
                 switches += 1
 
-        # Purchase frequency
         days_span = (group[date_col].max() - group[date_col].min()).days
         lifespan_days = max(days_span, 1)
-        freq = n_purchases / lifespan_days * 30  # per month
+        freq = n_purchases / lifespan_days * 30
 
         metrics.append(
             {
@@ -196,7 +181,6 @@ def get_customer_loyalty_metrics(
 
     loyalty_df = pd.DataFrame(metrics)
 
-    # Derive loyalty segments
     repeat_quantiles = loyalty_df["repeat_rate"].quantile([0.33, 0.66])
     freq_quantiles = loyalty_df["purchase_frequency_per_month"].quantile([0.33, 0.66])
 
@@ -218,7 +202,6 @@ def get_customer_loyalty_metrics(
     return loyalty_df
 
 
-
 def compute_transition_matrix(
     transactions_df: pd.DataFrame,
     product_col: str = "stockcode",
@@ -226,7 +209,7 @@ def compute_transition_matrix(
     date_col: str = "date",
     top_n: int = 15,
 ) -> pd.DataFrame:
-    """Compute a simple first-order Markov transition matrix across top products."""
+    """Compute a first-order Markov transition probability matrix across top products."""
     if transactions_df.empty or product_col not in transactions_df.columns:
         return pd.DataFrame()
 
@@ -248,7 +231,6 @@ def compute_transition_matrix(
     return transition_probs
 
 
-
 def detect_brand_switching(
     transactions_df: pd.DataFrame,
     brand_col: str = "brand",
@@ -257,12 +239,7 @@ def detect_brand_switching(
     date_col: str = "date",
     window_days: int = 90,
 ) -> pd.DataFrame:
-    """
-    Detect brand switching within the same category.
-
-    Returns:
-        DataFrame with brand switching events
-    """
+    """Detect brand switching within the same category."""
     required_cols = [brand_col, category_col]
     if not all(c in transactions_df.columns for c in required_cols):
         return pd.DataFrame(
@@ -281,7 +258,6 @@ def detect_brand_switching(
     df[date_col] = pd.to_datetime(df[date_col])
     df = df.sort_values([customer_col, date_col])
 
-    # Vectorised brand switching detection
     df["next_date"] = df.groupby(customer_col)[date_col].shift(-1)
     df["next_brand"] = df.groupby(customer_col)[brand_col].shift(-1)
     df["next_category"] = df.groupby(customer_col)[category_col].shift(-1)
@@ -331,19 +307,15 @@ def detect_brand_switching(
     ]
 
 
-
 def get_top_switching_paths(
     transactions_df: pd.DataFrame, min_switches: int = 5, top_n: int = 20
 ) -> pd.DataFrame:
     """Get top product-to-product switching paths."""
     switch_matrix = compute_switching_matrix(transactions_df)
-
     if switch_matrix.empty:
         return switch_matrix
-
     filtered = switch_matrix[switch_matrix["switch_count"] >= min_switches]
     return filtered.head(top_n)
-
 
 
 def get_switching_heatmap_data(
@@ -355,7 +327,6 @@ def get_switching_heatmap_data(
     if switch_matrix.empty:
         return pd.DataFrame()
 
-    # Filter to top products by total switch involvement
     from_counts = switch_matrix.groupby("from_product")["switch_count"].sum()
     to_counts = switch_matrix.groupby("to_product")["switch_count"].sum()
     total_counts = from_counts.add(to_counts, fill_value=0)
@@ -366,7 +337,6 @@ def get_switching_heatmap_data(
         & switch_matrix["to_product"].isin(top_products)
     ]
 
-    # Pivot to matrix
     matrix = switch_matrix.pivot(
         index="from_product", columns="to_product", values="switch_count"
     ).fillna(0)
