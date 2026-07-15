@@ -172,8 +172,9 @@ def _render_heatmap_tab(
                 .reset_index()
             )
             top_exits["name"] = top_exits["from_product"].map(
-                lambda x: product_lookup.get(x, x) if product_lookup else x
+                product_lookup if product_lookup else {}
             )
+            top_exits["name"] = top_exits["name"].fillna(top_exits["from_product"])
             exit_str = " · ".join(
                 f"**{row['name']}** ({int(row['switch_count'])})"
                 for _, row in top_exits.iterrows()
@@ -263,10 +264,7 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
         # Node opacity scales with total outgoing switch volume
         max_val = max(values) if values else 1
         node_outgoing = {
-            p: sum(
-                top_switches.loc[top_switches["from_product"] == p, "switch_count"].sum()
-                for _ in [None]
-            )
+            p: top_switches.loc[top_switches["from_product"] == p, "switch_count"].sum()
             for p in all_products
         }
         node_colors = [

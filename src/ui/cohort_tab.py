@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from src.analytics.cohort import (
@@ -147,8 +148,6 @@ def render_cohort_tab(transactions_df: pd.DataFrame, product_lookup: dict, param
     st.subheader(f"Cohort {metric} Heatmap")
 
     if not cohort_matrix.empty:
-        import plotly.express as px
-
         fig = px.imshow(
             cohort_matrix.values,
             x=cohort_matrix.columns,
@@ -172,7 +171,6 @@ def render_cohort_tab(transactions_df: pd.DataFrame, product_lookup: dict, param
     # Cohort trends over time
     st.subheader("Cohort Trends Over Time")
 
-    # Line chart of each cohort's metric over periods
     if not cohort_matrix.empty:
         line_data = cohort_matrix.reset_index().melt(
             id_vars="cohort", var_name="Period", value_name=metric
