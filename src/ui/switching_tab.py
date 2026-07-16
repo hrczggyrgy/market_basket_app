@@ -68,20 +68,20 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
         )
 
     @st.cache_data
-    def get_loyalty_cached(df):
+    def get_loyalty_cached(df, _window_days, _min_transactions):
         return get_customer_loyalty_metrics(df)
 
     @st.cache_data
-    def get_top_paths_cached(df, min_sw):
+    def get_top_paths_cached(df, min_sw, _window_days, _min_transactions):
         return get_top_switching_paths(df, min_switches=min_sw)
 
     @st.cache_data
-    def get_transition_cached(df, top_n):
+    def get_transition_cached(df, top_n, _window_days, _min_transactions):
         return compute_transition_matrix(df, top_n=top_n)
 
-    loyalty = get_loyalty_cached(transactions_df)
-    top_paths = get_top_paths_cached(transactions_df, min_switches)
-    transition_matrix = get_transition_cached(transactions_df, top_n_products)
+    loyalty = get_loyalty_cached(transactions_df, window_days, min_transactions)
+    top_paths = get_top_paths_cached(transactions_df, min_switches, window_days, min_transactions)
+    transition_matrix = get_transition_cached(transactions_df, top_n_products, window_days, min_transactions)
 
     st.subheader("Switching Overview")
 
