@@ -221,13 +221,17 @@ def _render_top_paths_tab(top_paths: pd.DataFrame, product_lookup: dict):
         st.subheader("Top 20 Switches by Count")
         chart_data = top_paths.head(20).copy()
 
+        # Use asymmetry_ratio for color if available, otherwise use switch_count
+        color_col = "asymmetry_ratio" if "asymmetry_ratio" in chart_data.columns else "switch_count"
+        color_scale = "RdYlGn" if "asymmetry_ratio" in chart_data.columns else "Blues"
+
         fig = px.bar(
             chart_data,
             x="switch_count",
             y="path",
             orientation="h",
-            color="asymmetry_ratio",
-            color_continuous_scale="RdYlGn",
+            color=color_col,
+            color_continuous_scale=color_scale,
             title="Top Switching Paths",
             labels={"switch_count": "Switch Count", "path": "Path"},
         )
@@ -247,6 +251,12 @@ def _render_asymmetry_tab(top_paths: pd.DataFrame, product_lookup: dict):
 
     if top_paths.empty:
         st.info("No significant switching paths found")
+        return
+
+    # Check required columns exist
+    required_cols = ["asymmetry_ratio", "switches_per_customer"]
+    if not all(c in top_paths.columns for c in required_cols):
+        st.warning("Asymmetry data not available. Please re-run analysis to refresh cache.")
         return
 
     data = top_paths.copy()
