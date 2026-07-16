@@ -15,12 +15,16 @@ from src.ui.tabs import persistent_tabs
 
 
 @st.cache_data
-def _cached_compute_affinity_matrix(transactions_df, min_support, min_lift, top_n_products):
+def _cached_compute_affinity_matrix(transactions_df, min_support, top_n_products):
     return compute_affinity_matrix(
+<<<<<<< HEAD
         transactions_df,
         min_support=min_support,
         min_lift=min_lift,
         top_n_products=top_n_products,
+=======
+        transactions_df, min_support=min_support, top_n_products=top_n_products
+>>>>>>> 4faee61 (Fix critical bugs found during code review)
     )
 
 
@@ -75,7 +79,7 @@ def render_copurchase_tab(transactions_df: pd.DataFrame, product_lookup: dict, p
 
     with st.spinner("Computing co-purchase patterns..."):
         affinity_matrix = _cached_compute_affinity_matrix(
-            transactions_df, min_support, min_lift, top_n_products
+            transactions_df, min_support, top_n_products
         )
         top_pairs = _cached_get_top_affinity_pairs(
             transactions_df, min_support, min_lift, 50, top_n_products

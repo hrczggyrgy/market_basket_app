@@ -1130,6 +1130,7 @@ def get_segment_profiles(
             total_revenue=("revenue", "sum"),
             avg_order_value=("revenue", "mean"),
             avg_items_per_order=("quantity", "mean"),
+            n_products=("stockcode", "nunique"),
             top_category=(
                 "category",
                 lambda x: (
@@ -1147,7 +1148,7 @@ def get_segment_profiles(
     )
 
     # Compute ratios after groupby (avoids x.name scope bug with lambdas)
-    profiles["avg_products_per_customer"] = profiles["n_transactions"] / profiles["n_customers"]
+    profiles["avg_products_per_customer"] = profiles["n_products"] / profiles["n_customers"]
     profiles["repeat_rate"] = profiles["n_transactions"] / profiles["n_customers"]
     profiles["revenue_per_customer"] = profiles["total_revenue"] / profiles["n_customers"]
     profiles["revenue_share"] = profiles["total_revenue"] / profiles["total_revenue"].sum()

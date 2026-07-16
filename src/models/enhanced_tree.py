@@ -632,6 +632,7 @@ def predict_with_explanation(
 
     # Decision path for tree models
     path_conditions = []
+    leaf_id = None
     if hasattr(model, "decision_path"):
         node_indicator = model.decision_path(cust_features)
         leaf_id = model.apply(cust_features)[0]
@@ -673,7 +674,7 @@ def predict_with_explanation(
         "probability_buy": probability[1] if len(probability) > 1 else probability[0],
         "probability_not_buy": probability[0] if len(probability) > 1 else 1 - probability[0],
         "decision_path": path_conditions,
-        "leaf_id": leaf_id if "leaf_id" in locals() else None,
+        "leaf_id": leaf_id,
         "shap_explanation": shap_explanation,
     }
 

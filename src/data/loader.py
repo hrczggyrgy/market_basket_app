@@ -183,7 +183,7 @@ def add_rfm_features(df: pd.DataFrame, snapshot_date: pd.Timestamp = None) -> pd
     rfm = (
         df_with_revenue.groupby("customer_id")
         .agg(
-            recency=("date", lambda x: (snapshot_date - x.max()).days),
+            recency=("date", lambda x: (snapshot_date - x.max()).days if pd.notna(x.max()) else 0),
             frequency=("transaction_id", "nunique"),
             monetary=("revenue", "sum"),  # Now uses precomputed revenue column
         )

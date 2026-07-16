@@ -12,7 +12,6 @@ def compute_affinity_matrix(
     transactions_df: pd.DataFrame,
     min_support: float = 0.005,
     max_len: int = 2,
-    min_lift: float = 1.0,
     top_n_products: Optional[int] = None,
 ) -> pd.DataFrame:
     """

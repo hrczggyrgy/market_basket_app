@@ -314,12 +314,18 @@ def render_sidebar() -> Config:
     if "run_analysis_triggered" not in st.session_state:
         st.session_state.run_analysis_triggered = False
 
-    run_analysis_clicked = st.sidebar.button(
-        " Run Analysis", type="primary", width="stretch", key="run_analysis_btn"
-    )
+    col_run, col_clear = st.sidebar.columns([2, 1])
+    with col_run:
+        run_analysis_clicked = st.button(
+            " Run Analysis", type="primary", width="stretch", key="run_analysis_btn"
+        )
+    with col_clear:
+        clear_clicked = st.button(" Clear", width="stretch", key="clear_analysis_btn")
 
     if run_analysis_clicked:
         st.session_state.run_analysis_triggered = True
+    if clear_clicked:
+        st.session_state.run_analysis_triggered = False
 
     run_analysis = st.session_state.run_analysis_triggered
 

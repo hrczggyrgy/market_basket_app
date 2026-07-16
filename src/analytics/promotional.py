@@ -398,7 +398,7 @@ def promotion_roi_analysis(
 
 def halo_effect_analysis(
     transactions_df: pd.DataFrame, promo_periods: pd.DataFrame, window_days: int = 7
-) -> Dict:
+) -> pd.DataFrame:
     """
     Analyze halo effect - impact of promotions on related/non-promoted products.
 
@@ -408,7 +408,7 @@ def halo_effect_analysis(
         window_days: Days around promotion to analyze
 
     Returns:
-        Dictionary with halo effect metrics
+        DataFrame with halo effect metrics per promo product
     """
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])

@@ -197,9 +197,11 @@ def compute_bundling_matrix(
 def build_behavioral_matrices(
     transactions_df: pd.DataFrame,
     similarity_matrix: pd.DataFrame,
-    affinity_matrix: pd.DataFrame,
+affinity_matrix: pd.DataFrame,
     sequences: Dict[str, List[str]],
     top_n_products: Optional[int] = None,
+    min_lift: float = 1.0,
+    max_substitution: float = 0.3,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Build all three behavioral matrices in one call.
@@ -210,6 +212,8 @@ def build_behavioral_matrices(
         affinity_matrix: Lift-based co-purchase matrix from fpgrowth step
         sequences: {customer_id: [product_id, ...]} from build_customer_sequences
         top_n_products: Limit matrices to top-N products by frequency
+        min_lift: Minimum lift threshold for bundling (default: 1.0)
+        max_substitution: Maximum substitution threshold for bundling (default: 0.3)
 
     Returns:
         (switching_df, substitution_df, bundling_df)
@@ -218,7 +222,7 @@ def build_behavioral_matrices(
     switching_df = compute_switching_matrix(sequences, top_n_products)
     substitution_df = get_substitution_matrix(similarity_matrix)
     bundling_df = compute_bundling_matrix(
-        affinity_matrix, substitution_df, top_n_products
+        affinity_matrix, substitution_df, top_n_products, min_lift, max_substitution
     )
     return switching_df, substitution_df, bundling_df
 
