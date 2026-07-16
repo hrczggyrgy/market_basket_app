@@ -9,11 +9,55 @@ import plotly.graph_objects as go
 import streamlit as st
 
 # Additional imports for validation and cluster map
-from sklearn.cluster import DBSCAN, AgglomerativeClustering, KMeans
+from sklearn.cluster import AgglomerativeClustering, KMeans
 from sklearn.metrics import davies_bouldin_score, silhouette_score
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import RobustScaler
 
+# Optional imports
+try:
+    import hdbscan
+    HDBSCAN_AVAILABLE = True
+except ImportError:
+    HDBSCAN_AVAILABLE = False
+
+try:
+    import umap
+    UMAP_AVAILABLE = True
+except ImportError:
+    UMAP_AVAILABLE = False
+
+# Algorithms
+from src.algorithms.fpgrowth import create_basket_matrix, run_fpgrowth
+
+# CDT behavioral imports
+# Behavioral matrices
+from src.analytics.cdt_behavioral import (
+    build_behavioral_matrices,
+    get_top_bundling_pairs,
+    get_top_substitution_pairs,
+    get_top_switching_paths,
+    switching_matrix_to_heatmap,
+)
+from src.analytics.cdt_clustering import (
+    find_optimal_clusters,
+    get_cluster_assignments,
+    perform_hierarchical_clustering,
+)
+
+# CDT algorithms imports
+from src.analytics.cdt_similarity import (
+    build_customer_sequences,
+    build_similarity_matrix,
+)
+
+# CDT tree builder imports
+from src.analytics.cdt_tree_builder import (
+    build_cdt,
+    extract_product_attributes,
+    tree_to_dataframe,
+    tree_to_json,
+)
 from src.analytics.segmentation import (
     behavioral_segmentation,
     compute_rfm_features,
@@ -31,9 +75,27 @@ from src.analytics.segmentation_enhanced import (
     get_segment_recommendations,
     label_segment_business,
 )
-from src.analytics.switching import compute_switching_matrix
+
+# Switching
+from src.analytics.switching import (
+    compute_brand_switching_matrix,
+    compute_switching_matrix,
+    detect_brand_switching,
+    get_customer_loyalty_metrics,
+)
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
+
+# CDT visualization imports
+from src.viz.cdt_viz import (
+    plot_behavioral_heatmap,
+    plot_dendrogram,
+    plot_silhouette_scores,
+    plot_similarity_heatmap,
+    plot_sunburst,
+    plot_switching_network,
+    plot_treemap,
+)
 
 
 def _normalize_metrics(
