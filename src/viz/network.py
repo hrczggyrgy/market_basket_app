@@ -338,24 +338,37 @@ def create_sankey_from_matrix(
     matrix: pd.DataFrame,
     product_lookup: dict = None,
     title: str = "Product Co-purchase Flow",
+    min_lift: float = 1.5,
+    max_products: int = 30,
+    arrangement: str = "snap",
 ) -> go.Figure:
-    """Create Sankey diagram from affinity matrix."""
-    products = matrix.index.tolist()
+    """Create Sankey diagram from affinity matrix with proper source/target layering."""
+    # Limit to top products by total affinity
+    affinity_no_diag = matrix.values.copy()
+    np.fill_diagonal(affinity_no_diag, 0.0)
+    total_affinity = pd.Series(affinity_no_diag.sum(axis=1), index=matrix.index)
+    top_products = total_affinity.nlargest(max_products).index.tolist()
+    matrix = matrix.loc[top_products, top_products]
 
-    # Create source/target for upper triangle only
+    products = matrix.index.tolist()
+    n = len(products)
+
+    # Create source nodes (0..n-1) and target nodes (n..2n-1) for layered layout
     sources = []
     targets = []
     values = []
 
     for i, src in enumerate(products):
         for j, tgt in enumerate(products):
-            if i < j and matrix.iloc[i, j] > 1.0:
-                sources.append(i)
-                targets.append(j)
-                values.append(matrix.iloc[i, j] - 1.0)  # excess over independence
+            if i != j:
+                lift = matrix.iloc[i, j]
+                if lift >= min_lift:
+                    sources.append(i)          # source layer: 0..n-1
+                    targets.append(n + j)      # target layer: n..2n-1
+                    values.append(lift - 1.0)  # excess over independence
 
     if not values:
-        return _empty_figure("No strong relationships")
+        return _empty_figure(f"No relationships with lift ≥ {min_lift}")
 
     def _label(p):
         if product_lookup:
@@ -364,27 +377,37 @@ def create_sankey_from_matrix(
                 name = str(name)
         else:
             name = str(p)
-        return name[:20] + "..." if len(name) > 20 else name
+        return name[:35] + "…" if len(name) > 35 else name
 
-    labels = [_label(p) for p in products]
+    # Labels for both layers
+    src_labels = [_label(p) for p in products]
+    tgt_labels = [_label(p) for p in products]
+    labels = src_labels + tgt_labels
+
+    # Explicit x positions for layered layout
+    node_x = [0.001] * n + [0.999] * n
+    node_y = [i / (n - 1) if n > 1 else 0.5 for i in range(n)] * 2
 
     fig = go.Figure(
         data=[
             go.Sankey(
+                arrangement=arrangement,
                 node=dict(
-                    pad=20,
-                    thickness=20,
-                    line=dict(color="black", width=0.5),
+                    pad=18,
+                    thickness=18,
+                    line=dict(color="rgba(0,0,0,0.2)", width=0.5),
                     label=labels,
-                    color="lightblue",
+                    color=["lightblue"] * n + ["lightcoral"] * n,
+                    x=node_x,
+                    y=node_y,
                     hovertemplate="%{label}<extra></extra>",
                 ),
                 link=dict(
                     source=sources,
                     target=targets,
                     value=values,
-                    color="rgba(100, 100, 100, 0.3)",
-                    hovertemplate="%{source.label} → %{target.label}: %{value:.2f}<extra></extra>",
+                    color="rgba(100,100,100,0.25)",
+                    hovertemplate="%{source.label} → %{target.label}<br>Lift: %{value:.2f}<extra></extra>",
                 ),
             )
         ]
@@ -392,9 +415,9 @@ def create_sankey_from_matrix(
 
     fig.update_layout(
         title_text=title,
-        font=dict(size=13, family="Arial, sans-serif"),
-        height=600,
-        margin=dict(l=150, r=50, t=50, b=50),
+        font=dict(size=12, family="Arial, sans-serif"),
+        height=max(600, n * 25),
+        margin=dict(l=120, r=120, t=60, b=50),
     )
 
     return fig
