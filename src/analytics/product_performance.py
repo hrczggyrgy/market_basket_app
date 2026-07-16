@@ -439,3 +439,293 @@ def price_elasticity_analysis(
         "avg_price": weekly["avg_price"].mean(),
         "avg_weekly_qty": weekly["total_qty"].mean(),
     }
+
+
+# =====================================================================
+# Transaction-Only Product Dashboard Metrics
+# =====================================================================
+
+def compute_velocity(
+    transactions_df: pd.DataFrame,
+    period: str = "M",  # "W" for weekly, "M" for monthly
+) -> pd.DataFrame:
+    """Compute product velocity: units sold per active period.
+
+    Velocity = total_quantity / number_of_active_periods
+    Active period = period where product had at least 1 sale.
+
+    Returns DataFrame: stockcode, velocity, active_periods, total_quantity
+    """
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["period"] = df["date"].dt.to_period(period)
+
+    # Active periods per product
+    active = (
+        df.groupby(["stockcode", "period"])["quantity"]
+        .sum()
+        .reset_index()
+    )
+    active_periods = active.groupby("stockcode")["period"].nunique().rename("active_periods")
+
+    # Total quantity per product
+    total_qty = df.groupby("stockcode")["quantity"].sum().rename("total_quantity")
+
+    result = pd.concat([total_qty, active_periods], axis=1).reset_index()
+    result["velocity"] = result["total_quantity"] / result["active_periods"].replace(0, np.nan)
+
+    return result[["stockcode", "velocity", "active_periods", "total_quantity"]]
+
+
+def compute_repeat_rate(
+    transactions_df: pd.DataFrame,
+    snapshot_date: Optional[pd.Timestamp] = None,
+) -> pd.DataFrame:
+    """Compute repeat purchase rate per product.
+
+    Repeat rate = % of buyers who purchased the product 2+ times.
+
+    Returns DataFrame: stockcode, total_buyers, repeat_buyers, repeat_rate
+    """
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    if snapshot_date is None:
+        snapshot_date = df["date"].max()
+
+    rows = []
+    for stockcode in df["stockcode"].unique():
+        prod_df = df[df["stockcode"] == stockcode]
+        buyers = prod_df["customer_id"].unique()
+        n_buyers = len(buyers)
+        if n_buyers == 0:
+            continue
+
+        # Count unique purchase dates per customer
+        purchases_per_customer = (
+            prod_df.groupby("customer_id")["date"].nunique()
+        )
+        repeat_buyers = (purchases_per_customer >= 2).sum()
+        repeat_rate = repeat_buyers / n_buyers
+
+        rows.append({
+            "stockcode": stockcode,
+            "total_buyers": n_buyers,
+            "repeat_buyers": int(repeat_buyers),
+            "repeat_rate": repeat_rate,
+        })
+
+    return pd.DataFrame(rows)
+
+
+def compute_time_to_second_purchase(
+    transactions_df: pd.DataFrame,
+    snapshot_date: Optional[pd.Timestamp] = None,
+) -> pd.DataFrame:
+    """Compute median time to second purchase per product.
+
+    Returns DataFrame: stockcode, total_buyers, median_days_to_second, p25, p75
+    """
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    if snapshot_date is None:
+        snapshot_date = df["date"].max()
+
+    rows = []
+    for stockcode in df["stockcode"].unique():
+        prod_df = df[df["stockcode"] == stockcode]
+        buyers = prod_df["customer_id"].unique()
+        n_buyers = len(buyers)
+        if n_buyers == 0:
+            continue
+
+        tt2p_list = []
+        for cid, grp in prod_df.groupby("customer_id"):
+            dates = grp["date"].drop_duplicates().sort_values().tolist()
+            if len(dates) >= 2:
+                tt2p_list.append((dates[1] - dates[0]).days)
+
+        if tt2p_list:
+            rows.append({
+                "stockcode": stockcode,
+                "total_buyers": n_buyers,
+                "median_days_to_second": np.median(tt2p_list),
+                "p25_days_to_second": np.percentile(tt2p_list, 25),
+                "p75_days_to_second": np.percentile(tt2p_list, 75),
+            })
+
+    return pd.DataFrame(rows)
+
+
+def compute_price_positioning_index(
+    transactions_df: pd.DataFrame,
+    price_col: str = "price",
+) -> pd.DataFrame:
+    """Compute price positioning index: product price vs category median.
+
+    Index = product_median_price / category_median_price
+    - Index > 1.0: premium priced vs category
+    - Index < 1.0: value priced vs category
+    - Index ~ 1.0: at category average
+
+    Returns DataFrame: stockcode, category, product_price, category_price, price_index
+    """
+    df = transactions_df.copy()
+    if "category" not in df.columns:
+        return pd.DataFrame()
+
+    # Get median price per product
+    product_prices = (
+        df.groupby("stockcode")[price_col]
+        .median()
+        .rename("product_price")
+        .reset_index()
+    )
+
+    # Get product categories
+    cat_map = df.groupby("stockcode")["category"].first().reset_index()
+    product_prices = product_prices.merge(cat_map, on="stockcode", how="left")
+
+    # Category median price
+    cat_prices = (
+        product_prices.groupby("category")["product_price"]
+        .median()
+        .rename("category_median_price")
+        .reset_index()
+    )
+
+    product_prices = product_prices.merge(cat_prices, on="category", how="left")
+    product_prices["price_index"] = (
+        product_prices["product_price"] / product_prices["category_median_price"]
+    ).replace([np.inf, -np.inf], np.nan)
+
+    return product_prices[["stockcode", "category", "product_price", "category_median_price", "price_index"]]
+
+
+def compute_switching_gain_loss(
+    transactions_df: pd.DataFrame,
+    window_days: int = 90,
+) -> pd.DataFrame:
+    """Compute net switching gain/loss per product.
+
+    Gain = customers switching TO this product
+    Loss = customers switching FROM this product
+    Net = Gain - Loss (positive = net winner)
+
+    Returns DataFrame: stockcode, gain_customers, loss_customers, net_gain, gain_rate, loss_rate
+    """
+    from src.analytics.switching import compute_switching_matrix
+
+    switch_matrix = compute_switching_matrix(transactions_df, window_days=window_days)
+
+    if switch_matrix.empty:
+        return pd.DataFrame()
+
+    # Gain: switches TO this product
+    gain = (
+        switch_matrix.groupby("to_product")["unique_customers"]
+        .sum()
+        .rename("gain_customers")
+        .reset_index()
+        .rename(columns={"to_product": "stockcode"})
+    )
+
+    # Loss: switches FROM this product
+    loss = (
+        switch_matrix.groupby("from_product")["unique_customers"]
+        .sum()
+        .rename("loss_customers")
+        .reset_index()
+        .rename(columns={"from_product": "stockcode"})
+    )
+
+    result = gain.merge(loss, on="stockcode", how="outer").fillna(0)
+    result["net_gain"] = result["gain_customers"] - result["loss_customers"]
+
+    # Rates (per total customers who ever bought)
+    from src.analytics.product_performance import compute_product_metrics
+    product_metrics = compute_product_metrics(transactions_df)
+    total_customers = product_metrics.set_index("stockcode")["total_customers"]
+
+    result["total_customers"] = result["stockcode"].map(total_customers).fillna(0)
+    result["gain_rate"] = result["gain_customers"] / result["total_customers"].replace(0, np.nan)
+    result["loss_rate"] = result["loss_customers"] / result["total_customers"].replace(0, np.nan)
+
+    return result
+
+
+def compute_basket_uplift(
+    transactions_df: pd.DataFrame,
+    top_n: int = 50,
+) -> pd.DataFrame:
+    """Compute basket value uplift per product.
+
+    Wrapper around basket_metrics.compute_basket_value_uplift.
+    """
+    from src.analytics.basket_metrics import compute_basket_value_uplift
+    return compute_basket_value_uplift(transactions_df, top_n=top_n)
+
+
+def compute_product_dashboard_metrics(
+    transactions_df: pd.DataFrame,
+    product_lookup: Optional[Dict[str, str]] = None,
+) -> pd.DataFrame:
+    """Compute comprehensive transaction-only product dashboard metrics.
+
+    Combines all available metrics into a single DataFrame for the product dashboard.
+
+    Returns DataFrame with columns:
+    - Core: stockcode, product_name, category, brand
+    - Revenue: total_revenue, total_quantity, avg_price, median_price
+    - Penetration: basket_penetration, unique_shopper_penetration
+    - Loyalty: repeat_rate, median_days_to_second, time_to_second_p75
+    - Velocity: velocity, active_periods
+    - Switching: gain_customers, loss_customers, net_gain, gain_rate, loss_rate
+    - Basket uplift: avg_basket_with, avg_basket_without, basket_value_uplift_pct
+    - Price positioning: product_price, category_median_price, price_index
+    """
+    from src.analytics.basket_metrics import compute_basket_penetration
+    from src.analytics.product_performance import (
+        compute_product_metrics,
+        compute_repeat_rate,
+        compute_time_to_second_purchase,
+    )
+
+    # Base product metrics
+    metrics = compute_product_metrics(transactions_df)
+
+    # Basket penetration
+    penetration = compute_basket_penetration(transactions_df)
+    metrics = metrics.merge(penetration, on="stockcode", how="left")
+
+    # Repeat rate
+    repeat = compute_repeat_rate(transactions_df)
+    metrics = metrics.merge(repeat, on="stockcode", how="left")
+
+    # Time to second purchase
+    tt2p = compute_time_to_second_purchase(transactions_df)
+    metrics = metrics.merge(tt2p, on="stockcode", how="left")
+
+    # Velocity
+    velocity = compute_velocity(transactions_df)
+    metrics = metrics.merge(velocity, on="stockcode", how="left")
+
+    # Price positioning
+    price_idx = compute_price_positioning_index(transactions_df)
+    metrics = metrics.merge(price_idx, on="stockcode", how="left")
+
+    # Switching gain/loss
+    switching = compute_switching_gain_loss(transactions_df)
+    metrics = metrics.merge(switching, on="stockcode", how="left")
+
+    # Basket uplift
+    uplift = compute_basket_uplift(transactions_df, top_n=100)
+    uplift_small = uplift[["stockcode", "avg_basket_value_with", "avg_basket_value_without", "basket_value_uplift_pct"]].rename(
+        columns={"basket_value_uplift_pct": "basket_uplift_pct"}
+    )
+    metrics = metrics.merge(uplift_small, on="stockcode", how="left")
+
+    # Add product names if lookup provided
+    if product_lookup:
+        metrics["product_name"] = metrics["stockcode"].map(product_lookup)
+
+    return metrics
