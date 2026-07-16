@@ -352,16 +352,12 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
         targets = top_switches["to_product"].map(product_to_idx).tolist()
         values = top_switches["switch_count"].tolist()
 
-        labels = [
-            (
-                product_lookup.get(p, p)[:20] + "..."
-                if len(product_lookup.get(p, p)) > 20
-                else product_lookup.get(p, p)
-            )
-            if product_lookup
-            else (p[:20] + "..." if len(p) > 20 else p)
-            for p in all_products
-        ]
+        # Labels: don't truncate short names, use 32-char limit with ellipsis
+        def _label(p):
+            name = product_lookup.get(p, p) if product_lookup else p
+            return name[:32] + "…" if len(name) > 32 else name
+
+        labels = [_label(p) for p in all_products]
 
         max_val = max(values) if values else 1
         node_outgoing = {
@@ -377,6 +373,7 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
         fig = go.Figure(
             data=[
                 go.Sankey(
+                    arrangement="perpendicular",
                     node=dict(
                         pad=20,
                         thickness=20,
@@ -401,11 +398,11 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
 
         fig.update_layout(
             title_text="Product Switching Flow",
-            font=dict(size=13, family="Arial, sans-serif"),
-            height=600,
-            margin=dict(l=150, r=50, t=50, b=50),
+            font=dict(size=14, color="#111111", family="Arial, sans-serif"),
+            height=650,
+            margin=dict(l=200, r=180, t=50, b=50),
         )
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No switching data for Sankey diagram")
 
