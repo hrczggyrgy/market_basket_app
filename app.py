@@ -28,6 +28,8 @@ from src.ui.segmentation_tab import render_segmentation_tab
 from src.ui.sidebar import render_sidebar
 from src.ui.switching_tab import render_switching_tab
 from src.ui.tree_tab import render_tree_tab
+from src.ui.cdt_assortment_tab import render_cdt_assortment_tab
+from src.ui.pricing_tab import render_pricing_tab
 from src.viz.heatmap import create_heatmap, create_scatter_heatmap
 from src.viz.network import create_network_graph
 
@@ -147,25 +149,18 @@ def run_analysis(transactions_df: pd.DataFrame, product_lookup: dict, config: Co
         elif analysis_mode == "Promotional Analytics":
             render_promotional_tab(transactions_df, product_lookup, all_params)
         elif analysis_mode == "CDT Builder":
-            from src.ui.cdt_assortment_tab import render_cdt_assortment_tab
             render_cdt_assortment_tab(transactions_df, product_lookup, all_params, mode="cdt")
         elif analysis_mode == "Demand Transference":
-            from src.ui.cdt_assortment_tab import render_cdt_assortment_tab
             render_cdt_assortment_tab(transactions_df, product_lookup, all_params, mode="transference")
         elif analysis_mode == "Assortment Optimizer":
-            from src.ui.cdt_assortment_tab import render_cdt_assortment_tab
             render_cdt_assortment_tab(transactions_df, product_lookup, all_params, mode="assortment")
         elif analysis_mode == "Elasticity Analysis":
-            from src.ui.pricing_tab import render_pricing_tab
             render_pricing_tab(transactions_df, product_lookup, all_params, mode="elasticity")
         elif analysis_mode == "KVI Identification":
-            from src.ui.pricing_tab import render_pricing_tab
             render_pricing_tab(transactions_df, product_lookup, all_params, mode="kvi")
         elif analysis_mode == "Price Curve Diagnostics":
-            from src.ui.pricing_tab import render_pricing_tab
             render_pricing_tab(transactions_df, product_lookup, all_params, mode="price_curves")
         elif analysis_mode == "Promo Uplift Modeling":
-            from src.ui.pricing_tab import render_pricing_tab
             render_pricing_tab(transactions_df, product_lookup, all_params, mode="promo_uplift")
         else:
             st.warning(f"Unknown analysis mode: {analysis_mode}")

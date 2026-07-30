@@ -75,14 +75,24 @@ market_basket_app/
 │   ├── algorithms/
 │   │   └── fpgrowth.py             # FP-Growth frequent itemset mining
 │   ├── analytics/                  # Core analytics modules
-│   │   ├── copurchase.py           # Co-purchase analysis
-│   │   ├── cdt_*.py                # Customer Decision Tree modules
-│   │   ├── cohort.py               # Cohort analysis
-│   │   ├── promotional.py          # Promotional analytics
-│   │   ├── segmentation.py         # Customer segmentation (RFM, behavioral)
-│   │   ├── switching.py            # Brand/product switching
 │   │   ├── addon.py                # Add-on / impulse analysis
-│   │   └── product_performance.py  # Product lifecycle & performance
+│   │   ├── assortment_opt.py       # Assortment optimization (MILP/heuristic)
+│   │   ├── basket_metrics.py       # Basket penetration & value metrics
+│   │   ├── cdt_attributes.py       # CDT attribute extraction & enrichment
+│   │   ├── cdt_behavioral.py       # CDT behavioral matrices (switching, substitution, bundling)
+│   │   ├── cdt_clustering.py       # CDT hierarchical clustering & dendrogram
+│   │   ├── cdt_community.py        # CDT community detection (louvain, leiden, label propagation)
+│   │   ├── cdt_similarity.py       # CDT similarity matrices (Phi, Jaccard, PMI, TF-IDF)
+│   │   ├── cdt_tree_builder.py     # CDT tree construction & scoring
+│   │   ├── cohort.py               # Cohort analysis
+│   │   ├── copurchase.py           # Co-purchase analysis
+│   │   ├── demand_transference.py  # Delist simulation & substitution demand
+│   │   ├── pricing.py             # Price elasticity, KVI, curve diagnostics
+│   │   ├── product_performance.py  # Product lifecycle & performance
+│   │   ├── promo_uplift.py        # Causal uplift modeling (T-learner, S-learner)
+│   │   ├── promotional.py          # Promotional analytics (legacy)
+│   │   ├── segmentation.py         # Customer segmentation (RFM, behavioral)
+│   │   └── switching.py            # Brand/product switching
 │   ├── data/
 │   │   ├── loader.py               # CSV loading & validation
 │   │   └── generator.py            # Synthetic data generator
@@ -92,12 +102,14 @@ market_basket_app/
 │   │   └── generator.py            # Association rule generation
 │   ├── ui/                         # Streamlit UI tabs
 │   │   ├── sidebar.py              # Sidebar configuration
+│   │   ├── cdt_assortment_tab.py   # CDT Builder, Demand Transference, Assortment Optimizer
+│   │   ├── cdt_tab.py              # Legacy Decision Tree & Patterns tab (CDT)
+│   │   ├── pricing_tab.py          # Elasticity, KVI, Price Curves, Promo Uplift
 │   │   ├── rules_tab.py            # Association Rules tab
 │   │   ├── copurchase_tab.py       # Co-purchase tab
 │   │   ├── addon_tab.py            # Add-on tab
 │   │   ├── switching_tab.py        # Switching tab
 │   │   ├── tree_tab.py             # Choice Prediction Model tab
-│   │   ├── cdt_tab.py              # Decision Tree & Patterns tab (CDT)
 │   │   ├── segmentation_tab.py     # Customer Segmentation tab
 │   │   ├── product_performance_tab.py
 │   │   ├── cohort_tab.py           # Cohort Analysis tab
@@ -126,6 +138,13 @@ market_basket_app/
 | **Product Performance** | `product_performance_tab` | Lifecycle curves, price elasticity, ABC/XYZ classification |
 | **Cohort Analysis** | `cohort_tab` | Retention heatmaps, revenue per customer, AOV by cohort |
 | **Promotional Analytics** | `promotional_tab` | Promo detection, lift decomposition (incrementality vs. forward-buy vs. substitution) |
+| **CDT Builder** (advanced) | `cdt_assortment_tab` | Ensemble similarity (Phi/Jaccard/PMI/TF-IDF), community detection (louvain/leiden), multi-method clustering, attribute-enriched tree with configurable split criterion |
+| **Demand Transference** | `cdt_assortment_tab` | Delist simulation: compute substitutable demand, cannibalization analysis, waterfall impact charts |
+| **Assortment Optimizer** | `cdt_assortment_tab` | SKU rationalization via heuristic MILP, scenario comparison, revenue/coverage trade-offs |
+| **Elasticity Analysis** | `pricing_tab` | Log-log OLS, hierarchical empirical Bayes, XGBoost elasticity estimation with SHAP |
+| **KVI Identification** | `pricing_tab` | Key Value Item scoring via XGBoost importance or RFM + elasticity hybrid |
+| **Price Curve Diagnostics** | `pricing_tab` | K-Means/GMM price tier clustering, tier violation detection |
+| **Promo Uplift Modeling** | `pricing_tab` | Causal T-learner / S-learner, Qini curves, uplift by customer segment, propensity stratification |
 
 ---
 
@@ -181,20 +200,71 @@ date,transaction_id,stockcode,product,customer_id,price,quantity,category,brand
 | Max Itemset Length | 3 | 2–6 | Max items per frequent itemset |
 | Min Lift | 1.2 | 0.5–5.0 | Minimum lift for rule filtering |
 
-### CDT-Specific Parameters (Decision Tree & Patterns Tab)
+### CDT Builder Parameters (CDT & Assortment Category)
 
+#### Similarity
 | Parameter | Default | Range | Description |
 |-----------|---------|-------|-------------|
-| Similarity Method | Yule's Q | Yule's Q / Jaccard | Pairwise product similarity coefficient |
+| Similarity Methods | phi | phi, jaccard, pmi, cosine_tfidf | Methods for ensemble similarity |
 | Min Co-occurrence | 5 | 2–20 | Min customers buying both products |
-| Linkage Method | average | avg/complete/single | Agglomerative clustering linkage |
+
+#### Community Detection
+| Parameter | Default | Range | Description |
+|-----------|---------|-------|-------------|
+| Community Method | louvain | none / label_propagation / louvain / leiden | Product graph community detection |
+| Resolution | 1.0 | 0.5–2.0 | Community resolution parameter |
+| Graph Min Weight | 0.1 | 0.0–0.5 | Minimum edge weight for product graph |
+| Graph Max Degree | 50 | 10–100 | Max edges per node |
+
+#### Clustering
+| Parameter | Default | Range | Description |
+|-----------|---------|-------|-------------|
+| Linkage Method | average | average / complete / single | Agglomerative clustering linkage |
 | Min Clusters (k) | 2 | 2–10 | Silhouette search floor |
 | Max Clusters (k) | 15 | 3–20 | Silhouette search ceiling |
+
+#### Tree Building
+| Parameter | Default | Range | Description |
+|-----------|---------|-------|-------------|
 | Min Cluster Size | 3 | 2–10 | Min products per tree node |
 | Quality Threshold | 60% | 40–80% | Tree quality vs. unconstrained baseline |
+| Split Criterion | mutual_info | mutual_info / gini / entropy / mixed | Attribute split scoring method |
+| Split Alpha | 0.5 | 0.0–1.0 | Entropy weight for mixed criterion |
+
+#### Behavioral
+| Parameter | Default | Range | Description |
+|-----------|---------|-------|-------------|
 | Top N Products | 50 | 20–200 | Limit for large catalogs |
 | Min Lift (bundling) | 1.2 | 1.0–3.0 | Co-purchase strength floor |
 | Max Substitution | 0.3 | 0.0–0.5 | Substitutability ceiling for bundles |
+
+### Elasticity Analysis Parameters (Pricing & Promotions)
+
+| Parameter | Default | Range | Description |
+|-----------|---------|-------|-------------|
+| Method | loglog_ols | loglog_ols / hierarchical_eb / xgb | Elasticity estimation method |
+| Min Periods | 10 | 5–50 | Min time periods per product |
+| Min Price Variation | 5% | 1–50% | Min price coefficient of variation |
+| Show SHAP Values | false | — | Enable SHAP for XGBoost method |
+
+### KVI Identification Parameters
+
+| Parameter | Default | Range | Description |
+|-----------|---------|-------|-------------|
+| Method | xgb_importance | xgb_importance / rfm_elasticity | KVI scoring method |
+| Top K KVI | 20 | 10–100 | Number of KVIs to identify |
+| Margin-Weighted | No | — | Weight by margin if cost data available |
+
+### Promo Uplift Modeling Parameters
+
+| Parameter | Default | Range | Description |
+|-----------|---------|-------|-------------|
+| Promo Drop Threshold | 15% | 5–50% | Price drop to flag as promo |
+| Baseline Window | 28 days | 14–90 | Historical window for baseline demand |
+| Uplift Method | t_learner | t_learner / s_learner | Causal estimation method |
+| Base n_estimators | 200 | 50–500 | XGBoost n_estimators |
+| Base max_depth | 5 | 3–10 | XGBoost max_depth |
+| Propensity Stratification | Yes | — | IPW-based propensity weighting |
 
 ---
 
@@ -248,6 +318,67 @@ Trains a decision tree to predict **next product choice** from customer history 
 - Cannibalization & halo effects
 - Promo ROI estimation
 
+### 11. CDT Builder (Advanced)
+**Enhanced CDT with community detection and ensemble similarity:**
+1. **Similarity Ensemble** — Combine Phi, Jaccard, PMI, and Cosine TF-IDF into a single similarity matrix
+2. **Community Detection** — Label propagation, Louvain, or Leiden clustering on the product graph
+3. **Multi-method Clustering** — Cluster within communities, merge dendrograms
+4. **Attribute-enriched Tree** — Split criterion selection (mutual info, Gini, entropy, mixed) with configurable alpha
+
+**Outputs:** Community summary, silhouette analysis, similarity comparison across methods, interactive dendrogram/sunburst/treemap.
+
+### 12. Demand Transference
+**Simulate the impact of delisting products:**
+- Compute **substitutable demand** between product pairs using switching or CDT-derived substitution matrices
+- Estimate **recovery rate**: what fraction of delisted demand transfers to remaining products
+- **Cannibalization** analysis: identify which products lose demand when a new product is introduced
+- **Waterfall charts** showing net revenue impact per scenario
+
+**Use case:** Planogram optimization, discontinuation decisions, "what-if" delist simulations.
+
+### 13. Assortment Optimizer
+**SKU rationalization using constrained optimization:**
+- **Heuristic solver** — greedy item selection based on revenue/margin contribution
+- **MILP solver** — Mixed Integer Linear Programming with OR-Tools for exact optimization
+- **Constraints**: max SKUs, minimum category coverage, substitution bounds
+- **Scenario comparison**: compare multiple assortment configurations side-by-side
+
+**Outputs:** Revenue vs. coverage Pareto frontier, scenario comparison table, exportable recommendations.
+
+### 14. Elasticity Analysis
+**Price elasticity estimation with three methods:**
+- **Log-log OLS** — Classic log-log regression: `log(quantity) = α + β * log(price)`
+- **Hierarchical Empirical Bayes** — Partial pooling across product categories for stable estimates with limited data
+- **XGBoost** — Non-parametric elasticity: predict demand from price + features, derive elasticity via partial dependence
+
+**Outputs:** Elasticity distribution histogram, category-level comparison, product-level elasticity table with confidence intervals.
+
+### 15. KVI (Key Value Item) Identification
+**Score products by their price sensitivity and strategic importance:**
+- **XGBoost Importance** — Train demand model with price as feature, derive KVI score from price feature importance
+- **RFM + Elasticity Hybrid** — Combine elasticity estimates with RFM-based customer value metrics
+- Configurable top-K, margin-weighting option
+
+**Use case:** Identify items where price changes have outsized impact on customer perception and traffic.
+
+### 16. Price Curve Diagnostics
+**Detect price tier violations and optimize pricing structure:**
+- **K-Means** or **Gaussian Mixture Model** clustering to identify natural price tiers within each category
+- **Tier violation detection**: products priced outside their expected tier (overpriced/underpriced relative to comparable items)
+- Configurable number of tiers (2–5)
+
+**Outputs:** Tier assignment per product, violation flags, category-level price distribution plots.
+
+### 17. Promo Uplift Modeling
+**Causal inference for promotion effectiveness:**
+- **T-learner** — Train separate treatment/control models: `E[Y|X, T=1] - E[Y|X, T=0]`
+- **S-learner** — Single model with treatment as feature
+- **Qini curves** — Evaluate uplift model performance across population segments
+- **Propensity stratification** — Control for selection bias in observational data
+- **Segment-level uplift** — Identify which customer segments respond best to promotions
+
+**Outputs:** Uplift distribution, Qini curve, segment-level treatment effects, feature importance (SHAP).
+
 ---
 
 ## UI Overview
@@ -262,10 +393,22 @@ Data Upload
 FP-Growth Parameters
   ├── Min Support, Min Confidence, Max Itemset Length, Min Lift
 
-Analysis Options
-  ├── Analysis Category (6 categories)
-  │   └── Analysis Mode (sub-modes per category)
-  └── Mode-specific parameters
+Analysis Category (radio)
+  ├── Association Rules
+  │   └── Association Rules / Co-purchase / Add-on / Switching
+  ├── CDT & Assortment
+  │   ├── CDT Builder (similarity methods, community detection, clustering, tree building, behavioral)
+  │   ├── Demand Transference (substitution source, delist products, recovery constraint)
+  │   └── Assortment Optimizer (max SKUs, coverage, objective, solver, time limit)
+  ├── Pricing & Promotions
+  │   ├── Elasticity Analysis (method, min periods, SHAP toggle)
+  │   ├── KVI Identification (method, top-K, margin-weighting)
+  │   ├── Price Curve Diagnostics (clustering method, n tiers)
+  │   └── Promo Uplift Modeling (drop threshold, baseline window, T/S learner, propensity)
+  ├── Customer Segmentation
+  ├── Product Performance
+  ├── Cohort Analysis
+  └── Promotional Analytics (legacy)
 
 Run Analysis Button
 ```

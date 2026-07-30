@@ -116,6 +116,12 @@ from .pricing import (
     compute_kvi_score,
     diagnose_price_curves,
 )
+from .assortment_opt import (
+    evaluate_assortment,
+    generate_assortment_scenarios,
+    optimize_assortment_heuristic,
+    optimize_assortment_milp,
+)
 from .segmentation import (
     behavioral_segmentation,
     compute_rfm_features,
@@ -231,4 +237,9 @@ __all__ = [
     "estimate_elasticity_xgb",
     "compute_kvi_score",
     "diagnose_price_curves",
+    # Assortment
+    "evaluate_assortment",
+    "generate_assortment_scenarios",
+    "optimize_assortment_heuristic",
+    "optimize_assortment_milp",
 ]
