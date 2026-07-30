@@ -9,6 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from scipy import stats
+from sklearn.preprocessing import StandardScaler
 
 from src.analytics import (
     compute_basket_penetration,

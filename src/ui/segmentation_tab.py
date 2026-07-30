@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.algorithms.fpgrowth import create_basket_matrix, run_fpgrowth
+from src.analytics import compute_switching_matrix
 from src.analytics.cdt_behavioral import (
     build_behavioral_matrices,
     get_top_bundling_pairs,
@@ -40,6 +41,22 @@ from src.analytics.segmentation_enhanced import (
 )
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
+from src.ui.cdt_tab import (
+    _cached_build_customer_sequences,
+    _cached_build_similarity_matrix,
+    _cached_find_optimal_clusters,
+    _cached_get_cluster_assignments,
+    _cached_perform_hierarchical_clustering,
+)
+from src.viz.cdt_viz import (
+    plot_behavioral_heatmap,
+    plot_dendrogram,
+    plot_silhouette_scores,
+    plot_similarity_heatmap,
+    plot_sunburst,
+    plot_switching_network,
+    plot_treemap,
+)
 
 
 def _normalize_metrics(
@@ -1007,6 +1024,20 @@ def render_cluster_map(transactions_df: pd.DataFrame):
     from sklearn.cluster import AgglomerativeClustering, KMeans
     from sklearn.mixture import GaussianMixture
 
+    # Check optional libraries
+    try:
+        import hdbscan  # noqa: F401
+
+        HDBSCAN_AVAILABLE = True
+    except ImportError:
+        HDBSCAN_AVAILABLE = False
+    try:
+        import umap  # noqa: F401
+
+        UMAP_AVAILABLE = True
+    except ImportError:
+        UMAP_AVAILABLE = False
+
     if method == "kmeans":
         model = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
         labels = model.fit_predict(X_scaled)
@@ -1124,6 +1155,19 @@ def render_validation(transactions_df: pd.DataFrame):
         for method in methods:
             for k in range(k_range[0], k_range[1] + 1):
                 try:
+                    try:
+                        import hdbscan  # noqa: F401
+
+                        HDBSCAN_AVAILABLE = True
+                    except ImportError:
+                        HDBSCAN_AVAILABLE = False
+                    try:
+                        import umap  # noqa: F401
+
+                        UMAP_AVAILABLE = True
+                    except ImportError:
+                        UMAP_AVAILABLE = False
+
                     if method == "kmeans":
                         model = KMeans(n_clusters=k, random_state=42, n_init=10)
                     elif method == "agglomerative":

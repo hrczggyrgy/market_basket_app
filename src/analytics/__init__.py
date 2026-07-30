@@ -252,4 +252,12 @@ __all__ = [
     "generate_assortment_scenarios",
     "optimize_assortment_heuristic",
     "optimize_assortment_milp",
+    "compute_pca_projection",
+    "compute_umap_projection",
+    "compute_segment_migration",
+    "compute_segment_migration_matrix",
+    "compute_segment_retention",
+    "compute_cluster_stability",
+    "compute_enhanced_behavioral_features",
+    "get_segment_recommendations",
 ]

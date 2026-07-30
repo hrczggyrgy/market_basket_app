@@ -11,6 +11,7 @@ import streamlit as st
 
 from src.analytics import (
     build_cdt,
+    build_customer_sequences,
     build_similarity_matrix,
     build_similarity_matrix_ensemble,
     compute_bundling_matrix,
@@ -27,6 +28,7 @@ from src.analytics import (
 from src.analytics.assortment_opt import (
     generate_assortment_scenarios,
     optimize_assortment_heuristic,
+    optimize_assortment_milp,
 )
 from src.analytics.cdt_attributes import build_transaction_derived_attributes
 from src.analytics.cdt_community import (
@@ -331,8 +333,10 @@ def _render_cdt_results(
         _render_behavioral_matrices(sim_matrix, cluster_assignments, product_lookup)
 
 
-def _render_behavioral_matrices(sim_matrix, cluster_assignments, product_lookup):
+def _render_behavioral_matrices(sim_matrix, cluster_assignments, product_lookup, params=None):
     """Render switching, substitution, and bundling matrices."""
+    if params is None:
+        params = {}
 
     switching_df = compute_switching_matrix(
         cluster_assignments=cluster_assignments,

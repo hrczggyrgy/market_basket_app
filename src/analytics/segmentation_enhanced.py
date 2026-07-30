@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import entropy
 from sklearn.cluster import DBSCAN, AgglomerativeClustering, KMeans
+from sklearn.decomposition import PCA
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.metrics import (
     davies_bouldin_score,
@@ -39,6 +40,13 @@ try:
     LIGHTGBM_AVAILABLE = True
 except ImportError:
     LIGHTGBM_AVAILABLE = False
+
+try:
+    import umap
+
+    UMAP_AVAILABLE = True
+except ImportError:
+    UMAP_AVAILABLE = False
 
 
 MIN_CLUSTER_SIZE = 5
