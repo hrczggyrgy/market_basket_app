@@ -16,7 +16,6 @@ from src.analytics import (
     build_similarity_matrix_ensemble,
     compute_affinity_matrix,
     compute_bundling_matrix,
-    compute_switching_matrix,
     extract_product_attributes,
     find_optimal_clusters,
     get_cluster_assignments,
@@ -26,6 +25,7 @@ from src.analytics import (
     get_top_substitution_pairs,
     perform_hierarchical_clustering,
 )
+from src.analytics.cdt_behavioral import compute_switching_matrix
 from src.analytics.assortment_opt import (
     generate_assortment_scenarios,
     optimize_assortment_heuristic,
@@ -67,6 +67,9 @@ def render_cdt_assortment_tab(
             elif sufficiency["overall"] == "directional":
                 st.info("Results should be treated as directional.")
 
+    # Invalidate cached results when the data changes
+    _invalidate_data_cache_if_changed(transactions_df)
+
     if mode == "cdt":
         _render_cdt_builder(transactions_df, product_lookup, params)
     elif mode == "transference":
@@ -75,6 +78,35 @@ def render_cdt_assortment_tab(
         _render_assortment_optimizer(transactions_df, product_lookup, params)
     else:
         st.warning(f"Unknown mode: {mode}")
+
+
+def _invalidate_data_cache_if_changed(transactions_df: pd.DataFrame) -> None:
+    """
+    Invalidate cached results when the underlying transaction data changes.
+    """
+    if transactions_df.empty:
+        return
+    
+    # Create a fingerprint of the current dataset
+    data_fingerprint = hash((
+        len(transactions_df),
+        transactions_df["transaction_id"].nunique() if "transaction_id" in transactions_df.columns else 0,
+        transactions_df["customer_id"].nunique() if "customer_id" in transactions_df.columns else 0,
+        transactions_df["stockcode"].nunique() if "stockcode" in transactions_df.columns else 0,
+        str(transactions_df["date"].min()) if "date" in transactions_df.columns else "",
+        str(transactions_df["date"].max()) if "date" in transactions_df.columns else "",
+    ))
+    
+    # Check if fingerprint matches cached one
+    cached_fingerprint = st.session_state.get("cdt_assortment_data_fingerprint")
+    if cached_fingerprint is not None and cached_fingerprint != data_fingerprint:
+        # Data changed - clear all CDT assortment session state
+        keys_to_delete = [k for k in st.session_state.keys() if k.startswith("cdt_assortment_")]
+        for key in keys_to_delete:
+            del st.session_state[key]
+    
+    # Store/update fingerprint
+    st.session_state["cdt_assortment_data_fingerprint"] = data_fingerprint
 
 
 # ============================================================================

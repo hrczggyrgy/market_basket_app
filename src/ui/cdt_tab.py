@@ -72,6 +72,39 @@ _CDT_TABS = [
 ]
 
 
+def _invalidate_cdt_cache_if_data_changed(transactions_df: pd.DataFrame) -> None:
+    """
+    Invalidate cached CDT results when the underlying transaction data changes.
+    
+    Uses a hash of key data characteristics to detect changes in the dataset.
+    This prevents displaying stale results when switching between sample data
+    and uploaded data, or when uploading a different file.
+    """
+    if transactions_df.empty:
+        return
+    
+    # Create a fingerprint of the current dataset
+    data_fingerprint = hash((
+        len(transactions_df),
+        transactions_df["transaction_id"].nunique() if "transaction_id" in transactions_df.columns else 0,
+        transactions_df["customer_id"].nunique() if "customer_id" in transactions_df.columns else 0,
+        transactions_df["stockcode"].nunique() if "stockcode" in transactions_df.columns else 0,
+        str(transactions_df["date"].min()) if "date" in transactions_df.columns else "",
+        str(transactions_df["date"].max()) if "date" in transactions_df.columns else "",
+    ))
+    
+    # Check if fingerprint matches cached one
+    cached_fingerprint = st.session_state.get("cdt_data_fingerprint")
+    if cached_fingerprint is not None and cached_fingerprint != data_fingerprint:
+        # Data changed - clear all CDT session state
+        keys_to_delete = [k for k in st.session_state.keys() if k.startswith("cdt_")]
+        for key in keys_to_delete:
+            del st.session_state[key]
+    
+    # Store/update fingerprint
+    st.session_state["cdt_data_fingerprint"] = data_fingerprint
+
+
 # ---------------------------------------------------------------------------
 # Cached heavy computations
 # ---------------------------------------------------------------------------
@@ -179,6 +212,9 @@ def render_cdt_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: 
             st.warning("Dataset may be too small for reliable CDT analysis.")
         elif sufficiency["overall"] == "directional":
             st.info("CDT results should be treated as directional.")
+
+    # Invalidate cached CDT results if the data has changed
+    _invalidate_cdt_cache_if_data_changed(transactions_df)
 
     has_results = "cdt_root" in st.session_state
 
