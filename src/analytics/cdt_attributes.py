@@ -171,7 +171,9 @@ def derive_substitution_tier(
         labels = ["Low-Sub", "Med-Sub", "High-Sub"][:n_tiers]
 
     sim = similarity_matrix.copy()
-    np.fill_diagonal(sim.values, np.nan)  # exclude self-similarity
+    sim_np = sim.to_numpy(copy=True)
+    np.fill_diagonal(sim_np, np.nan)
+    sim[:] = sim_np
 
     mean_top_k = sim.apply(lambda row: row.nlargest(top_k).mean(), axis=1).rename(
         "mean_top_k_similarity"

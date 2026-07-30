@@ -526,7 +526,9 @@ def build_similarity_matrix_ensemble(
             ensemble += weight * mat
 
         ensemble /= total_weight
-        np.fill_diagonal(ensemble.values, 1.0)
+        ens_np = ensemble.to_numpy(copy=True)
+        np.fill_diagonal(ens_np, 1.0)
+        ensemble[:] = ens_np
         matrices["ensemble"] = ensemble
 
     return matrices
