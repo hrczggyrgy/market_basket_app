@@ -223,7 +223,7 @@ def _render_cdt_builder(transactions_df: pd.DataFrame, product_lookup: dict, par
         )
 
     # Display CDT results
-    _render_cdt_results(root, metadata, sim_matrix, cluster_assignments, product_lookup, transactions_df, params)
+    _render_cdt_results(root, metadata, sim_matrix, cluster_assignments, product_lookup, transactions_df, params, linkage_matrix, ordered_labels)
 
 
 def _render_similarity_comparison(similarity_matrices: Dict[str, pd.DataFrame]):
@@ -298,6 +298,8 @@ def _render_cdt_results(
     product_lookup: dict,
     transactions_df: pd.DataFrame,
     params: dict,
+    linkage_matrix: np.ndarray = None,
+    ordered_labels: list = None,
 ):
     """Render CDT results with visualizations and export options."""
 
@@ -332,9 +334,13 @@ def _render_cdt_results(
         st.plotly_chart(fig, use_container_width=True)
 
     with viz_tab3:
-        st.info("Dendrogram requires linkage matrix from clustering step")
-        fig = create_dendrogram_plot(np.array([]))
-        st.plotly_chart(fig, use_container_width=True)
+        if linkage_matrix is not None and linkage_matrix.size > 0 and ordered_labels:
+            fig = create_dendrogram_plot(linkage_matrix, ordered_labels)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Dendrogram requires linkage matrix from clustering step")
+            fig = create_dendrogram_plot(np.array([]))
+            st.plotly_chart(fig, use_container_width=True)
 
     with viz_tab4:
         tree_df = tree_to_dataframe(root)
