@@ -42,7 +42,13 @@ def derive_price_tier(
         labels = ["Budget", "Mainstream", "Premium"][:n_tiers]
 
     med_price = transactions_df.groupby(product_col)["price"].median()
-    tier = pd.qcut(med_price, q=n_tiers, labels=labels, duplicates="drop")
+    n_unique = med_price.nunique()
+    effective_q = min(n_tiers, n_unique)
+    if effective_q < 2:
+        return pd.Series(
+            [labels[0]] * len(med_price), index=med_price.index, name="price_tier"
+        )
+    tier = pd.qcut(med_price, q=effective_q, labels=labels[:effective_q], duplicates="drop")
     return tier.rename("price_tier")
 
 
@@ -68,7 +74,13 @@ def derive_velocity_tier(
     active_months = df.groupby(product_col)["month"].nunique()
     velocity = (total_units / active_months).rename("monthly_units")
 
-    tier = pd.qcut(velocity, q=n_tiers, labels=labels, duplicates="drop")
+    n_unique = velocity.nunique()
+    effective_q = min(n_tiers, n_unique)
+    if effective_q < 2:
+        return pd.Series(
+            [labels[0]] * len(velocity), index=velocity.index, name="velocity_tier"
+        )
+    tier = pd.qcut(velocity, q=effective_q, labels=labels[:effective_q], duplicates="drop")
     return tier.rename("velocity_tier")
 
 
@@ -99,7 +111,15 @@ def derive_basket_size_affinity(
         df = df.merge(basket_depth.reset_index(), left_on="_bid", right_on="_bid", how="left")
 
     mean_basket_depth = df.groupby(product_col)["basket_depth"].mean()
-    tier = pd.qcut(mean_basket_depth, q=n_tiers, labels=labels, duplicates="drop")
+    n_unique = mean_basket_depth.nunique()
+    effective_q = min(n_tiers, n_unique)
+    if effective_q < 2:
+        return pd.Series(
+            [labels[0]] * len(mean_basket_depth),
+            index=mean_basket_depth.index,
+            name="basket_size_affinity",
+        )
+    tier = pd.qcut(mean_basket_depth, q=effective_q, labels=labels[:effective_q], duplicates="drop")
     return tier.rename("basket_size_affinity")
 
 
@@ -179,7 +199,15 @@ def derive_substitution_tier(
         "mean_top_k_similarity"
     )
 
-    tier = pd.qcut(mean_top_k, q=n_tiers, labels=labels, duplicates="drop")
+    n_unique = mean_top_k.nunique()
+    effective_q = min(n_tiers, n_unique)
+    if effective_q < 2:
+        return pd.Series(
+            [labels[0]] * len(mean_top_k),
+            index=mean_top_k.index,
+            name="substitution_tier",
+        )
+    tier = pd.qcut(mean_top_k, q=effective_q, labels=labels[:effective_q], duplicates="drop")
     return tier.rename("substitution_tier")
 
 

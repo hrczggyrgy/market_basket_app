@@ -153,6 +153,11 @@ def get_cluster_assignments(
     Returns:
         Dict mapping product_id -> cluster_id (0-indexed)
     """
+    if linkage_matrix.size == 0 or linkage_matrix.shape[0] == 0:
+        # No valid linkage; each product gets its own cluster
+        products = similarity_matrix.index.tolist()
+        return {p: i for i, p in enumerate(products)}
+
     if n_clusters is not None:
         labels = fcluster(linkage_matrix, n_clusters, criterion="maxclust")
     elif distance_threshold is not None:

@@ -309,10 +309,11 @@ def merge_community_dendrograms(
     community_assignments: Dict[str, int],
 ) -> Tuple[np.ndarray, List[str]]:
     """
-    Stitch community-level dendrograms into a global dendrogram.
+    Merge community-level dendrograms into a global ordering for display.
 
-    Strategy: place communities as siblings under a virtual root,
-    with inter-community distance = max observed distance + epsilon.
+    The resulting linkage matrix is suitable for dendrogram visualization
+    but may not be valid for fcluster (when communities are disconnected).
+    Use community_assignments directly for cluster membership when available.
 
     Args:
         community_dendrograms: comm_id -> (linkage_matrix, ordered_labels)
@@ -321,85 +322,48 @@ def merge_community_dendrograms(
     Returns:
         (global_linkage_matrix, global_ordered_labels)
     """
-    from scipy.cluster.hierarchy import linkage  # noqa: F401
-    from scipy.spatial.distance import squareform  # noqa: F401
+    from scipy.cluster.hierarchy import linkage as scipy_linkage  # noqa: F811
+    from scipy.spatial.distance import squareform  # noqa: F811
 
-    # Get community sizes and max internal distances
-    comm_sizes = {}
+    comm_ids = sorted(community_dendrograms.keys())
+
+    # Collect all labels in order
+    all_labels = []
+    for comm_id in comm_ids:
+        _link_mat, labels = community_dendrograms[comm_id]
+        all_labels.extend(labels)
+
+    if len(all_labels) < 2:
+        return np.array([]), all_labels
+
+    # Shift and collect each community's internal linkage
+    shifted_linkages = []
+    offset = 0
     max_internal_dist = 0.0
 
-    for comm_id, (link_mat, labels) in community_dendrograms.items():
-        if len(labels) > 1 and len(link_mat) > 0:
-            # Max merge distance in this community
-            max_d = link_mat[:, 2].max()
-            max_internal_dist = max(max_internal_dist, max_d)
-        comm_sizes[comm_id] = len(labels)
-
-    # Inter-community distance
-    inter_dist = max_internal_dist + 1.0 if max_internal_dist > 0 else 2.0
-
-    # Build global linkage by sequentially merging communities
-    comm_ids = sorted(community_dendrograms.keys())
-    current_labels = []
-    current_linkages = []
-
-    # Start with first community's dendrogram
-    first_id = comm_ids[0]
-    first_link, first_labels = community_dendrograms[first_id]
-    current_labels = first_labels
-    current_linkages = [first_link] if len(first_link) > 0 else []
-
-    next_node_idx = len(first_labels)
-
-    for comm_id in comm_ids[1:]:
+    for comm_id in comm_ids:
         link_mat, labels = community_dendrograms[comm_id]
-        n = len(labels)
+        n_items = len(labels)
 
-        if n == 1:
-            # Single node - just add as leaf
-            current_labels.append(labels[0])
-            # Merge with previous cluster at inter_dist
-            current_linkages.append(
-                np.array([[next_node_idx - n, next_node_idx - 1, inter_dist, n + 1]])
-            )
-        else:
-            # Shift linkage indices
+        if n_items >= 2 and len(link_mat) > 0:
             shifted = link_mat.copy()
-            shifted[:, :2] += next_node_idx - n
-            current_labels.extend(labels)
-            current_linkages.append(shifted)
+            shifted[:, :2] += offset
+            shifted_linkages.append(shifted)
+            max_internal_dist = max(max_internal_dist, link_mat[:, 2].max())
 
-            # Merge with previous at inter_dist
-            current_linkages.append(
-                np.array(
-                    [
-                        [
-                            next_node_idx - n,
-                            next_node_idx - 1,
-                            inter_dist,
-                            sum(comm_sizes[ci] for ci in comm_ids[: comm_ids.index(comm_id) + 1]),
-                        ]
-                    ]
-                )
-            )
+        offset += n_items
 
-        next_node_idx = len(current_labels)
+    if not shifted_linkages:
+        return np.array([]), all_labels
 
-    # Stack all linkages
-    if len(current_linkages) == 1:
-        global_linkage = current_linkages[0]
-    else:
-        global_linkage = np.vstack(current_linkages)
+    if len(shifted_linkages) == 1:
+        return shifted_linkages[0], all_labels
 
-    # Renumber to standard sequential indices
-    # scipy linkage expects sequential node indices
-    node_map = {old: new for new, old in enumerate(range(len(current_labels)))}
-    for i in range(global_linkage.shape[0]):
-        for j in range(2):
-            if global_linkage[i, j] in node_map:
-                global_linkage[i, j] = node_map[global_linkage[i, j]]
-
-    return global_linkage, current_labels
+    # Multiple communities: we cannot produce a single valid fcluster linkage
+    # from disconnected sub-dendrograms. Instead, return the concatenated
+    # linkage for display only. fcluster will fall back to community assignments.
+    global_linkage = np.vstack(shifted_linkages)
+    return global_linkage, all_labels
 
 
 def community_detection_pipeline(

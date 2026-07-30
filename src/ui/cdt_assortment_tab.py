@@ -148,8 +148,18 @@ def _render_cdt_builder(transactions_df: pd.DataFrame, product_lookup: dict, par
                 distance_method=primary_method,
             )
 
-    # Find optimal k
-    with st.spinner("Finding optimal clusters..."):
+    # Step 4: Cluster Assignments
+    # When community detection is active, use community assignments directly
+    # (merged community dendrograms are not valid for fcluster). Otherwise,
+    # derive clusters from the global linkage matrix.
+    if community_assignments is not None:
+        unique_comm = sorted(set(community_assignments.values()))
+        comm_map = {old: new for new, old in enumerate(unique_comm)}
+        cluster_assignments = {p: comm_map[c] for p, c in community_assignments.items()}
+        optimal_k = len(unique_comm)
+        silhouette_scores = {}
+        st.info(f"Using {optimal_k} community-based clusters")
+    else:
         optimal_k, silhouette_scores = find_optimal_clusters(
             linkage_matrix,
             sim_matrix,
@@ -157,17 +167,12 @@ def _render_cdt_builder(transactions_df: pd.DataFrame, product_lookup: dict, par
             min_clusters=params.get("min_k", 2),
             max_clusters=params.get("max_k", 15),
         )
+        st.info(f"Optimal clusters (silhouette): **k = {optimal_k}**")
+        with st.expander("📈 Silhouette Analysis", expanded=False):
+            _render_silhouette_plot(silhouette_scores, optimal_k)
 
-    st.info(f"Optimal clusters (silhouette): **k = {optimal_k}**")
+        cluster_assignments = get_cluster_assignments(linkage_matrix, sim_matrix, n_clusters=optimal_k)
 
-    # Silhouette plot
-    with st.expander("📈 Silhouette Analysis", expanded=False):
-        _render_silhouette_plot(silhouette_scores, optimal_k)
-
-    # Step 4: Cluster Assignments
-    cluster_assignments = get_cluster_assignments(linkage_matrix, sim_matrix, n_clusters=optimal_k)
-
-    # Step 5: Build CDT
     with st.spinner("Building Customer Decision Tree..."):
         # Extract attributes
         if params.get("extract_from_text", False):
