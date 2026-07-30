@@ -312,11 +312,6 @@ def _render_cdt_results(
         st.plotly_chart(fig, use_container_width=True)
 
     with viz_tab3:
-        dendro_data = get_dendrogram_data(
-            linkage_matrix=np.array([]),  # placeholder - would need actual linkage
-            labels=product_lookup,
-        )
-        # For dendrogram, we'd need the actual linkage matrix
         st.info("Dendrogram requires linkage matrix from clustering step")
         fig = create_dendrogram_plot(np.array([]))
         st.plotly_chart(fig, use_container_width=True)
