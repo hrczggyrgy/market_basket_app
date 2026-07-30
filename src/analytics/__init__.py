@@ -145,6 +145,7 @@ from .sufficiency import (
     format_sufficiency_summary,
     sufficiency_badge,
 )
+from .validation import generate_synthetic_elasticity_data, run_validation
 
 __all__ = [
     "compute_affinity_matrix",
@@ -278,4 +279,6 @@ __all__ = [
     "compute_cluster_stability",
     "compute_enhanced_behavioral_features",
     "get_segment_recommendations",
+    "generate_synthetic_elasticity_data",
+    "run_validation",
 ]

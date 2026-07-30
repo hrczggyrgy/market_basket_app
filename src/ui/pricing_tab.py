@@ -16,6 +16,7 @@ from src.analytics import (
     compute_basket_value_uplift,
     compute_product_metrics,
     estimate_bayesian_hierarchical_elasticity,
+    run_validation,
 )
 from src.analytics.sufficiency import (
     assess_data_sufficiency,
@@ -42,6 +43,8 @@ def render_pricing_tab(
         _render_price_curve_diagnostics(transactions_df, product_lookup, params)
     elif mode == "promo_uplift":
         _render_promo_uplift_modeling(transactions_df, product_lookup, params)
+    elif mode == "benchmark":
+        _render_elasticity_benchmark(params)
     else:
         st.warning(f"Unknown pricing mode: {mode}")
 
@@ -501,6 +504,98 @@ def _render_trace_diagnostics():
 
     except Exception:
         pass
+
+
+# ============================================================================
+# ELASTICITY BENCHMARK (synthetic-data validation)
+# ============================================================================
+
+
+def _render_elasticity_benchmark(params: dict):
+    """Run and display synthetic-data validation across all elasticity methods."""
+
+    st.header(" Elastity Benchmark (Synthetic Data)")
+    st.caption(
+        "Generates data with **known ground-truth elasticities** and compares "
+        "how well each method recovers them. 94% HDI coverage measures how often "
+        "the true value falls inside the credible interval (target: ~0.94)."
+    )
+
+    n_skus = params.get("benchmark_n_skus", 20)
+    n_weeks = params.get("benchmark_n_weeks", 52)
+    n_cats = params.get("benchmark_n_categories", 3)
+
+    if st.button("▶️ Run Benchmark", type="primary", key="bench_run"):
+        with st.spinner(f"Generating {n_skus} SKUs × {n_weeks} weeks with known elasticities..."):
+            results = run_validation(
+                n_skus=n_skus,
+                n_weeks=n_weeks,
+                n_categories=n_cats,
+                n_samples=300,
+            )
+
+        if results.empty:
+            st.warning("Benchmark produced no results.")
+            return
+
+        st.success(f"Benchmark complete — {len(results)} methods compared")
+
+        # Summary metrics table
+        st.subheader("Recovery Metrics")
+        display = results[["method", "rmse", "bias", "coverage_94", "n_products"]].copy()
+        display["rmse"] = display["rmse"].round(4)
+        display["bias"] = display["bias"].round(4)
+        display["coverage_94"] = display["coverage_94"].round(3)
+        st.dataframe(display, use_container_width=True)
+
+        # Bar chart: RMSE
+        fig = px.bar(
+            results,
+            x="method",
+            y="rmse",
+            color="method",
+            title="RMSE by Method (lower = better recovery)",
+            labels={"rmse": "RMSE", "method": ""},
+            text_auto=".4f",
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Bar chart: Bias
+        fig2 = px.bar(
+            results,
+            x="method",
+            y="bias",
+            color="method",
+            title="Bias by Method (closer to 0 = better)",
+            labels={"bias": "Bias", "method": ""},
+            text_auto=".4f",
+        )
+        fig2.add_hline(y=0, line_dash="dash", line_color="gray")
+        st.plotly_chart(fig2, use_container_width=True)
+
+        # Coverage bar chart
+        cov_results = results[results["coverage_94"].notna()].copy()
+        if not cov_results.empty:
+            fig3 = px.bar(
+                cov_results,
+                x="method",
+                y="coverage_94",
+                color="method",
+                title="94% HDI Coverage (target = 0.94)",
+                labels={"coverage_94": "Coverage", "method": ""},
+                text_auto=".3f",
+            )
+            fig3.add_hline(y=0.94, line_dash="dash", line_color="green")
+            st.plotly_chart(fig3, use_container_width=True)
+
+        # Interpretation
+        best_rmse = results.loc[results["rmse"].idxmin()]
+        best_bias = results.loc[results["bias"][results["bias"].notna()].abs().idxmin()]
+
+        st.info(
+            f" Lowest RMSE: **{best_rmse['method']}** ({best_rmse['rmse']:.4f})  ·  "
+            f"Lowest |Bias|: **{best_bias['method']}** ({best_bias['bias']:.4f})"
+        )
 
 
 # ============================================================================

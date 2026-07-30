@@ -169,6 +169,7 @@ def render_sidebar() -> Config:
                 "KVI Identification",  # key value item scoring
                 "Price Curve Diagnostics",  # tier clustering & violations
                 "Promo Uplift Modeling",  # causal uplift estimation
+                "Elasticity Benchmark",  # synthetic-data validation
             ],
             index=0,
             key="sidebar_analysis_mode_pricing",
@@ -377,6 +378,17 @@ def render_sidebar() -> Config:
         )
         analysis_params["propensity_stratification"] = st.sidebar.checkbox(
             "Propensity Stratification", value=True, key="uplift_propensity"
+        )
+
+    elif analysis_mode == "Elasticity Benchmark":
+        analysis_params["benchmark_n_skus"] = st.sidebar.slider(
+            "Number of SKUs", 6, 50, 20, key="bench_n_skus"
+        )
+        analysis_params["benchmark_n_weeks"] = st.sidebar.slider(
+            "Weeks of Data", 20, 104, 52, key="bench_n_weeks"
+        )
+        analysis_params["benchmark_n_categories"] = st.sidebar.slider(
+            "Categories", 1, 6, 3, key="bench_n_cats"
         )
 
     elif analysis_mode == "Choice Prediction Model":
