@@ -7,6 +7,13 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+# Optional statsmodels for robust OLS
+try:
+    import statsmodels.api as sm
+    STATSMODELS_AVAILABLE = True
+except ImportError:
+    STATSMODELS_AVAILABLE = False
+
 warnings.filterwarnings("ignore")
 
 
@@ -24,6 +31,7 @@ def estimate_loglog_elasticity(
     freq: str = "W",
     min_periods: int = 10,
     min_price_variation: float = 0.05,
+    use_robust_se: bool = True,
 ) -> pd.DataFrame:
     """
     Per-SKU log-log OLS elasticity: log(qty) = alpha + beta * log(price) + seasonality.
@@ -62,9 +70,23 @@ def estimate_loglog_elasticity(
         if len(log_price) < min_periods:
             continue
 
-        slope, intercept, r_value, p_value, std_err = stats.linregress(log_price, log_qty)
-        elasticity = slope
-        r_squared = r_value**2
+        # Use statsmodels OLS with robust SE if available, fallback to scipy
+        if use_robust_se and STATSMODELS_AVAILABLE:
+            import statsmodels.api as sm
+            X = sm.add_constant(log_price)
+            model = sm.OLS(log_qty, X).fit(cov_type="HC3")
+            elasticity = model.params[log_price.name]
+            std_err = model.bse[log_price.name]
+            p_value = model.pvalues[log_price.name]
+            r_squared = model.rsquared
+            conf_int = model.conf_int().loc[log_price.name]
+            ci_lower, ci_upper = conf_int[0], conf_int[1]
+        else:
+            slope, intercept, r_value, p_value, std_err = stats.linregress(log_price, log_qty)
+            elasticity = slope
+            r_squared = r_value**2
+            ci_lower = elasticity - 1.96 * std_err
+            ci_upper = elasticity + 1.96 * std_err
 
         results.append(
             {
@@ -73,6 +95,8 @@ def estimate_loglog_elasticity(
                 "r_squared": r_squared,
                 "p_value": p_value,
                 "std_err": std_err,
+                "ci_lower": ci_lower,
+                "ci_upper": ci_upper,
                 "n_obs": len(log_price),
                 "avg_price": weekly["avg_price"].mean(),
                 "avg_weekly_qty": weekly["total_qty"].mean(),

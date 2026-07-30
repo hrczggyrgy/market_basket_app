@@ -10,8 +10,10 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+import streamlit as st
 
 
+@st.cache_data
 def build_customer_sequences(
     transactions_df: pd.DataFrame,
     customer_col: str = "customer_id",
@@ -240,6 +242,7 @@ def compute_jaccard(table: Dict[str, int]) -> float:
     return both / union
 
 
+@st.cache_data
 def compute_pmi_matrix(
     transactions_df: pd.DataFrame,
     customer_col: str = "customer_id",
@@ -308,6 +311,7 @@ def compute_pmi_matrix(
     return pd.DataFrame(pmi, index=products, columns=products)
 
 
+@st.cache_data
 def compute_cosine_tfidf_matrix(
     transactions_df: pd.DataFrame,
     customer_col: str = "customer_id",
@@ -360,7 +364,8 @@ def compute_cosine_tfidf_matrix(
     return pd.DataFrame(sim, index=products, columns=products)
 
 
-def _build_similarity_matrix_vectorized(
+@st.cache_data(hash_funcs={pd.DataFrame: _hash_dataframe})
+def _build_sim_vectorized(
     transactions_df: pd.DataFrame,
     customer_col: str = "customer_id",
     product_col: str = "stockcode",
@@ -424,6 +429,7 @@ def _build_similarity_matrix_vectorized(
     return pd.DataFrame(sim, index=products, columns=products)
 
 
+@st.cache_data(hash_funcs={pd.DataFrame: _hash_dataframe})
 def build_similarity_matrix(
     transactions_df: pd.DataFrame,
     customer_col: str = "customer_id",
@@ -459,11 +465,11 @@ def build_similarity_matrix(
         )
         return matrices.get("ensemble", pd.DataFrame())
     if method == "phi":
-        return _build_similarity_matrix_vectorized(
+        return _build_sim_vectorized(
             transactions_df, customer_col, product_col, "phi", min_cooccurrence, min_product_support
         )
     elif method == "jaccard":
-        return _build_similarity_matrix_vectorized(
+        return _build_sim_vectorized(
             transactions_df,
             customer_col,
             product_col,
@@ -483,6 +489,7 @@ def build_similarity_matrix(
         raise ValueError(f"Unknown similarity method: {method}")
 
 
+@st.cache_data(hash_funcs={pd.DataFrame: _hash_dataframe})
 def build_similarity_matrix_ensemble(
     transactions_df: pd.DataFrame,
     customer_col: str = "customer_id",

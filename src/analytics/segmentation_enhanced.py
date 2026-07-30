@@ -145,7 +145,9 @@ def compute_cluster_quality_metrics(
         return {}
 
     try:
-        sil = silhouette_score(features[mask], labels[mask])
+        # ALG-6: Use sampled silhouette for large datasets to avoid O(n²) memory
+        sample_size = min(5000, valid_count)
+        sil = silhouette_score(features[mask], labels[mask], sample_size=sample_size, random_state=42)
         db = davies_bouldin_score(features[mask], labels[mask])
         sizes = pd.Series(labels[mask]).value_counts()
         return {
@@ -298,7 +300,174 @@ class CLVPrediction:
         )
 
         self.features = features
-        return features
+return features
+
+
+# =====================================================================
+# BG/NBD CLV MODEL (ALG-2) - Proper Probabilistic CLV
+# =====================================================================
+
+
+def predict_clv_bg_nbd(
+    transactions_df: pd.DataFrame,
+    prediction_horizon_days: int = 90,
+    freq: str = "D",
+) -> Tuple[pd.DataFrame, Dict]:
+    """Predict Customer Lifetime Value using BG/NBD + Gamma-Gamma model.
+    
+    This is the industry-standard probabilistic CLV model (Fader, Hardie, Lee 2005).
+    BG/NBD models purchase frequency/recency, Gamma-Gamma models monetary value.
+    
+    Args:
+        transactions_df: Transaction data with customer_id, date, price, quantity
+        prediction_horizon_days: Days into future to predict
+        freq: 'D' for daily, 'W' for weekly
+        
+    Returns:
+        (DataFrame with customer_id, predicted_clv, predicted_purchases, 
+         expected_avg_value, clv_segment, model_diagnostics)
+    """
+    if not LIFELINES_AVAILABLE:
+        raise ImportError("lifetimes required: pip install lifetimes")
+    
+    from lifetimes import BetaGeoFitter, GammaGammaFitter
+    from lifetimes.utils import summary_data_from_transaction_data
+    
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["revenue"] = df["price"] * df["quantity"]
+    
+    # Prepare summary data for BG/NBD
+    # observation_period_end is the cutoff date
+    observation_period_end = df["date"].max() - pd.Timedelta(prediction_horizon_days, unit="D")
+    
+    summary = summary_data_from_transaction_data(
+        df,
+        customer_id_col="customer_id",
+        datetime_col="date",
+        monetary_value_col="revenue",
+        observation_period_end=observation_period_end,
+        freq=freq,
+    )
+    
+    # summary has: frequency, recency, T, monetary_value
+    # frequency = number of repeat purchases
+    # recency = days since first purchase to last purchase
+    # T = days since first purchase to observation_period_end
+    # monetary_value = average order value
+    
+    # Filter customers with at least 1 repeat purchase for Gamma-Gamma
+    summary_cal = summary[summary["frequency"] > 0].copy()
+    
+    if len(summary_cal) < 10:
+        # Not enough repeat customers, fallback
+        return _clv_fallback(transactions_df, prediction_horizon_days)
+    
+    # Fit BG/NBD for purchase prediction
+    bgf = BetaGeoFitter(penalizer_coef=0.01)
+    bgf.fit(summary_cal["frequency"], summary_cal["recency"], summary_cal["T"])
+    
+    # Fit Gamma-Gamma for monetary value prediction
+    ggf = GammaGammaFitter(penalizer_coef=0.01)
+    ggf.fit(summary_cal["frequency"], summary_cal["monetary_value"])
+    
+    # Predict expected purchases in horizon
+    t = prediction_horizon_days if freq == "D" else prediction_horizon_days / 7
+    summary_cal["predicted_purchases"] = bgf.conditional_expected_number_of_purchases_up_to_time(
+        t, summary_cal["frequency"], summary_cal["recency"], summary_cal["T"]
+    )
+    
+    # Predict expected average order value
+    summary_cal["expected_avg_value"] = ggf.conditional_expected_average_profit(
+        summary_cal["frequency"], summary_cal["monetary_value"]
+    )
+    
+    # CLV = predicted_purchases * expected_avg_value
+    summary_cal["predicted_clv"] = (
+        summary_cal["predicted_purchases"] * summary_cal["expected_avg_value"]
+    )
+    
+    # Also predict probability alive
+    summary_cal["p_alive"] = bgf.conditional_probability_alive(
+        summary_cal["frequency"], summary_cal["recency"], summary_cal["T"]
+    )
+    
+    # Prepare output
+    result = summary_cal[["predicted_purchases", "expected_avg_value", "predicted_clv", "p_alive"]].copy()
+    result = result.reset_index()
+    result.columns = ["customer_id", "predicted_purchases", "expected_avg_value", "predicted_clv", "p_alive"]
+    
+    # Add segment labels
+    result["clv_segment"] = pd.qcut(
+        result["predicted_clv"],
+        q=4,
+        labels=["Bronze", "Silver", "Gold", "Platinum"],
+        duplicates="drop",
+    )
+    
+    # Model diagnostics
+    diagnostics = {
+        "bgf_params": {
+            "r": float(bgf.params_["r"]),
+            "alpha": float(bgf.params_["alpha"]),
+            "a": float(bgf.params_["a"]),
+            "b": float(bgf.params_["b"]),
+            "log_likelihood": float(bgf._log_likelihood),
+        },
+        "ggf_params": {
+            "p": float(ggf.params_["p"]),
+            "q": float(ggf.params_["q"]),
+            "v": float(ggf.params_["v"]),
+            "log_likelihood": float(ggf._log_likelihood),
+        },
+        "n_customers_fit": len(summary_cal),
+        "n_customers_total": len(summary),
+    }
+    
+    return result, diagnostics
+
+
+def _clv_fallback(
+    transactions_df: pd.DataFrame,
+    prediction_horizon_days: int,
+) -> Tuple[pd.DataFrame, Dict]:
+    """Fallback CLV when insufficient repeat customers for BG/NBD."""
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["revenue"] = df["price"] * df["quantity"]
+    
+    snapshot = df["date"].max()
+    cutoff = snapshot - pd.Timedelta(prediction_horizon_days, unit="D")
+    
+    hist = df[df["date"] < cutoff]
+    
+    features = (
+        hist.groupby("customer_id")
+        .agg(
+            recency=("date", lambda x: int((cutoff - x.max()).days)),
+            frequency=("transaction_id", "nunique"),
+            monetary=("revenue", "sum"),
+            avg_order=("revenue", "mean"),
+            lifetime_days=("date", lambda x: int((x.max() - x.min()).days + 1)),
+        )
+        .reset_index()
+    )
+    
+    features["lifetime_days"] = features["lifetime_days"].clip(lower=1)
+    annual_value = features["monetary"] / (features["lifetime_days"] / 365)
+    survival_prob = np.clip(1 - features["recency"] / (features["lifetime_days"] + features["recency"]), 0, 1)
+    features["predicted_clv"] = annual_value * survival_prob * 2
+    
+    features["clv_segment"] = pd.qcut(
+        features["predicted_clv"],
+        q=4,
+        labels=["Bronze", "Silver", "Gold", "Platinum"],
+        duplicates="drop",
+    )
+    
+    diagnostics = {"fallback": True, "reason": "Insufficient repeat customers for BG/NBD"}
+    
+    return features[["customer_id", "predicted_clv", "clv_segment", "recency", "frequency", "monetary"]], diagnostics
 
     def baseline_predictions(self) -> pd.DataFrame:
         """Compute simple benchmark baselines for CLV comparison."""

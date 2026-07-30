@@ -23,6 +23,7 @@ References
 import numpy as np
 import pandas as pd
 from scipy.stats import fisher_exact
+from sklearn.utils import resample
 
 # ---------------------------------------------------------------------------
 # 1. Statistical significance
@@ -274,3 +275,177 @@ def enrich_pairs_with_extended_metrics(
     # Add significance
     df = add_significance_to_pairs(df, transactions_df)
     return df
+
+
+# ---------------------------------------------------------------------------
+# 3. Bootstrap Confidence Intervals for Lift (ALG-4)
+# ---------------------------------------------------------------------------
+
+
+def bootstrap_lift_ci(
+    rules_df: pd.DataFrame,
+    transactions_df: pd.DataFrame,
+    n_bootstrap: int = 200,
+    confidence_level: float = 0.95,
+    product_col: str = "stockcode",
+    customer_col: str = "customer_id",
+) -> pd.DataFrame:
+    """Compute bootstrap confidence intervals for association rule lift.
+
+    Resamples customers with replacement n_bootstrap times, recomputes lift
+    for each rule, and returns the 2.5th and 97.5th percentile (or configurable).
+
+    This addresses the high variance of point-estimate lift at low support.
+
+    Args:
+        rules_df: DataFrame with columns product_a, product_b (and optionally lift)
+        transactions_df: Raw transaction data
+        n_bootstrap: Number of bootstrap iterations (default 200)
+        confidence_level: Confidence level for CI (default 0.95)
+        product_col: Product identifier column
+        customer_col: Customer identifier column
+
+    Returns:
+        DataFrame with original rules + lift_ci_lower, lift_ci_upper, lift_mean_boot
+    """
+    from src.algorithms.fpgrowth import create_basket_matrix
+
+    # Build original basket matrix
+    basket = create_basket_matrix(transactions_df)
+    n_customers = len(basket)
+    product_probs = basket.mean()
+
+    # Get unique rules
+    rules = rules_df[["product_a", "product_b"]].drop_duplicates()
+
+    # Pre-compute customer-level baskets for fast resampling
+    # basket is already customer x product binary matrix
+    customer_ids = basket.index.tolist()
+
+    alpha = (1 - confidence_level) / 2
+    lower_q = alpha
+    upper_q = 1 - alpha
+
+    lift_samples = {idx: [] for idx in rules.index}
+
+    for i in range(n_bootstrap):
+        # Resample customers with replacement
+        sample_ids = resample(customer_ids, replace=True, n_samples=n_customers, random_state=42 + i)
+        basket_sample = basket.loc[sample_ids]
+
+        # Compute probabilities on resampled data
+        p_a = basket_sample.mean()
+        p_ab = (basket_sample > 0).all(axis=1).mean()  # This is wrong - need pairwise
+
+        # Better: compute co-occurrence matrix for this sample
+        # Use matrix multiplication for speed
+        coocc = (basket_sample.T @ basket_sample) / n_customers
+        np.fill_diagonal(coocc.values, p_a.values)
+
+        for idx, row in rules.iterrows():
+            pa = row["product_a"]
+            pb = row["product_b"]
+            if pa in coocc.index and pb in coocc.columns:
+                p_ab = coocc.loc[pa, pb]
+                p_a_val = p_a.get(pa, 0)
+                p_b_val = p_a.get(pb, 0)
+                if p_a_val > 0 and p_b_val > 0:
+                    lift = p_ab / (p_a_val * p_b_val)
+                    lift_samples[idx].append(lift)
+
+    # Compute CIs
+    results = []
+    for idx, row in rules.iterrows():
+        samples = lift_samples[idx]
+        if len(samples) >= 10:
+            lower = np.percentile(samples, lower_q * 100)
+            upper = np.percentile(samples, upper_q * 100)
+            mean_boot = np.mean(samples)
+        else:
+            lower = np.nan
+            upper = np.nan
+            mean_boot = np.nan
+        results.append({
+            "product_a": row["product_a"],
+            "product_b": row["product_b"],
+            "lift_ci_lower": lower,
+            "lift_ci_upper": upper,
+            "lift_mean_boot": mean_boot,
+            "lift_n_boot": len(samples),
+        })
+
+    ci_df = pd.DataFrame(results)
+    return rules_df.merge(ci_df, on=["product_a", "product_b"], how="left")
+
+
+def bootstrap_lift_ci_fast(
+    rules_df: pd.DataFrame,
+    basket_matrix: pd.DataFrame,
+    n_bootstrap: int = 200,
+    confidence_level: float = 0.95,
+) -> pd.DataFrame:
+    """Optimized version using pre-computed basket matrix.
+
+    Args:
+        rules_df: DataFrame with product_a, product_b columns
+        basket_matrix: Pre-computed binary customer-product matrix (customers x products)
+        n_bootstrap: Number of bootstrap iterations
+        confidence_level: Confidence level for CI
+
+    Returns:
+        DataFrame with original rules + lift_ci_lower, lift_ci_upper, lift_mean_boot
+    """
+    n_customers = len(basket_matrix)
+    customer_ids = basket_matrix.index.tolist()
+    product_probs = basket_matrix.mean()
+
+    rules = rules_df[["product_a", "product_b"]].drop_duplicates()
+
+    alpha = (1 - confidence_level) / 2
+    lower_q = alpha
+    upper_q = 1 - alpha
+
+    lift_samples = {idx: [] for idx in rules.index}
+
+    for i in range(n_bootstrap):
+        sample_ids = resample(customer_ids, replace=True, n_samples=n_customers, random_state=42 + i)
+        basket_sample = basket_matrix.loc[sample_ids]
+
+        # Fast co-occurrence via matrix multiplication
+        coocc = (basket_sample.T @ basket_sample) / n_customers
+        np.fill_diagonal(coocc.values, product_probs.values)
+
+        for idx, row in rules.iterrows():
+            pa = row["product_a"]
+            pb = row["product_b"]
+            if pa in coocc.index and pb in coocc.columns:
+                p_ab = coocc.loc[pa, pb]
+                p_a_val = product_probs.get(pa, 0)
+                p_b_val = product_probs.get(pb, 0)
+                if p_a_val > 0 and p_b_val > 0:
+                    lift = p_ab / (p_a_val * p_b_val)
+                    lift_samples[idx].append(lift)
+
+    # Compute CIs
+    results = []
+    for idx, row in rules.iterrows():
+        samples = lift_samples[idx]
+        if len(samples) >= 10:
+            lower = np.percentile(samples, lower_q * 100)
+            upper = np.percentile(samples, upper_q * 100)
+            mean_boot = np.mean(samples)
+        else:
+            lower = np.nan
+            upper = np.nan
+            mean_boot = np.nan
+        results.append({
+            "product_a": row["product_a"],
+            "product_b": row["product_b"],
+            "lift_ci_lower": lower,
+            "lift_ci_upper": upper,
+            "lift_mean_boot": mean_boot,
+            "lift_n_boot": len(samples),
+        })
+
+    ci_df = pd.DataFrame(results)
+    return rules_df.merge(ci_df, on=["product_a", "product_b"], how="left")

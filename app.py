@@ -83,6 +83,9 @@ def main():
                 )
 
         if transactions_df is not None and not transactions_df.empty:
+            # Store in session state for dynamic UI elements (e.g., delist products multiselect)
+            st.session_state["loaded_df"] = transactions_df
+            
             # Create product lookup
             product_lookup = get_product_lookup(transactions_df)
 
