@@ -590,7 +590,12 @@ def build_cdt(
     # Compute tree quality
     tree_quality = score_tree(root, similarity_matrix)
 
-    # Compare to baseline
+    # Compare to baseline - use number of leaves as max_clusters for fair comparison
+    n_leaves = count_leaves(root)
+    unconstrained_baseline = compute_unconstrained_baseline(
+        similarity_matrix, max_clusters=n_leaves
+    )
+
     quality_ratio = tree_quality / unconstrained_baseline if unconstrained_baseline > 0 else 0
     passed_threshold = quality_ratio >= quality_threshold
 

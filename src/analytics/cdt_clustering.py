@@ -289,22 +289,38 @@ def compute_unconstrained_baseline(
     similarity_matrix: pd.DataFrame,
     linkage_method: str = "average",
     distance_method: str = "phi",
+    max_clusters: int = None,
 ) -> float:
     """
-    Compute quality of unconstrained (optimal) clustering as baseline.
+    Compute the best possible clustering quality (unconstrained baseline).
 
-    Finds the best possible clustering quality without attribute constraints.
-    Uses weighted average within-cluster similarity (matches CDT tree quality).
+    Uses hierarchical clustering without min_cluster_size constraint to find
+    the theoretical maximum weighted within-cluster similarity.
+
+    Args:
+        similarity_matrix: Product similarity matrix
+        linkage_method: Hierarchical clustering linkage method
+        distance_method: Distance method ('phi', 'jaccard', etc.)
+        max_clusters: Maximum number of clusters to search (default: n_products - 1)
 
     Returns:
         Best weighted within-cluster similarity achievable
     """
+    if len(similarity_matrix) < 2:
+        return 1.0
+
     linkage_matrix, _ = perform_hierarchical_clustering(
         similarity_matrix, linkage_method, distance_method
     )
 
     best_quality = 0.0
-    max_clusters = min(20, len(similarity_matrix) - 1)
+    if max_clusters is None:
+        max_clusters = min(20, len(similarity_matrix) - 1)
+    else:
+        max_clusters = min(max_clusters, len(similarity_matrix) - 1)
+
+    if max_clusters < 2:
+        return 1.0
 
     for k in range(2, max_clusters + 1):
         assignments = get_cluster_assignments(linkage_matrix, similarity_matrix, n_clusters=k)
