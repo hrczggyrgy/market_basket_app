@@ -163,6 +163,176 @@ def estimate_hierarchical_elasticity(
     return ols_df
 
 
+def estimate_bayesian_hierarchical_elasticity(
+    transactions_df: pd.DataFrame,
+    category_col: str = "category",
+    freq: str = "W",
+    min_periods: int = 10,
+    min_price_variation: float = 0.05,
+    n_samples: int = 500,
+    n_tune: int = 500,
+    bayesian_mode: str = "fast (ADVI)",
+) -> pd.DataFrame:
+    """
+    Three-tier Bayesian hierarchical elasticity via PyMC.
+
+    Tiers:
+      1. Global (population) mean & variance for elasticity and intercept.
+      2. Category-level partial pooling.
+      3. SKU-level elasticities shrunk toward category means.
+
+    Parameters
+    ----------
+    bayesian_mode : str
+        "fast (ADVI)" uses variational inference (ADVI).
+        "full (NUTS)" uses NUTS MCMC (slower but exact).
+
+    Returns
+    -------
+    DataFrame with columns:
+        stockcode, category, elasticity_mean, elasticity_sd,
+        elasticity_hdi_lower, elasticity_hdi_upper, n_obs, avg_price.
+    """
+    try:
+        import pymc as pm
+    except ImportError:
+        raise ImportError("PyMC >= 5.0.0 required: pip install pymc")
+
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+
+    # --- 1. Aggregate to weekly level per SKU ---
+    records = []
+    for product_id in df["stockcode"].unique():
+        prod_df = df[df["stockcode"] == product_id]
+        cat = prod_df[category_col].iloc[0] if category_col in prod_df.columns else "UNKNOWN"
+
+        weekly = (
+            prod_df.set_index("date")
+            .groupby(pd.Grouper(freq=freq))
+            .agg(avg_price=("price", "mean"), total_qty=("quantity", "sum"))
+            .dropna()
+        )
+
+        if len(weekly) < min_periods:
+            continue
+        price_cv = weekly["avg_price"].std() / weekly["avg_price"].mean()
+        if price_cv < min_price_variation:
+            continue
+
+        weekly = weekly.reset_index()
+        weekly["stockcode"] = product_id
+        weekly["category"] = cat
+        records.append(weekly)
+
+    if not records:
+        return pd.DataFrame()
+
+    agg_df = pd.concat(records, ignore_index=True)
+    agg_df["log_price"] = np.log(agg_df["avg_price"].clip(lower=1e-6))
+    agg_df["log_qty"] = np.log(agg_df["total_qty"].clip(lower=1e-6))
+
+    # Encode indices
+    categories = agg_df["category"].unique()
+    cat_to_idx = {c: i for i, c in enumerate(categories)}
+    cat_idx = agg_df["category"].map(cat_to_idx).values
+
+    stockcodes = agg_df["stockcode"].unique()
+    sku_to_idx = {s: i for i, s in enumerate(stockcodes)}
+    sku_idx = agg_df["stockcode"].map(sku_to_idx).values
+
+    # Per-SKU category index (each SKU belongs to exactly one category)
+    sku_cat = agg_df.groupby("stockcode")["category"].first()
+    sku_cat_idx = np.array([cat_to_idx[c] for c in sku_cat])
+
+    n_cats = len(categories)
+    n_skus = len(stockcodes)
+    n_obs = len(agg_df)
+
+    # --- 2. Build PyMC model ---
+    coords = {
+        "category": categories,
+        "sku": stockcodes,
+        "observation": range(n_obs),
+    }
+
+    with pm.Model(coords=coords) as model:
+        log_price_data = pm.Data("log_price_data", agg_df["log_price"].values)
+        cat_idx_data = pm.Data("cat_idx_data", cat_idx)
+        sku_idx_data = pm.Data("sku_idx_data", sku_idx)
+
+        # Tier 1 — global
+        mu_alpha = pm.Normal("mu_alpha", 0, 1)
+        sigma_alpha = pm.HalfNormal("sigma_alpha", 1)
+        mu_beta = pm.Normal("mu_beta", -1, 1)
+        sigma_beta = pm.HalfNormal("sigma_beta", 1)
+
+        # Tier 2 — category
+        alpha_cat = pm.Normal("alpha_cat", mu_alpha, sigma_alpha, dims="category")
+        beta_cat = pm.Normal("beta_cat", mu_beta, sigma_beta, dims="category")
+
+        # Tier 3 — SKU (each SKU belongs to one category determined by sku_cat_idx)
+        sigma_sku = pm.HalfNormal("sigma_sku", 1)
+        alpha_sku = pm.Normal(
+            "alpha_sku", alpha_cat[sku_cat_idx], sigma_sku, dims="sku"
+        )
+        beta_sku = pm.Normal(
+            "beta_sku", beta_cat[sku_cat_idx], sigma_sku, dims="sku"
+        )
+
+        mu = alpha_sku[sku_idx_data] + beta_sku[sku_idx_data] * log_price_data
+        sigma = pm.HalfNormal("sigma", 1)
+
+        pm.Normal("likelihood", mu, sigma, observed=agg_df["log_qty"].values, dims="observation")
+
+        # --- 3. Inference ---
+        if bayesian_mode.startswith("fast"):
+            approx = pm.fit(n=n_samples, method="advi", obj_optimizer=pm.adam(learning_rate=0.01))
+            trace = approx.sample(n_samples)
+        else:
+            trace = pm.sample(
+                draws=n_samples,
+                tune=n_tune,
+                chains=2,
+                cores=1,
+                progressbar=False,
+                random_seed=42,
+            )
+
+    # --- 4. Extract SKU-level posterior ---
+    alpha_post = trace.posterior["alpha_sku"] if hasattr(trace, "posterior") else trace["alpha_sku"]
+    beta_post = trace.posterior["beta_sku"] if hasattr(trace, "posterior") else trace["beta_sku"]
+
+    alpha_mean = alpha_post.mean(dim=("chain", "draw")).values if hasattr(alpha_post, "mean") else alpha_post.mean(axis=0)
+    beta_mean = beta_post.mean(dim=("chain", "draw")).values if hasattr(beta_post, "mean") else beta_post.mean(axis=0)
+    beta_sd = beta_post.std(dim=("chain", "draw")).values if hasattr(beta_post, "std") else beta_post.std(axis=0)
+
+    # HDI (highest density interval)
+    try:
+        import arviz as az
+
+        hdi = az.hdi(beta_post, prob=0.94)
+        beta_hdi_lower = hdi.sel(hdi="lower").values if hasattr(hdi, "sel") else hdi[:, 0]
+        beta_hdi_upper = hdi.sel(hdi="higher").values if hasattr(hdi, "sel") else hdi[:, 1]
+    except Exception:
+        beta_hdi_lower = beta_mean - 1.96 * beta_sd
+        beta_hdi_upper = beta_mean + 1.96 * beta_sd
+
+    # Per-SKU summary
+    sku_stats = agg_df.groupby("stockcode").agg(
+        category=("category", "first"),
+        n_obs=("total_qty", "size"),
+        avg_price=("avg_price", "mean"),
+    ).reset_index()
+
+    sku_stats["elasticity_mean"] = beta_mean
+    sku_stats["elasticity_sd"] = beta_sd
+    sku_stats["elasticity_hdi_lower"] = beta_hdi_lower
+    sku_stats["elasticity_hdi_upper"] = beta_hdi_upper
+
+    return sku_stats
+
+
 def estimate_elasticity_xgb(
     transactions_df: pd.DataFrame,
     product_col: str = "stockcode",

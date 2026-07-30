@@ -218,7 +218,7 @@ def render_rules_analysis(transactions_df: pd.DataFrame, product_lookup: dict, p
     )
 
     with tab1:
-        render_rules_tab(filtered_rules, product_lookup, params)
+        render_rules_tab(filtered_rules, product_lookup, params, transactions_df)
         render_export_buttons(filtered_rules, product_lookup, prefix="rules")
 
     with tab2:

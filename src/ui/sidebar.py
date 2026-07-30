@@ -187,6 +187,16 @@ def render_sidebar() -> Config:
     # Analysis-specific options
     analysis_params: Dict[str, Any] = {}
 
+    # Global Bayesian sampling mode (Fast ADVI / Full NUTS)
+    analysis_params["bayesian_mode"] = st.sidebar.radio(
+        "Bayesian Sampling Mode",
+        ["fast (ADVI)", "full (NUTS)"],
+        index=0,
+        key="bayesian_mode_global",
+        help="Fast = ADVI (variational inference, approximate but quick). "
+        "Full = NUTS (MCMC, exact but slower).",
+    )
+
     if analysis_mode == "Co-purchase":
         analysis_params["top_n_products"] = st.sidebar.slider(
             "Top N Products", 10, 200, 50, key="copurchase_top_n"
@@ -318,7 +328,7 @@ def render_sidebar() -> Config:
     elif analysis_mode == "Elasticity Analysis":
         analysis_params["elasticity_method"] = st.sidebar.selectbox(
             "Method",
-            ["loglog_ols", "hierarchical_eb", "xgb"],
+            ["loglog_ols", "hierarchical_eb", "bayesian_hierarchical", "xgb"],
             index=0,
             key="price_elasticity_method",
         )

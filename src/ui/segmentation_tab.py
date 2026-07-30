@@ -57,6 +57,10 @@ from src.viz.cdt_viz import (
     plot_switching_network,
     plot_treemap,
 )
+from src.analytics.sufficiency import (
+    assess_data_sufficiency,
+    format_sufficiency_summary,
+)
 
 
 def _normalize_metrics(
@@ -165,6 +169,15 @@ def render_segmentation_tab(transactions_df: pd.DataFrame, product_lookup: dict,
     if transactions_df.empty:
         st.warning("No transaction data available")
         return
+
+    # Data sufficiency gate
+    sufficiency = assess_data_sufficiency(transactions_df)
+    with st.expander("📋 Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
+        st.markdown(format_sufficiency_summary(sufficiency))
+        if sufficiency["overall"] == "insufficient":
+            st.warning("Dataset may be too small for reliable segmentation.")
+        elif sufficiency["overall"] == "directional":
+            st.info("Segmentation results should be treated as directional.")
 
     # Enhanced tabs
     tab_labels = [

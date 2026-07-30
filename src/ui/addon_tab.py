@@ -7,6 +7,7 @@ import streamlit as st
 
 from src.analytics.addon import get_addon_recommendations, get_anchor_addon_matrix
 from src.ui.export import render_analytics_export
+from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 
 
 def render_addon_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
@@ -20,6 +21,15 @@ def render_addon_tab(transactions_df: pd.DataFrame, product_lookup: dict, params
     if transactions_df.empty:
         st.warning("No transaction data available")
         return
+
+    # Data sufficiency gate
+    sufficiency = assess_data_sufficiency(transactions_df)
+    with st.expander("📋 Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
+        st.markdown(format_sufficiency_summary(sufficiency))
+        if sufficiency["overall"] == "insufficient":
+            st.warning("Dataset may be too small for reliable add-on analysis.")
+        elif sufficiency["overall"] == "directional":
+            st.info("Add-on results should be treated as directional.")
 
     # Mode selection
     mode = st.radio(

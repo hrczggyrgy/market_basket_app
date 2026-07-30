@@ -99,6 +99,7 @@ from .demand_transference import (
 from .pricing import (
     compute_kvi_score,
     diagnose_price_curves,
+    estimate_bayesian_hierarchical_elasticity,
     estimate_elasticity_xgb,
     estimate_hierarchical_elasticity,
     estimate_loglog_elasticity,
@@ -260,6 +261,7 @@ __all__ = [
     # Pricing
     "estimate_loglog_elasticity",
     "estimate_hierarchical_elasticity",
+    "estimate_bayesian_hierarchical_elasticity",
     "estimate_elasticity_xgb",
     "compute_kvi_score",
     "diagnose_price_curves",

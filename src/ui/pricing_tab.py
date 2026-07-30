@@ -15,11 +15,13 @@ from src.analytics import (
     compute_basket_penetration,
     compute_basket_value_uplift,
     compute_product_metrics,
+    estimate_bayesian_hierarchical_elasticity,
 )
 from src.analytics.sufficiency import (
     assess_data_sufficiency,
     format_sufficiency_summary,
 )
+from src.utils.cache import get_trace_cache, trace_cache_key
 
 warnings.filterwarnings("ignore")
 
@@ -106,7 +108,7 @@ def _render_elasticity_analysis(transactions_df: pd.DataFrame, product_lookup: d
             f"Estimating elasticity for {len(top_products)} products using {method}..."
         ):
             elasticity_results = estimate_all_elasticities(
-                transactions_df, top_products, method, min_periods, min_price_variation
+                transactions_df, top_products, method, min_periods, min_price_variation, params
             )
 
         if not elasticity_results.empty:
@@ -123,6 +125,44 @@ def _render_single_product_elasticity(
     params: dict,
 ):
     """Render detailed elasticity analysis for a single product."""
+
+    method = params.get("elasticity_method", "loglog_ols")
+
+    # Bayesian single-product mode (uses the hierarchical result filtered to this SKU)
+    if method == "bayesian_hierarchical":
+        bayesian_mode = params.get("bayesian_mode", "fast (ADVI)")
+        with st.spinner("Running Bayesian hierarchical model..."):
+            all_results = estimate_bayesian_hierarchical_elasticity(
+                transactions_df,
+                min_periods=params.get("min_periods", 10),
+                min_price_variation=params.get("min_price_variation", 0.05),
+                bayesian_mode=bayesian_mode,
+            )
+        if all_results.empty:
+            st.warning("Bayesian model did not converge.")
+            return
+        row = all_results[all_results["stockcode"] == product_id]
+        if row.empty:
+            st.info("This product did not meet minimum data requirements for Bayesian estimation.")
+            return
+        row = row.iloc[0]
+        st.subheader(f"📊 Bayesian Elasticity: {product_lookup.get(product_id, product_id)}")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Elasticity (posterior mean)", f"{row['elasticity_mean']:.3f}")
+        with col2:
+            st.metric("Posterior SD", f"{row['elasticity_sd']:.3f}")
+        with col3:
+            st.metric("94% HDI Lower", f"{row['elasticity_hdi_lower']:.3f}")
+        with col4:
+            st.metric("94% HDI Upper", f"{row['elasticity_hdi_upper']:.3f}")
+        if row["elasticity_hdi_lower"] < 0 and row["elasticity_hdi_upper"] < 0:
+            st.info("🔴 **Elastic** — 94% HDI entirely below zero (demand sensitive to price).")
+        elif row["elasticity_hdi_lower"] < 0 < row["elasticity_hdi_upper"]:
+            st.warning("🟡 **Uncertain** — HDI crosses zero (insufficient evidence of price effect).")
+        else:
+            st.info("🟢 **Positive** — HDI above zero (possible promo effect or omitted variable bias).")
+        return
 
     prod_df = transactions_df[transactions_df["stockcode"] == product_id].copy()
     prod_df["date"] = pd.to_datetime(prod_df["date"])
@@ -216,8 +256,23 @@ def estimate_all_elasticities(
     method: str,
     min_periods: int,
     min_price_variation: float,
+    params: dict | None = None,
 ) -> pd.DataFrame:
     """Estimate elasticity for multiple products."""
+
+    if method == "bayesian_hierarchical":
+        bayesian_mode = (params or {}).get("bayesian_mode", "fast (ADVI)")
+        result = estimate_bayesian_hierarchical_elasticity(
+            transactions_df,
+            min_periods=min_periods,
+            min_price_variation=min_price_variation,
+            bayesian_mode=bayesian_mode,
+        )
+        if result.empty:
+            return result
+        result = result.rename(columns={"elasticity_mean": "elasticity"})
+        result["method"] = "bayesian_hierarchical"
+        return result
 
     results = []
 
@@ -298,6 +353,28 @@ def _render_elasticity_batch_results(elasticity_df: pd.DataFrame, product_lookup
     with col3:
         elastic_pct = (elasticity_df["elasticity"] < -1).mean() * 100
         st.metric("% Elastic (< -1)", f"{elastic_pct:.1f}%")
+
+    # Bayesian posterior diagnostics
+    if "elasticity_sd" in elasticity_df.columns:
+        st.subheader("🔬 Bayesian Posterior Diagnostics")
+        col_sd1, col_sd2, col_sd3 = st.columns(3)
+        with col_sd1:
+            st.metric("Mean Posterior SD", f"{elasticity_df['elasticity_sd'].mean():.3f}")
+        with col_sd2:
+            st.metric("Mean HDI Width (94%)", f"{(elasticity_df['elasticity_hdi_upper'] - elasticity_df['elasticity_hdi_lower']).mean():.3f}")
+        with col_sd3:
+            cross_zero = ((elasticity_df['elasticity_hdi_lower'] < 0) & (elasticity_df['elasticity_hdi_upper'] > 0)).mean() * 100
+            st.metric("% HDI Crosses Zero", f"{cross_zero:.1f}%")
+        hdi_fig = px.scatter(
+            elasticity_df,
+            x="elasticity",
+            y="elasticity_sd",
+            color="interpretation",
+            hover_data=["product_name"],
+            title="Posterior Mean vs SD (tighter = more certain)",
+            labels={"elasticity": "Elasticity (mean)", "elasticity_sd": "Posterior SD"},
+        )
+        st.plotly_chart(hdi_fig, use_container_width=True)
 
     # Histogram
     fig = px.histogram(

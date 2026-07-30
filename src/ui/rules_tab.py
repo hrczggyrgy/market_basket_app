@@ -10,9 +10,15 @@ from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
 from src.viz.heatmap import create_heatmap, create_scatter_heatmap
 from src.viz.network import create_network_graph
+from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 
 
-def render_rules_tab(rules: pd.DataFrame, product_lookup: dict, params: dict):
+def render_rules_tab(
+    rules: pd.DataFrame,
+    product_lookup: dict,
+    params: dict,
+    transactions_df: pd.DataFrame | None = None,
+):
     """Render association rules analysis tab with persistent sub-tabs."""
     st.header("📋 Association Rules")
     st.caption(
@@ -23,6 +29,16 @@ def render_rules_tab(rules: pd.DataFrame, product_lookup: dict, params: dict):
     if rules.empty:
         st.warning("No rules generated. Try lowering min_support or min_confidence.")
         return
+
+    # Data sufficiency gate (on source transactions if available)
+    if transactions_df is not None:
+        sufficiency = assess_data_sufficiency(transactions_df)
+        with st.expander("📋 Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
+            st.markdown(format_sufficiency_summary(sufficiency))
+            if sufficiency["overall"] == "insufficient":
+                st.warning("Dataset may be too small for reliable association rules.")
+            elif sufficiency["overall"] == "directional":
+                st.info("Association rule results should be treated as directional.")
 
     # Filter controls
     with st.expander(" Filter Rules", expanded=True):

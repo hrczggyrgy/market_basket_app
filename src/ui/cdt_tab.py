@@ -46,6 +46,10 @@ from src.viz.cdt_viz import (
     plot_switching_network,
     plot_treemap,
 )
+from src.analytics.sufficiency import (
+    assess_data_sufficiency,
+    format_sufficiency_summary,
+)
 
 # ---------------------------------------------------------------------------
 # CDT result tab labels  (keep in sync with _render_cdt_results_tabs)
@@ -160,6 +164,15 @@ def render_cdt_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: 
     if transactions_df.empty:
         st.warning("No transaction data available")
         return
+
+    # Data sufficiency gate
+    sufficiency = assess_data_sufficiency(transactions_df)
+    with st.expander("📋 Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
+        st.markdown(format_sufficiency_summary(sufficiency))
+        if sufficiency["overall"] == "insufficient":
+            st.warning("Dataset may be too small for reliable CDT analysis.")
+        elif sufficiency["overall"] == "directional":
+            st.info("CDT results should be treated as directional.")
 
     has_results = "cdt_root" in st.session_state
 

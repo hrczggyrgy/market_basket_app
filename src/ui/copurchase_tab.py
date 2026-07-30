@@ -12,6 +12,7 @@ from src.analytics.copurchase import (
 )
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
+from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 
 
 @st.cache_data
@@ -54,6 +55,15 @@ def render_copurchase_tab(transactions_df: pd.DataFrame, product_lookup: dict, p
     if transactions_df.empty:
         st.warning("No transaction data available")
         return
+
+    # Data sufficiency gate
+    sufficiency = assess_data_sufficiency(transactions_df)
+    with st.expander("📋 Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
+        st.markdown(format_sufficiency_summary(sufficiency))
+        if sufficiency["overall"] == "insufficient":
+            st.warning("Dataset may be too small for reliable co-purchase analysis.")
+        elif sufficiency["overall"] == "directional":
+            st.info("Co-purchase results should be treated as directional.")
 
     with st.expander("Affinity Parameters", expanded=False):
         col1, col2, col3 = st.columns(3)

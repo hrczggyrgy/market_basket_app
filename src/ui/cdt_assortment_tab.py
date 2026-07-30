@@ -45,6 +45,7 @@ from src.analytics.demand_transference import (
     node_delist_impact,
 )
 from src.viz.cdt_viz import plot_sunburst, plot_treemap
+from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 
 
 def render_cdt_assortment_tab(
@@ -54,6 +55,16 @@ def render_cdt_assortment_tab(
     mode: str = "cdt",
 ):
     """Main entry point for CDT & Assortment tab with sub-modes."""
+
+    # Data sufficiency gate (applies to all modes)
+    if not transactions_df.empty:
+        sufficiency = assess_data_sufficiency(transactions_df)
+        with st.expander("📋 Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
+            st.markdown(format_sufficiency_summary(sufficiency))
+            if sufficiency["overall"] == "insufficient":
+                st.warning("Dataset may be too small for reliable analysis.")
+            elif sufficiency["overall"] == "directional":
+                st.info("Results should be treated as directional.")
 
     if mode == "cdt":
         _render_cdt_builder(transactions_df, product_lookup, params)

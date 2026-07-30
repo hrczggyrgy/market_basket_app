@@ -20,6 +20,7 @@ from src.analytics.product_performance import (
 )
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
+from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 
 
 def render_product_performance_tab(
@@ -31,6 +32,15 @@ def render_product_performance_tab(
     if transactions_df.empty:
         st.warning("No transaction data available")
         return
+
+    # Data sufficiency gate
+    sufficiency = assess_data_sufficiency(transactions_df)
+    with st.expander("📋 Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
+        st.markdown(format_sufficiency_summary(sufficiency))
+        if sufficiency["overall"] == "insufficient":
+            st.warning("Dataset may be too small for reliable product performance analysis.")
+        elif sufficiency["overall"] == "directional":
+            st.info("Product performance results should be treated as directional.")
 
     # Persistent sub-tabs
     tab_labels = [
