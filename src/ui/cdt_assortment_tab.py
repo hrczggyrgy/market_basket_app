@@ -14,6 +14,7 @@ from src.analytics import (
     build_customer_sequences,
     build_similarity_matrix,
     build_similarity_matrix_ensemble,
+    compute_affinity_matrix,
     compute_bundling_matrix,
     compute_switching_matrix,
     extract_product_attributes,
@@ -341,12 +342,26 @@ def _render_behavioral_matrices(sim_matrix, cluster_assignments, product_lookup,
         min_transactions=params.get("min_switching_transactions", 2),
     )
     substitution_df = get_substitution_matrix(sim_matrix)
-    bundling_df = compute_bundling_matrix(
-        affinity_matrix=None,  # would need affinity matrix
-        substitution_matrix=substitution_df,
-        min_lift=params.get("min_lift", 1.2),
-        max_substitution=params.get("max_sub", 0.3),
-    )
+
+    # Build affinity matrix for bundling
+    with st.spinner("Building affinity matrix..."):
+        affinity_matrix = compute_affinity_matrix(
+            transactions_df,
+            min_support=params.get("min_support", 0.005),
+            min_lift=params.get("min_lift", 1.0),
+            top_n_products=params.get("top_n_products", 50),
+        )
+
+    if affinity_matrix.empty:
+        bundling_df = pd.DataFrame(columns=["product_a", "product_b", "lift", "substitution", "bundle_score"])
+    else:
+        bundling_df = compute_bundling_matrix(
+            affinity_matrix=affinity_matrix,
+            substitution_matrix=substitution_df,
+            top_n_products=params.get("top_n_products", 50),
+            min_lift=params.get("min_lift", 1.2),
+            max_substitution=params.get("max_sub", 0.3),
+        )
 
     sub_tab1, sub_tab2, sub_tab3 = st.tabs(["Switching", "Substitution", "Bundling"])
 
