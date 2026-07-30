@@ -205,7 +205,7 @@ def _render_cdt_builder(transactions_df: pd.DataFrame, product_lookup: dict, par
         )
 
     # Display CDT results
-    _render_cdt_results(root, metadata, sim_matrix, cluster_assignments, product_lookup)
+    _render_cdt_results(root, metadata, sim_matrix, cluster_assignments, product_lookup, transactions_df, params)
 
 
 def _render_similarity_comparison(similarity_matrices: Dict[str, pd.DataFrame]):
@@ -278,6 +278,8 @@ def _render_cdt_results(
     sim_matrix: pd.DataFrame,
     cluster_assignments: dict,
     product_lookup: dict,
+    transactions_df: pd.DataFrame,
+    params: dict,
 ):
     """Render CDT results with visualizations and export options."""
 
@@ -325,17 +327,18 @@ def _render_cdt_results(
     with st.expander(
         "🔄 Behavioral Matrices (Switching / Substitution / Bundling)", expanded=False
     ):
-        _render_behavioral_matrices(sim_matrix, cluster_assignments, product_lookup)
+        _render_behavioral_matrices(sim_matrix, cluster_assignments, product_lookup, params, transactions_df)
 
 
-def _render_behavioral_matrices(sim_matrix, cluster_assignments, product_lookup, params=None):
+def _render_behavioral_matrices(sim_matrix, cluster_assignments, product_lookup, params, transactions_df):
     """Render switching, substitution, and bundling matrices."""
-    if params is None:
-        params = {}
-
     switching_df = compute_switching_matrix(
-        cluster_assignments=cluster_assignments,
-        top_n_products=params.get("top_n_products", 50),
+        transactions_df,
+        product_col="stockcode",
+        customer_col="customer_id",
+        date_col="date",
+        window_days=params.get("window_days", 90),
+        min_transactions=params.get("min_switching_transactions", 2),
     )
     substitution_df = get_substitution_matrix(sim_matrix)
     bundling_df = compute_bundling_matrix(
