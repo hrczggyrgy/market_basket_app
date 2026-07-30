@@ -1301,8 +1301,8 @@ def compute_enhanced_behavioral_features(
         features["switching_entropy"] = 0
     
     # 5. Net switching tendency (using switching module)
-    from src.analytics.switching import compute_customer_loyalty_metrics
-    loyalty_metrics = compute_customer_loyalty_metrics(transactions_df)
+    from src.analytics.switching import get_customer_loyalty_metrics
+    loyalty_metrics = get_customer_loyalty_metrics(transactions_df)
     loyalty_metrics = loyalty_metrics[["customer_id", "switch_count", "switch_rate", "concentration_hhi", "loyalty_segment"]]
     features = features.merge(loyalty_metrics, on="customer_id", how="left")
     

@@ -30,6 +30,14 @@ except ImportError:
 # Algorithms
 from src.algorithms.fpgrowth import create_basket_matrix, run_fpgrowth
 
+# Switching
+from src.analytics import (
+    compute_brand_switching_matrix,
+    compute_switching_matrix,
+    detect_brand_switching,
+    get_customer_loyalty_metrics,
+)
+
 # CDT behavioral imports
 # Behavioral matrices
 from src.analytics.cdt_behavioral import (
@@ -74,14 +82,6 @@ from src.analytics.segmentation_enhanced import (
     compute_umap_projection,
     get_segment_recommendations,
     label_segment_business,
-)
-
-# Switching
-from src.analytics.switching import (
-    compute_brand_switching_matrix,
-    compute_switching_matrix,
-    detect_brand_switching,
-    get_customer_loyalty_metrics,
 )
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
@@ -2080,7 +2080,7 @@ def _render_brand_switching_tab(transactions_df: pd.DataFrame, product_lookup: d
         return
 
     with st.spinner("Computing brand switching..."):
-        from src.analytics.switching import compute_brand_switching_matrix, detect_brand_switching
+        from src.analytics import compute_brand_switching_matrix, detect_brand_switching
         brand_switches = detect_brand_switching(transactions_df, window_days=window_days)
 
     if brand_switches.empty:
