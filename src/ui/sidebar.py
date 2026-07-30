@@ -126,12 +126,12 @@ def render_sidebar() -> Config:
         "Analysis Category",
         [
             "Association Rules",
-            "CDT & Assortment",           # NEW primary
-            "Pricing & Promotions",        # NEW primary
+            "CDT & Assortment",  # NEW primary
+            "Pricing & Promotions",  # NEW primary
             "Customer Segmentation",
             "Product Performance",
             "Cohort Analysis",
-            "Promotional Analytics",       # Legacy - kept for compat
+            "Promotional Analytics",  # Legacy - kept for compat
         ],
         index=0,
         key="sidebar_analysis_category",
@@ -154,8 +154,8 @@ def render_sidebar() -> Config:
         analysis_mode = st.sidebar.radio(
             "CDT & Assortment Mode",
             [
-                "CDT Builder",           # enhanced CDT with community detection
-                "Demand Transference",   # delist simulation & substitution
+                "CDT Builder",  # enhanced CDT with community detection
+                "Demand Transference",  # delist simulation & substitution
                 "Assortment Optimizer",  # MILP/heuristic range optimization
             ],
             index=0,
@@ -165,10 +165,10 @@ def render_sidebar() -> Config:
         analysis_mode = st.sidebar.radio(
             "Pricing & Promotions Mode",
             [
-                "Elasticity Analysis",       # price elasticity estimation
-                "KVI Identification",        # key value item scoring
-                "Price Curve Diagnostics",   # tier clustering & violations
-                "Promo Uplift Modeling",     # causal uplift estimation
+                "Elasticity Analysis",  # price elasticity estimation
+                "KVI Identification",  # key value item scoring
+                "Price Curve Diagnostics",  # tier clustering & violations
+                "Promo Uplift Modeling",  # causal uplift estimation
             ],
             index=0,
             key="sidebar_analysis_mode_pricing",
@@ -258,7 +258,10 @@ def render_sidebar() -> Config:
             "Quality Threshold (%)", 40, 80, 60, key="cdt_quality"
         )
         analysis_params["split_criterion"] = st.sidebar.selectbox(
-            "Split Criterion", ["mutual_info", "gini", "entropy", "mixed"], index=0, key="cdt_split_criterion"
+            "Split Criterion",
+            ["mutual_info", "gini", "entropy", "mixed"],
+            index=0,
+            key="cdt_split_criterion",
         )
         analysis_params["split_alpha"] = st.sidebar.slider(
             "Split Alpha (entropy/Gini mix)", 0.0, 1.0, 0.5, 0.1, key="cdt_split_alpha"
@@ -314,7 +317,10 @@ def render_sidebar() -> Config:
 
     elif analysis_mode == "Elasticity Analysis":
         analysis_params["elasticity_method"] = st.sidebar.selectbox(
-            "Method", ["loglog_ols", "hierarchical_eb", "xgb"], index=0, key="price_elasticity_method"
+            "Method",
+            ["loglog_ols", "hierarchical_eb", "xgb"],
+            index=0,
+            key="price_elasticity_method",
         )
         analysis_params["min_periods"] = st.sidebar.slider(
             "Min Periods", 5, 50, 10, key="price_min_periods"
@@ -330,9 +336,7 @@ def render_sidebar() -> Config:
         analysis_params["kvi_method"] = st.sidebar.selectbox(
             "Method", ["xgb_importance", "rfm_elasticity"], index=0, key="kvi_method"
         )
-        analysis_params["top_k_kvi"] = st.sidebar.slider(
-            "Top K KVI", 10, 100, 20, key="kvi_top_k"
-        )
+        analysis_params["top_k_kvi"] = st.sidebar.slider("Top K KVI", 10, 100, 20, key="kvi_top_k")
         analysis_params["margin_weighted"] = st.sidebar.checkbox(
             "Margin-Weighted (if cost available)", value=False, key="kvi_margin_weighted"
         )

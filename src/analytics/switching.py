@@ -99,9 +99,8 @@ def compute_switching_matrix(
     switch_matrix = switch_matrix.merge(reverse, on=["from_product", "to_product"], how="left")
     switch_matrix["reverse_count"] = switch_matrix["reverse_count"].fillna(0)
     switch_matrix["asymmetry_ratio"] = (
-        (switch_matrix["switch_count"] - switch_matrix["reverse_count"])
-        / (switch_matrix["switch_count"] + switch_matrix["reverse_count"] + 1e-9)
-    )
+        switch_matrix["switch_count"] - switch_matrix["reverse_count"]
+    ) / (switch_matrix["switch_count"] + switch_matrix["reverse_count"] + 1e-9)
     switch_matrix["switches_per_customer"] = (
         switch_matrix["switch_count"] / switch_matrix["unique_customers"].replace(0, np.nan)
     ).fillna(0)

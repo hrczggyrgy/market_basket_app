@@ -81,15 +81,15 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
 
     loyalty = get_loyalty_cached(transactions_df, window_days, min_transactions)
     top_paths = get_top_paths_cached(transactions_df, min_switches, window_days, min_transactions)
-    transition_matrix = get_transition_cached(transactions_df, top_n_products, window_days, min_transactions)
+    transition_matrix = get_transition_cached(
+        transactions_df, top_n_products, window_days, min_transactions
+    )
 
     st.subheader("Switching Overview")
 
     total_events = len(switch_matrix) if not switch_matrix.empty else 0
     avg_switch = switch_matrix["switch_rate"].mean() if not switch_matrix.empty else 0
-    mean_asym = (
-        switch_matrix["asymmetry_ratio"].abs().mean() if not switch_matrix.empty else 0
-    )
+    mean_asym = switch_matrix["asymmetry_ratio"].abs().mean() if not switch_matrix.empty else 0
     total_customers = len(loyalty)
     loyal_n = (
         int(loyalty["loyalty_segment"].eq("Loyal").sum())
@@ -179,8 +179,7 @@ def _render_heatmap_tab(
             )
             top_exits["name"] = top_exits["name"].fillna(top_exits["from_product"])
             exit_str = " \u00b7 ".join(
-                f"**{row['name']}** ({int(row['switch_count'])})"
-                for _, row in top_exits.iterrows()
+                f"**{row['name']}** ({int(row['switch_count'])})" for _, row in top_exits.iterrows()
             )
             st.info(f"\ud83d\udce4 **Top switch-away products:** {exit_str}")
 
@@ -304,12 +303,10 @@ def _render_markov_tab(transition_matrix: pd.DataFrame, product_lookup: dict):
         return
 
     row_labels = [
-        product_lookup.get(idx, idx) if product_lookup else idx
-        for idx in transition_matrix.index
+        product_lookup.get(idx, idx) if product_lookup else idx for idx in transition_matrix.index
     ]
     col_labels = [
-        product_lookup.get(col, col) if product_lookup else col
-        for col in transition_matrix.columns
+        product_lookup.get(col, col) if product_lookup else col for col in transition_matrix.columns
     ]
 
     fig = go.Figure(
@@ -365,8 +362,7 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
             for p in all_products
         }
         node_colors = [
-            "rgba(70, 130, 180, "
-            f"{min(0.4 + node_outgoing.get(p, 0) / max_val * 0.6, 1.0):.2f})"
+            f"rgba(70, 130, 180, {min(0.4 + node_outgoing.get(p, 0) / max_val * 0.6, 1.0):.2f})"
             for p in all_products
         ]
 

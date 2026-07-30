@@ -230,8 +230,6 @@ def get_product_affinity_profile(
         return pd.DataFrame()
 
     df = pd.DataFrame(results)
-    df = df.sort_values(["lift", "kulczynski"], ascending=False).head(top_n).reset_index(
-        drop=True
-    )
+    df = df.sort_values(["lift", "kulczynski"], ascending=False).head(top_n).reset_index(drop=True)
 
     return df

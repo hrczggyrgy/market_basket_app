@@ -317,16 +317,13 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
                 transactions_df["category"] == selected_category
             ].copy()
             st.info(
-                f"Filtered to category: {selected_category} "
-                f"({len(transactions_df)} transactions)"
+                f"Filtered to category: {selected_category} ({len(transactions_df)} transactions)"
             )
 
     # ---- expected duration hint ------------------------------------------
     n_rows = len(transactions_df)
     n_products_est = (
-        transactions_df["stockcode"].nunique()
-        if "stockcode" in transactions_df.columns
-        else 0
+        transactions_df["stockcode"].nunique() if "stockcode" in transactions_df.columns else 0
     )
     if n_products_est > 100 or n_rows > 50_000:
         wait_hint = "large dataset \u2014 pipeline may take **1\u20133 minutes**"
@@ -334,10 +331,7 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
         wait_hint = "medium dataset \u2014 pipeline typically takes **20\u201360 seconds**"
     else:
         wait_hint = "small dataset \u2014 pipeline typically completes in **< 20 seconds**"
-    st.info(
-        f"\u23f1\ufe0f {wait_hint}. "
-        "Each visualisation tab renders on demand after completion."
-    )
+    st.info(f"\u23f1\ufe0f {wait_hint}. Each visualisation tab renders on demand after completion.")
     # -----------------------------------------------------------------------
 
     run_button = st.button(
@@ -345,25 +339,18 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
     )
 
     if not run_button:
-        st.info(
-            "Configure parameters above and click "
-            "**Build Customer Decision Tree** to start."
-        )
+        st.info("Configure parameters above and click **Build Customer Decision Tree** to start.")
         return
 
     progress_bar = st.progress(0)
     status_text = st.empty()
 
     try:
-        status_text.info(
-            "\u23f3 **Step 1 / 6** \u2014 Building customer purchase sequences\u2026"
-        )
+        status_text.info("\u23f3 **Step 1 / 6** \u2014 Building customer purchase sequences\u2026")
         progress_bar.progress(10)
         sequences = _cached_build_customer_sequences(transactions_df)
 
-        status_text.info(
-            "\u23f3 **Step 2 / 6** \u2014 Computing similarity matrix\u2026"
-        )
+        status_text.info("\u23f3 **Step 2 / 6** \u2014 Computing similarity matrix\u2026")
         progress_bar.progress(25)
         similarity_matrix = _cached_build_similarity_matrix(
             transactions_df,
@@ -380,14 +367,11 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
             top_products = avg_sim.head(top_n_products).index.tolist()
             similarity_matrix = similarity_matrix.loc[top_products, top_products]
             sequences = {
-                c: [p for p in prods if p in top_products]
-                for c, prods in sequences.items()
+                c: [p for p in prods if p in top_products] for c, prods in sequences.items()
             }
             sequences = {c: p for c, p in sequences.items() if p}
 
-        status_text.info(
-            "\u23f3 **Step 3 / 6** \u2014 Performing hierarchical clustering\u2026"
-        )
+        status_text.info("\u23f3 **Step 3 / 6** \u2014 Performing hierarchical clustering\u2026")
         progress_bar.progress(40)
         linkage_matrix, ordered_labels = _cached_perform_hierarchical_clustering(
             similarity_matrix,
@@ -405,13 +389,9 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
             linkage_matrix, similarity_matrix, n_clusters=optimal_k
         )
 
-        status_text.info(
-            "\u23f3 **Step 4 / 6** \u2014 Building Customer Decision Tree\u2026"
-        )
+        status_text.info("\u23f3 **Step 4 / 6** \u2014 Building Customer Decision Tree\u2026")
         progress_bar.progress(55)
-        attributes_df = extract_product_attributes(
-            transactions_df, attribute_cols=selected_attrs
-        )
+        attributes_df = extract_product_attributes(transactions_df, attribute_cols=selected_attrs)
         root, metadata = build_cdt(
             similarity_matrix,
             cluster_assignments,
@@ -423,9 +403,7 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
             alpha=split_alpha,
         )
 
-        status_text.info(
-            "\u23f3 **Step 5 / 6** \u2014 Computing behavioral matrices\u2026"
-        )
+        status_text.info("\u23f3 **Step 5 / 6** \u2014 Computing behavioral matrices\u2026")
         progress_bar.progress(70)
         basket = create_basket_matrix(transactions_df)
         if len(basket.columns) > top_n_products:
@@ -462,8 +440,7 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
         )
 
         status_text.info(
-            "\u23f3 **Step 6 / 6** \u2014 Saving results \u2014 "
-            "visualisations load on demand\u2026"
+            "\u23f3 **Step 6 / 6** \u2014 Saving results \u2014 visualisations load on demand\u2026"
         )
         progress_bar.progress(95)
 
@@ -493,6 +470,7 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
     except Exception as e:
         st.error(f"Pipeline failed: {str(e)}")
         import traceback
+
         st.code(traceback.format_exc())
         return
 
@@ -526,9 +504,7 @@ def _render_cdt_results_tabs(
     active = st.session_state.get("cdt_active_tab", 0)
     for i, (col, label) in enumerate(zip(btn_cols, _CDT_TABS)):
         btn_type = "primary" if i == active else "secondary"
-        if col.button(
-            label, key=f"cdt_tab_btn_{i}", type=btn_type, use_container_width=True
-        ):
+        if col.button(label, key=f"cdt_tab_btn_{i}", type=btn_type, use_container_width=True):
             st.session_state["cdt_active_tab"] = i
             active = i
             st.rerun()
@@ -565,8 +541,7 @@ def _tab_sunburst(root, metadata: dict):
     with st.spinner("\U0001f333 Rendering Sunburst chart \u2014 please wait\u2026"):
         fig = plot_sunburst(
             root,
-            title=f"CDT: {metadata['n_leaves']} leaf clusters, "
-                  f"{metadata['max_depth']} levels",
+            title=f"CDT: {metadata['n_leaves']} leaf clusters, {metadata['max_depth']} levels",
             height=700,
         )
     st.plotly_chart(fig, use_container_width=True)
@@ -619,9 +594,7 @@ def _tab_similarity(similarity_matrix: pd.DataFrame, similarity_method: str):
         min(50, len(similarity_matrix)),
         key="cdt_sim_top_n",
     )
-    with st.spinner(
-        "\U0001f525 Rendering similarity heatmap \u2014 please wait\u2026"
-    ):
+    with st.spinner("\U0001f525 Rendering similarity heatmap \u2014 please wait\u2026"):
         fig = plot_similarity_heatmap(similarity_matrix, top_n=top_n, height=600)
     st.plotly_chart(fig, use_container_width=True)
 
@@ -649,19 +622,17 @@ def _tab_switching(switching_df: pd.DataFrame, product_lookup: dict):
     )
 
     top_n_heatmap = st.slider(
-        "Top N products in heatmap", 5, 50,
+        "Top N products in heatmap",
+        5,
+        50,
         min(30, len(switching_df["from_product"].unique())),
         key="cdt_switch_top_n",
     )
 
     col1, col2 = st.columns([2, 1])
     with col1:
-        with st.spinner(
-            "\U0001f501 Rendering switching heatmap \u2014 please wait\u2026"
-        ):
-            switch_matrix = switching_matrix_to_heatmap(
-                switching_df, top_n=top_n_heatmap
-            )
+        with st.spinner("\U0001f501 Rendering switching heatmap \u2014 please wait\u2026"):
+            switch_matrix = switching_matrix_to_heatmap(switching_df, top_n=top_n_heatmap)
 
         if switch_matrix.empty:
             st.warning(
@@ -687,9 +658,7 @@ def _tab_switching(switching_df: pd.DataFrame, product_lookup: dict):
             display_df["from"] = display_df["from_product"].map(
                 lambda x: product_lookup.get(x, x)[:30]
             )
-            display_df["to"] = display_df["to_product"].map(
-                lambda x: product_lookup.get(x, x)[:30]
-            )
+            display_df["to"] = display_df["to_product"].map(lambda x: product_lookup.get(x, x)[:30])
             st.dataframe(
                 display_df[["from", "to", "switch_count", "switch_rate"]].round(4),
                 hide_index=True,
@@ -704,15 +673,14 @@ def _tab_switching(switching_df: pd.DataFrame, product_lookup: dict):
     )
     min_rate_input = st.slider(
         "Min switch rate for network edges",
-        0.00, 0.20, 0.05, 0.01,
+        0.00,
+        0.20,
+        0.05,
+        0.01,
         key="cdt_net_min_rate",
     )
-    with st.spinner(
-        "\U0001f578 Rendering network graph \u2014 please wait\u2026"
-    ):
-        fig_net = plot_switching_network(
-            switching_df, product_lookup, min_rate=min_rate_input
-        )
+    with st.spinner("\U0001f578 Rendering network graph \u2014 please wait\u2026"):
+        fig_net = plot_switching_network(switching_df, product_lookup, min_rate=min_rate_input)
     st.plotly_chart(fig_net, use_container_width=True)
     render_analytics_export(switching_df, "CDT_Switching")
 
@@ -728,9 +696,7 @@ def _tab_substitution(substitution_df: pd.DataFrame, product_lookup: dict):
         return
 
     top_n = st.slider("Top N Products", 10, 100, 50, key="cdt_sub_top_n")
-    with st.spinner(
-        "\U0001f504 Rendering substitution heatmap \u2014 please wait\u2026"
-    ):
+    with st.spinner("\U0001f504 Rendering substitution heatmap \u2014 please wait\u2026"):
         fig = plot_similarity_heatmap(
             substitution_df,
             top_n=top_n,
@@ -775,9 +741,7 @@ def _tab_bundling(bundling_df: pd.DataFrame, product_lookup: dict):
             lambda x: product_lookup.get(x, x)[:30]
         )
         st.dataframe(
-            display_df[
-                ["Product A", "Product B", "lift", "substitution", "bundle_score"]
-            ].round(4),
+            display_df[["Product A", "Product B", "lift", "substitution", "bundle_score"]].round(4),
             hide_index=True,
             use_container_width=True,
         )
@@ -807,8 +771,7 @@ def _tab_bundling(bundling_df: pd.DataFrame, product_lookup: dict):
                     )
                 ],
                 hovertemplate=(
-                    "%{text}<br>Substitution: %{x:.3f}<br>Lift: %{y:.3f}"
-                    "<extra></extra>"
+                    "%{text}<br>Substitution: %{x:.3f}<br>Lift: %{y:.3f}<extra></extra>"
                 ),
             )
         )
@@ -818,9 +781,7 @@ def _tab_bundling(bundling_df: pd.DataFrame, product_lookup: dict):
             line_color="red",
             annotation_text="Max Sub for Bundling",
         )
-        fig.add_hline(
-            y=1.2, line_dash="dash", line_color="green", annotation_text="Min Lift"
-        )
+        fig.add_hline(y=1.2, line_dash="dash", line_color="green", annotation_text="Min Lift")
         fig.update_layout(
             title="Bundling Sweet Spot: High Lift + Low Substitution",
             xaxis_title="Substitution Score",
@@ -868,23 +829,17 @@ def _tab_export(
     with export_cols[0]:
         if not switching_df.empty:
             csv = switching_df.to_csv(index=False)
-            st.download_button(
-                "Switching Matrix", csv, "cdt_switching.csv", "text/csv"
-            )
+            st.download_button("Switching Matrix", csv, "cdt_switching.csv", "text/csv")
     with export_cols[1]:
         if not substitution_df.empty:
             top_subs = get_top_substitution_pairs(substitution_df, top_n=100)
             csv = top_subs.to_csv(index=False)
-            st.download_button(
-                "Substitution Pairs", csv, "cdt_substitution.csv", "text/csv"
-            )
+            st.download_button("Substitution Pairs", csv, "cdt_substitution.csv", "text/csv")
     with export_cols[2]:
         if not bundling_df.empty:
             top_bundles = get_top_bundling_pairs(bundling_df, top_n=100)
             csv = top_bundles.to_csv(index=False)
-            st.download_button(
-                "Bundling Pairs", csv, "cdt_bundling.csv", "text/csv"
-            )
+            st.download_button("Bundling Pairs", csv, "cdt_bundling.csv", "text/csv")
 
 
 # ---------------------------------------------------------------------------
@@ -893,10 +848,29 @@ def _tab_export(
 def detect_attribute_columns(df: pd.DataFrame) -> list[str]:
     """Detect common product attribute columns."""
     candidates = [
-        "category", "brand", "size", "flavor", "color", "variant",
-        "type", "style", "material", "collection", "line", "range",
-        "pack_size", "unit", "weight", "volume", "scent", "design",
-        "theme", "occasion", "target_audience", "gender", "age_group",
+        "category",
+        "brand",
+        "size",
+        "flavor",
+        "color",
+        "variant",
+        "type",
+        "style",
+        "material",
+        "collection",
+        "line",
+        "range",
+        "pack_size",
+        "unit",
+        "weight",
+        "volume",
+        "scent",
+        "design",
+        "theme",
+        "occasion",
+        "target_audience",
+        "gender",
+        "age_group",
     ]
     return [c for c in candidates if c in df.columns]
 

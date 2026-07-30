@@ -79,8 +79,7 @@ def optimize_assortment_heuristic(
         # Objective
         if objective == "margin" and cost_per_product is not None:
             kept_margin = sum(
-                (revenue_per_product.get(p, 0) - cost_per_product.get(p, 0))
-                for p in solution
+                (revenue_per_product.get(p, 0) - cost_per_product.get(p, 0)) for p in solution
             )
             recovered_margin = recovered * 0.3  # assume 30% margin on recovered
             obj = kept_margin + recovered_margin - 0.5 * unmet
@@ -160,8 +159,14 @@ def optimize_assortment_heuristic(
 
     # Final greedy improvement
     best_solution = _greedy_improvement(
-        best_solution, all_products, revenue_per_product, dt_matrix,
-        max_skus, min_coverage, objective, cost_per_product
+        best_solution,
+        all_products,
+        revenue_per_product,
+        dt_matrix,
+        max_skus,
+        min_coverage,
+        objective,
+        cost_per_product,
     )
 
     final_obj, final_metrics = evaluate(best_solution)
@@ -196,8 +201,14 @@ def _greedy_improvement(
 
                 new_solution = [p for p in solution if p != remove_sku] + [add_sku]
                 _, new_metrics = evaluate_solution(
-                    new_solution, all_products, revenue_per_product, dt_matrix,
-                    max_skus, min_coverage, objective, cost_per_product
+                    new_solution,
+                    all_products,
+                    revenue_per_product,
+                    dt_matrix,
+                    max_skus,
+                    min_coverage,
+                    objective,
+                    cost_per_product,
                 )
                 gain = new_metrics.get("expected_revenue", 0) - new_metrics.get("kept_revenue", 0)
 
@@ -244,8 +255,7 @@ def evaluate_solution(
 
     if objective == "margin" and cost_per_product is not None:
         kept_margin = sum(
-            (revenue_per_product.get(p, 0) - cost_per_product.get(p, 0))
-            for p in solution
+            (revenue_per_product.get(p, 0) - cost_per_product.get(p, 0)) for p in solution
         )
         obj = kept_margin + recovered * 0.3 - 0.5 * (lost - recovered)
     else:
@@ -295,14 +305,14 @@ def optimize_assortment_milp(
     all_products = list(revenue_per_product.index)
     n = len(all_products)
 
-    solver = pywraplp.Solver.CreateSolver('SCIP')
+    solver = pywraplp.Solver.CreateSolver("SCIP")
     if not solver:
         raise RuntimeError("SCIP solver not available in OR-Tools")
 
     # Decision variables
     x = {}
     for i, sku in enumerate(all_products):
-        x[i] = solver.IntVar(0, 1, f'x_{sku}')
+        x[i] = solver.IntVar(0, 1, f"x_{sku}")
 
     # Objective coefficients
     obj_coeffs = []
@@ -335,7 +345,9 @@ def optimize_assortment_milp(
     # This is complex; use simpler constraint: revenue_kept >= min_coverage * total_revenue
     total_rev = sum(revenue_per_product.values())
     min_rev = min_coverage * total_rev
-    solver.Add(solver.Sum(revenue_per_product.get(all_products[i], 0) * x[i] for i in range(n)) >= min_rev)
+    solver.Add(
+        solver.Sum(revenue_per_product.get(all_products[i], 0) * x[i] for i in range(n)) >= min_rev
+    )
 
     # Category constraints (if CDT available, at least one per leaf)
     # Simplified: ensure at least 1 SKU per category
@@ -484,11 +496,13 @@ def generate_assortment_scenarios(
             max_skus = np.random.randint(*max_skus_range)
             selected = _cdt_guided_selection(transactions_df, base_assortment, max_skus)
 
-        scenarios.append({
-            "scenario_id": i + 1,
-            "method": ["random", "greedy", "cdt_guided"][min(2, i // (n_scenarios // 3))],
-            "skus": selected,
-        })
+        scenarios.append(
+            {
+                "scenario_id": i + 1,
+                "method": ["random", "greedy", "cdt_guided"][min(2, i // (n_scenarios // 3))],
+                "skus": selected,
+            }
+        )
 
     return scenarios
 

@@ -65,9 +65,7 @@ def compute_switching_matrix(
             )
 
     if not rows:
-        return pd.DataFrame(
-            columns=["from_product", "to_product", "switch_count", "switch_rate"]
-        )
+        return pd.DataFrame(columns=["from_product", "to_product", "switch_count", "switch_rate"])
 
     df = pd.DataFrame(rows)
     return df.sort_values("switch_count", ascending=False).reset_index(drop=True)
@@ -168,7 +166,7 @@ def compute_bundling_matrix(
 
     rows = []
     for i, prod_a in enumerate(common_products):
-        for prod_b in common_products[i + 1:]:
+        for prod_b in common_products[i + 1 :]:
             lift = float(affinity_matrix.loc[prod_a, prod_b])
             sub = float(substitution_matrix.loc[prod_a, prod_b])
 
@@ -197,7 +195,7 @@ def compute_bundling_matrix(
 def build_behavioral_matrices(
     transactions_df: pd.DataFrame,
     similarity_matrix: pd.DataFrame,
-affinity_matrix: pd.DataFrame,
+    affinity_matrix: pd.DataFrame,
     sequences: Dict[str, List[str]],
     top_n_products: Optional[int] = None,
     min_lift: float = 1.0,
@@ -251,7 +249,7 @@ def get_top_substitution_pairs(
             "substitution_score": substitution_matrix.loc[prod_a, prod_b],
         }
         for i, prod_a in enumerate(products)
-        for prod_b in products[i + 1:]
+        for prod_b in products[i + 1 :]
         if substitution_matrix.loc[prod_a, prod_b] >= min_similarity
     ]
 
@@ -360,9 +358,7 @@ def compute_customer_switching_profiles(
         top_set = set(
             sorted(product_freq_, key=product_freq_.get, reverse=True)[:top_n_products]  # type: ignore[arg-type]
         )
-        df = df[
-            df["top_from_product"].isin(top_set) | df["top_to_product"].isin(top_set)
-        ]
+        df = df[df["top_from_product"].isin(top_set) | df["top_to_product"].isin(top_set)]
 
     return df
 
@@ -452,6 +448,6 @@ def compute_brand_switching_matrix(
     matrix = matrix.merge(from_totals, on=["category", "from_brand"])
     matrix["switch_rate"] = matrix["switch_count"] / matrix["total_switches_from"]
 
-    return matrix.sort_values(
-        ["category", "switch_count"], ascending=[True, False]
-    ).reset_index(drop=True)
+    return matrix.sort_values(["category", "switch_count"], ascending=[True, False]).reset_index(
+        drop=True
+    )

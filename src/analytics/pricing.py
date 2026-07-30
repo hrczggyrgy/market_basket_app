@@ -1,13 +1,11 @@
 """Pricing, Elasticity & KVI Analytics."""
 
 import warnings
-from typing import Dict, List, Optional, Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
 from scipy import stats
-from sklearn.linear_model import Ridge
-from sklearn.preprocessing import StandardScaler
 
 warnings.filterwarnings("ignore")
 
@@ -15,6 +13,7 @@ warnings.filterwarnings("ignore")
 # ============================================================================
 # ELASTICITY ESTIMATION
 # ============================================================================
+
 
 def estimate_loglog_elasticity(
     transactions_df: pd.DataFrame,
@@ -65,19 +64,21 @@ def estimate_loglog_elasticity(
 
         slope, intercept, r_value, p_value, std_err = stats.linregress(log_price, log_qty)
         elasticity = slope
-        r_squared = r_value ** 2
+        r_squared = r_value**2
 
-        results.append({
-            "stockcode": product_id,
-            "elasticity": elasticity,
-            "r_squared": r_squared,
-            "p_value": p_value,
-            "std_err": std_err,
-            "n_obs": len(log_price),
-            "avg_price": weekly["avg_price"].mean(),
-            "avg_weekly_qty": weekly["total_qty"].mean(),
-            "price_cv": price_cv,
-        })
+        results.append(
+            {
+                "stockcode": product_id,
+                "elasticity": elasticity,
+                "r_squared": r_squared,
+                "p_value": p_value,
+                "std_err": std_err,
+                "n_obs": len(log_price),
+                "avg_price": weekly["avg_price"].mean(),
+                "avg_weekly_qty": weekly["total_qty"].mean(),
+                "price_cv": price_cv,
+            }
+        )
 
     if not results:
         return pd.DataFrame()
@@ -131,15 +132,17 @@ def estimate_hierarchical_elasticity(
 
         slope, intercept, r_value, p_value, std_err = stats.linregress(log_price, log_qty)
 
-        ols_results.append({
-            "stockcode": product_id,
-            "category": cat,
-            "elasticity_ols": slope,
-            "r_squared": r_value ** 2,
-            "p_value": p_value,
-            "n_obs": len(log_price),
-            "avg_price": weekly["avg_price"].mean(),
-        })
+        ols_results.append(
+            {
+                "stockcode": product_id,
+                "category": cat,
+                "elasticity_ols": slope,
+                "r_squared": r_value**2,
+                "p_value": p_value,
+                "n_obs": len(log_price),
+                "avg_price": weekly["avg_price"].mean(),
+            }
+        )
 
     if not ols_results:
         return pd.DataFrame()
@@ -153,8 +156,8 @@ def estimate_hierarchical_elasticity(
     ols_df["shrink_weight"] = ols_df["n_obs"] / (ols_df["n_obs"] + ridge_alpha)
     ols_df = ols_df.merge(cat_means, on="category", how="left")
     ols_df["elasticity_shrunk"] = (
-        ols_df["shrink_weight"] * ols_df["elasticity_ols"] +
-        (1 - ols_df["shrink_weight"]) * ols_df["elasticity_cat"]
+        ols_df["shrink_weight"] * ols_df["elasticity_ols"]
+        + (1 - ols_df["shrink_weight"]) * ols_df["elasticity_cat"]
     )
 
     return ols_df
@@ -224,16 +227,14 @@ def estimate_elasticity_xgb(
 
     # Train
     model = xgb.XGBRegressor(
-        n_estimators=200, max_depth=5, learning_rate=0.1,
-        random_state=42, verbosity=0
+        n_estimators=200, max_depth=5, learning_rate=0.1, random_state=42, verbosity=0
     )
     model.fit(X, y)
 
     # Feature importance
-    importance = pd.DataFrame({
-        "feature": feature_cols,
-        "importance": model.feature_importances_
-    }).sort_values("importance", ascending=False)
+    importance = pd.DataFrame(
+        {"feature": feature_cols, "importance": model.feature_importances_}
+    ).sort_values("importance", ascending=False)
 
     return model, importance
 
@@ -241,6 +242,7 @@ def estimate_elasticity_xgb(
 # ============================================================================
 # KVI SCORING
 # ============================================================================
+
 
 def compute_kvi_score(
     transactions_df: pd.DataFrame,
@@ -263,7 +265,11 @@ def compute_kvi_score(
     Target: XGB predicting basket value or price sensitivity.
     Returns SKU-ranked KVI scores with feature contributions.
     """
-    from src.analytics import compute_product_metrics, compute_basket_value_uplift, compute_basket_penetration
+    from src.analytics import (
+        compute_basket_penetration,
+        compute_basket_value_uplift,
+        compute_product_metrics,
+    )
 
     # Compute product metrics if not provided
     if product_metrics_df is None:
@@ -280,7 +286,9 @@ def compute_kvi_score(
     kvi_features = product_metrics_df.merge(
         basket_uplift[["stockcode", "basket_value_uplift_pct"]], on="stockcode", how="left"
     ).merge(
-        basket_pen[["stockcode", "basket_penetration", "trip_incidence"]], on="stockcode", how="left"
+        basket_pen[["stockcode", "basket_penetration", "trip_incidence"]],
+        on="stockcode",
+        how="left",
     )
 
     # Elasticity features
@@ -332,10 +340,19 @@ def _kvi_xgb(
 
     # Feature columns
     feature_cols = [
-        "basket_penetration", "trip_incidence", "total_revenue",
-        "total_customers", "avg_price", "price_cv", "basket_value_uplift_pct",
-        "total_transactions", "revenue_per_customer", "repeat_rate",
-        "abs_elasticity", "category_revenue_share", "r_squared",
+        "basket_penetration",
+        "trip_incidence",
+        "total_revenue",
+        "total_customers",
+        "avg_price",
+        "price_cv",
+        "basket_value_uplift_pct",
+        "total_transactions",
+        "revenue_per_customer",
+        "repeat_rate",
+        "abs_elasticity",
+        "category_revenue_share",
+        "r_squared",
     ]
     feature_cols = [c for c in feature_cols if c in kvi_features.columns]
 
@@ -343,8 +360,7 @@ def _kvi_xgb(
 
     # Train
     model = xgb.XGBRegressor(
-        n_estimators=100, max_depth=5, learning_rate=0.1,
-        random_state=42, verbosity=0
+        n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42, verbosity=0
     )
     model.fit(X, y)
 
@@ -352,7 +368,9 @@ def _kvi_xgb(
     kvi_features["kvi_score"] = model.predict(X)
 
     # Feature importance
-    kvi_features["kvi_feature_importance"] = str(dict(zip(feature_cols, model.feature_importances_)))
+    kvi_features["kvi_feature_importance"] = str(
+        dict(zip(feature_cols, model.feature_importances_))
+    )
 
     return kvi_features
 
@@ -380,8 +398,12 @@ def _kvi_heuristic(
 
     # Features
     feature_cols = [
-        "basket_penetration", "total_revenue", "total_customers",
-        "revenue_per_customer", "basket_value_uplift_pct", "abs_elasticity",
+        "basket_penetration",
+        "total_revenue",
+        "total_customers",
+        "revenue_per_customer",
+        "basket_value_uplift_pct",
+        "abs_elasticity",
     ]
     feature_cols = [c for c in feature_cols if c in kvi_features.columns]
 
@@ -394,7 +416,7 @@ def _kvi_heuristic(
     X_scaled = scaler.fit_transform(X)
 
     # Weights: penetration (0.3), revenue (0.25), halo (0.2), elasticity (0.15), customers (0.1)
-    weights = np.array([0.3, 0.25, 0.2, 0.15, 0.1])[:len(feature_cols)]
+    weights = np.array([0.3, 0.25, 0.2, 0.15, 0.1])[: len(feature_cols)]
     weights = weights / weights.sum()
 
     kvi_features["kvi_score"] = X_scaled @ weights
@@ -405,6 +427,7 @@ def _kvi_heuristic(
 # ============================================================================
 # PRICE CURVE DIAGNOSTICS
 # ============================================================================
+
 
 def diagnose_price_curves(
     transactions_df: pd.DataFrame,
@@ -421,13 +444,21 @@ def diagnose_price_curves(
     from src.analytics import compute_basket_penetration
 
     # Product median price and pack size
-    product_info = transactions_df.groupby("stockcode").agg(
-        product_name=("product", "first"),
-        category=(category_col, "first") if category_col in transactions_df.columns else ("stockcode", "first"),
-        brand=("brand", "first") if "brand" in transactions_df.columns else ("stockcode", "first"),
-        median_price=(price_col, "median"),
-        size=("size", "first") if "size" in transactions_df.columns else ("stockcode", "first"),
-    ).reset_index()
+    product_info = (
+        transactions_df.groupby("stockcode")
+        .agg(
+            product_name=("product", "first"),
+            category=(category_col, "first")
+            if category_col in transactions_df.columns
+            else ("stockcode", "first"),
+            brand=("brand", "first")
+            if "brand" in transactions_df.columns
+            else ("stockcode", "first"),
+            median_price=(price_col, "median"),
+            size=("size", "first") if "size" in transactions_df.columns else ("stockcode", "first"),
+        )
+        .reset_index()
+    )
 
     # Parse pack size numeric
     def parse_size(size_str):
@@ -435,7 +466,8 @@ def diagnose_price_curves(
             return 1.0
         size_str = str(size_str).upper()
         import re
-        match = re.search(r'(\d+(?:\.\d+)?)\s*(ML|L|G|KG|PK|PCS)', size_str)
+
+        match = re.search(r"(\d+(?:\.\d+)?)\s*(ML|L|G|KG|PK|PCS)", size_str)
         if match:
             val = float(match.group(1))
             unit = match.group(2)
@@ -449,10 +481,14 @@ def diagnose_price_curves(
         return 1.0
 
     product_info["pack_size_numeric"] = product_info["size"].apply(parse_size)
-    product_info["price_per_unit"] = product_info["median_price"] / product_info["pack_size_numeric"].replace(0, np.nan)
+    product_info["price_per_unit"] = product_info["median_price"] / product_info[
+        "pack_size_numeric"
+    ].replace(0, np.nan)
 
     # Basket penetration
-    basket_pen = compute_basket_penetration(transactions_df)[["stockcode", "basket_penetration", "trip_incidence"]]
+    basket_pen = compute_basket_penetration(transactions_df)[
+        ["stockcode", "basket_penetration", "trip_incidence"]
+    ]
     product_info = product_info.merge(basket_pen, on="stockcode", how="left")
 
     # Cluster per category
@@ -467,9 +503,11 @@ def diagnose_price_curves(
 
         if method == "kmeans":
             from sklearn.cluster import KMeans
+
             model = KMeans(n_clusters=min(n_tiers, len(cat_data)), random_state=42, n_init=10)
         else:
             from sklearn.mixture import GaussianMixture
+
             model = GaussianMixture(n_components=min(n_tiers, len(cat_data)), random_state=42)
 
         cat_data["tier"] = model.fit_predict(features)
@@ -480,7 +518,9 @@ def diagnose_price_curves(
         cat_data["tier"] = cat_data["tier"].map(tier_map)
 
         tier_labels = {0: "Value", 1: "Mainstream", 2: "Premium", 3: "Ultra", 4: "Luxury"}
-        cat_data["tier_label"] = cat_data["tier"].map(tier_labels).fillna("Tier " + cat_data["tier"].astype(str))
+        cat_data["tier_label"] = (
+            cat_data["tier"].map(tier_labels).fillna("Tier " + cat_data["tier"].astype(str))
+        )
 
         all_results.append(cat_data)
 
@@ -491,8 +531,9 @@ def diagnose_price_curves(
 
     # Detect violations
     violations = _detect_price_curve_violations(result_df)
-    result_df["has_violation"] = result_df["stockcode"].isin(violations["larger_pack"]) | \
-                                  result_df["stockcode"].isin(violations["smaller_pack"])
+    result_df["has_violation"] = result_df["stockcode"].isin(violations["larger_pack"]) | result_df[
+        "stockcode"
+    ].isin(violations["smaller_pack"])
 
     return result_df
 
@@ -511,15 +552,17 @@ def _detect_price_curve_violations(cat_data: pd.DataFrame) -> pd.DataFrame:
         row2 = sorted_data.iloc[i + 1]
 
         if row1["price_per_unit"] > row2["price_per_unit"] * 1.05:  # 5% tolerance
-            violations.append({
-                "category": row1["category"],
-                "larger_pack": row1["product_name"],
-                "larger_size": row1["pack_size_numeric"],
-                "larger_price_per_unit": row1["price_per_unit"],
-                "smaller_pack": row2["product_name"],
-                "smaller_size": row2["pack_size_numeric"],
-                "smaller_price_per_unit": row2["price_per_unit"],
-                "violation_pct": (row1["price_per_unit"] / row2["price_per_unit"] - 1) * 100,
-            })
+            violations.append(
+                {
+                    "category": row1["category"],
+                    "larger_pack": row1["product_name"],
+                    "larger_size": row1["pack_size_numeric"],
+                    "larger_price_per_unit": row1["price_per_unit"],
+                    "smaller_pack": row2["product_name"],
+                    "smaller_size": row2["pack_size_numeric"],
+                    "smaller_price_per_unit": row2["price_per_unit"],
+                    "violation_pct": (row1["price_per_unit"] / row2["price_per_unit"] - 1) * 100,
+                }
+            )
 
     return pd.DataFrame(violations)

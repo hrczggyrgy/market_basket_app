@@ -1,6 +1,6 @@
 """Configuration types for the Market Basket Analysis application."""
 
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, TypedDict
 
 
 class AnalysisParams(TypedDict, total=False):

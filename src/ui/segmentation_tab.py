@@ -8,38 +8,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-# Additional imports for validation and cluster map
-from sklearn.cluster import AgglomerativeClustering, KMeans
-from sklearn.metrics import davies_bouldin_score, silhouette_score
-from sklearn.mixture import GaussianMixture
-from sklearn.preprocessing import RobustScaler
-
-# Optional imports
-try:
-    import hdbscan
-    HDBSCAN_AVAILABLE = True
-except ImportError:
-    HDBSCAN_AVAILABLE = False
-
-try:
-    import umap
-    UMAP_AVAILABLE = True
-except ImportError:
-    UMAP_AVAILABLE = False
-
-# Algorithms
 from src.algorithms.fpgrowth import create_basket_matrix, run_fpgrowth
-
-# Switching
-from src.analytics import (
-    compute_brand_switching_matrix,
-    compute_switching_matrix,
-    detect_brand_switching,
-    get_customer_loyalty_metrics,
-)
-
-# CDT behavioral imports
-# Behavioral matrices
 from src.analytics.cdt_behavioral import (
     build_behavioral_matrices,
     get_top_bundling_pairs,
@@ -47,19 +16,6 @@ from src.analytics.cdt_behavioral import (
     get_top_switching_paths,
     switching_matrix_to_heatmap,
 )
-from src.analytics.cdt_clustering import (
-    find_optimal_clusters,
-    get_cluster_assignments,
-    perform_hierarchical_clustering,
-)
-
-# CDT algorithms imports
-from src.analytics.cdt_similarity import (
-    build_customer_sequences,
-    build_similarity_matrix,
-)
-
-# CDT tree builder imports
 from src.analytics.cdt_tree_builder import (
     build_cdt,
     extract_product_attributes,
@@ -81,21 +37,9 @@ from src.analytics.segmentation_enhanced import (
     compute_segment_retention,
     compute_umap_projection,
     get_segment_recommendations,
-    label_segment_business,
 )
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
-
-# CDT visualization imports
-from src.viz.cdt_viz import (
-    plot_behavioral_heatmap,
-    plot_dendrogram,
-    plot_silhouette_scores,
-    plot_similarity_heatmap,
-    plot_sunburst,
-    plot_switching_network,
-    plot_treemap,
-)
 
 
 def _normalize_metrics(
@@ -180,13 +124,21 @@ def _cached_compute_segment_retention(transactions_df, segment_assignments):
 
 
 @st.cache_data
-def _cached_compute_umap_projection(features_array, n_components, n_neighbors, min_dist, random_state):
-    return compute_umap_projection(features_array, n_components, n_neighbors, min_dist, random_state)
+def _cached_compute_umap_projection(
+    features_array, n_components, n_neighbors, min_dist, random_state
+):
+    return compute_umap_projection(
+        features_array, n_components, n_neighbors, min_dist, random_state
+    )
 
 
 @st.cache_data
-def _cached_compute_cluster_stability(transactions_df, n_clusters, n_iterations, method, sample_frac, seed):
-    return compute_cluster_stability(transactions_df, n_clusters, n_iterations, method, sample_frac, seed)
+def _cached_compute_cluster_stability(
+    transactions_df, n_clusters, n_iterations, method, sample_frac, seed
+):
+    return compute_cluster_stability(
+        transactions_df, n_clusters, n_iterations, method, sample_frac, seed
+    )
 
 
 def render_segmentation_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
@@ -243,6 +195,7 @@ def render_overview(transactions_df: pd.DataFrame):
 
     with st.spinner("Computing overview metrics..."):
         from src.analytics.segmentation import compute_rfm_features
+
         rfm = compute_rfm_features(transactions_df)
 
     with col1:
@@ -334,7 +287,12 @@ def _render_rfm_segment_distribution(rfm_scored: pd.DataFrame):
 
     col1, col2 = st.columns(2)
     with col1:
-        fig = px.pie(seg_counts, values="Customers", names="Segment", title="Customer Distribution by RFM Segment")
+        fig = px.pie(
+            seg_counts,
+            values="Customers",
+            names="Segment",
+            title="Customer Distribution by RFM Segment",
+        )
         st.plotly_chart(fig, width="stretch")
 
     with col2:
@@ -453,7 +411,12 @@ def _render_kmeans_segment_distribution(rfm_clustered: pd.DataFrame):
 
     col1, col2 = st.columns(2)
     with col1:
-        fig = px.pie(seg_counts, values="Customers", names="Segment", title="Customer Distribution by K-Means Segment")
+        fig = px.pie(
+            seg_counts,
+            values="Customers",
+            names="Segment",
+            title="Customer Distribution by K-Means Segment",
+        )
         st.plotly_chart(fig, width="stretch")
 
     with col2:
@@ -573,13 +536,20 @@ def render_behavioral_segmentation(transactions_df: pd.DataFrame, params: dict):
     st.subheader("Behavioral Segmentation")
 
     n_clusters = st.slider("Number of Clusters", 3, 10, 6, key="seg_tab_behav_n_clusters")
-    method = st.selectbox("Clustering Method", ["kmeans", "agglomerative", "gmm", "dbscan", "hdbscan"], key="seg_tab_behav_method")
+    method = st.selectbox(
+        "Clustering Method",
+        ["kmeans", "agglomerative", "gmm", "dbscan", "hdbscan"],
+        key="seg_tab_behav_method",
+    )
 
     with st.spinner("Computing behavioral segments..."):
         from src.analytics.segmentation_enhanced import (
             behavioral_segmentation as enhanced_behavioral_segmentation,
         )
-        behavioral, quality_metrics = enhanced_behavioral_segmentation(transactions_df, n_clusters=n_clusters, method=method, return_metrics=True)
+
+        behavioral, quality_metrics = enhanced_behavioral_segmentation(
+            transactions_df, n_clusters=n_clusters, method=method, return_metrics=True
+        )
 
     # Show validation metrics
     if quality_metrics:
@@ -605,9 +575,14 @@ def render_behavioral_segmentation(transactions_df: pd.DataFrame, params: dict):
 
     if n_clusters >= 2:
         from src.analytics.segmentation_enhanced import compute_cluster_stability
-        stability = compute_cluster_stability(transactions_df, n_clusters=n_clusters, method="kmeans")
+
+        stability = compute_cluster_stability(
+            transactions_df, n_clusters=n_clusters, method="kmeans"
+        )
         if stability:
-            st.info(f"Cluster Stability (ARI): {stability['mean_ari']:.3f} ± {stability['std_ari']:.3f}")
+            st.info(
+                f"Cluster Stability (ARI): {stability['mean_ari']:.3f} ± {stability['std_ari']:.3f}"
+            )
 
     if " Profiles" in behav_selected:
         _render_behavioral_profiles(profiles)
@@ -702,10 +677,16 @@ def _render_behavioral_revenue(transactions_df: pd.DataFrame, behavioral: pd.Dat
     merged = df.merge(behavioral[["customer_id", "segment"]], on="customer_id", how="left")
     seg_rev = (
         merged.groupby("segment")
-        .agg(customers=("customer_id", "nunique"), revenue=("revenue", "sum"), avg_order=("revenue", "mean"))
+        .agg(
+            customers=("customer_id", "nunique"),
+            revenue=("revenue", "sum"),
+            avg_order=("revenue", "mean"),
+        )
         .reset_index()
     )
-    fig = px.bar(seg_rev, x="segment", y="revenue", color="customers", title="Revenue by Behavioral Segment")
+    fig = px.bar(
+        seg_rev, x="segment", y="revenue", color="customers", title="Revenue by Behavioral Segment"
+    )
     st.plotly_chart(fig, width="stretch")
 
 
@@ -717,7 +698,8 @@ def _render_behavioral_switching(transactions_df: pd.DataFrame, behavioral: pd.D
         for segment, customers in segment_customers.items():
             if customers:
                 seg_switches = switch_matrix[
-                    switch_matrix["from_product"].isin(customers) | switch_matrix["to_product"].isin(customers)
+                    switch_matrix["from_product"].isin(customers)
+                    | switch_matrix["to_product"].isin(customers)
                 ]
                 if not seg_switches.empty:
                     st.write(f"**{segment}** - Top switches:")
@@ -753,7 +735,9 @@ def _render_value_distribution(value_segments: pd.DataFrame):
     seg_counts.columns = ["Segment", "Customers"]
     col1, col2 = st.columns(2)
     with col1:
-        fig = px.pie(seg_counts, values="Customers", names="Segment", title="Value Segment Distribution")
+        fig = px.pie(
+            seg_counts, values="Customers", names="Segment", title="Value Segment Distribution"
+        )
         st.plotly_chart(fig, width="stretch")
     with col2:
         seg_rev = (
@@ -773,7 +757,11 @@ def _render_value_distribution(value_segments: pd.DataFrame):
             y="total_revenue",
             color="customers",
             title="Revenue by Value Segment",
-            labels={"value_segment": "Segment", "total_revenue": "Revenue ($)", "customers": "Customers"},
+            labels={
+                "value_segment": "Segment",
+                "total_revenue": "Revenue ($)",
+                "customers": "Customers",
+            },
         )
         st.plotly_chart(fig, width="stretch")
 
@@ -797,7 +785,11 @@ def _render_value_revenue(value_segments: pd.DataFrame):
         y="total_revenue",
         color="customers",
         title="Revenue by Value Segment",
-        labels={"value_segment": "Segment", "total_revenue": "Revenue ($)", "customers": "Customers"},
+        labels={
+            "value_segment": "Segment",
+            "total_revenue": "Revenue ($)",
+            "customers": "Customers",
+        },
     )
     st.plotly_chart(fig, width="stretch")
 
@@ -942,13 +934,20 @@ def render_enhanced_features(transactions_df: pd.DataFrame):
         available = [f for f in feats if f in features.columns]
         if available:
             with st.expander(f"{cat} ({len(available)} features)"):
-                st.dataframe(features[available].describe().T.style.format("{:.2f}"), width="stretch")
+                st.dataframe(
+                    features[available].describe().T.style.format("{:.2f}"), width="stretch"
+                )
 
     # Feature importance for segmentation
     st.subheader("Feature Correlation with Revenue")
     numeric_cols = features.select_dtypes(include=[np.number]).columns
     if "monetary" in features.columns:
-        corrs = features[numeric_cols].corrwith(features["monetary"]).drop("monetary").sort_values(ascending=False)
+        corrs = (
+            features[numeric_cols]
+            .corrwith(features["monetary"])
+            .drop("monetary")
+            .sort_values(ascending=False)
+        )
         fig = px.bar(
             x=corrs.values[:20],
             y=corrs.index[:20],
@@ -984,20 +983,27 @@ def render_cluster_map(transactions_df: pd.DataFrame):
 
     # Scaling
     from sklearn.preprocessing import RobustScaler
+
     scaler = RobustScaler()
     X_scaled = scaler.fit_transform(X)
 
     # Clustering controls
     col1, col2, col3 = st.columns(3)
     with col1:
-        method = st.selectbox("Clustering Method", ["kmeans", "agglomerative", "gmm", "hdbscan"], key="cluster_map_method")
+        method = st.selectbox(
+            "Clustering Method",
+            ["kmeans", "agglomerative", "gmm", "hdbscan"],
+            key="cluster_map_method",
+        )
     with col2:
         n_clusters = st.slider("Number of Clusters", 3, 15, 6, key="cluster_map_n_clusters")
     with col3:
-        projection_method = st.selectbox("Projection", ["UMAP", "PCA"], key="cluster_map_projection")
+        projection_method = st.selectbox(
+            "Projection", ["UMAP", "PCA"], key="cluster_map_projection"
+        )
 
     # Clustering
-    from sklearn.cluster import DBSCAN, AgglomerativeClustering, KMeans
+    from sklearn.cluster import AgglomerativeClustering, KMeans
     from sklearn.mixture import GaussianMixture
 
     if method == "kmeans":
@@ -1038,6 +1044,7 @@ def render_cluster_map(transactions_df: pd.DataFrame):
 
     # Add segment labels
     from src.analytics.segmentation_enhanced import _label_behavioral_clusters
+
     feature_df = pd.DataFrame(X_scaled, columns=[f"f{i}" for i in range(X_scaled.shape[1])])
     feature_df["cluster"] = labels
     cluster_profiles = feature_df.groupby("cluster").mean()
@@ -1102,7 +1109,12 @@ def render_validation(transactions_df: pd.DataFrame):
     st.subheader("Validation Across K Values")
 
     k_range = st.slider("K Range", 2, 15, (3, 12), key="val_k_range")
-    methods = st.multiselect("Methods", ["kmeans", "agglomerative", "gmm"], default=["kmeans", "agglomerative"], key="val_methods")
+    methods = st.multiselect(
+        "Methods",
+        ["kmeans", "agglomerative", "gmm"],
+        default=["kmeans", "agglomerative"],
+        key="val_methods",
+    )
 
     if st.button("Run Validation", key="run_validation"):
         results = []
@@ -1128,13 +1140,15 @@ def render_validation(transactions_df: pd.DataFrame):
                     sil = silhouette_score(X_scaled, labels)
                     db = davies_bouldin_score(X_scaled, labels)
 
-                    results.append({
-                        "Method": method,
-                        "K": k,
-                        "Silhouette": round(sil, 4),
-                        "Davies-Bouldin": round(db, 4),
-                        "N_Clusters": len(set(labels)),
-                    })
+                    results.append(
+                        {
+                            "Method": method,
+                            "K": k,
+                            "Silhouette": round(sil, 4),
+                            "Davies-Bouldin": round(db, 4),
+                            "N_Clusters": len(set(labels)),
+                        }
+                    )
                 except Exception:
                     pass
 
@@ -1144,24 +1158,40 @@ def render_validation(transactions_df: pd.DataFrame):
             results_df = pd.DataFrame(results)
 
             # Silhouette plot
-            fig = px.line(results_df, x="K", y="Silhouette", color="Method", markers=True, title="Silhouette Score by K")
+            fig = px.line(
+                results_df,
+                x="K",
+                y="Silhouette",
+                color="Method",
+                markers=True,
+                title="Silhouette Score by K",
+            )
             st.plotly_chart(fig, width="stretch")
 
             # Davies-Bouldin plot
-            fig2 = px.line(results_df, x="K", y="Davies-Bouldin", color="Method", markers=True, title="Davies-Bouldin Index by K")
+            fig2 = px.line(
+                results_df,
+                x="K",
+                y="Davies-Bouldin",
+                color="Method",
+                markers=True,
+                title="Davies-Bouldin Index by K",
+            )
             st.plotly_chart(fig2, width="stretch")
 
             # Table
             st.dataframe(
-                results_df.style.format({"Silhouette": "{:.4f}", "Davies-Bouldin": "{:.4f}"}).background_gradient(
-                    cmap="RdYlGn", subset=["Silhouette"]
-                ),
+                results_df.style.format(
+                    {"Silhouette": "{:.4f}", "Davies-Bouldin": "{:.4f}"}
+                ).background_gradient(cmap="RdYlGn", subset=["Silhouette"]),
                 width="stretch",
             )
 
             # Best K recommendation
             best = results_df.loc[results_df["Silhouette"].idxmax()]
-            st.success(f"Recommended: {best['Method']} with K={best['K']} (Silhouette: {best['Silhouette']:.4f})")
+            st.success(
+                f"Recommended: {best['Method']} with K={best['K']} (Silhouette: {best['Silhouette']:.4f})"
+            )
 
     st.divider()
 
@@ -1175,7 +1205,9 @@ def render_validation(transactions_df: pd.DataFrame):
 
     if st.button("Run Stability Analysis", key="run_stability"):
         with st.spinner("Computing stability..."):
-            stability = _cached_compute_cluster_stability(transactions_df, n_clusters_stab, n_iter, "kmeans", 0.8, 42)
+            stability = _cached_compute_cluster_stability(
+                transactions_df, n_clusters_stab, n_iter, "kmeans", 0.8, 42
+            )
 
         if stability:
             col1, col2, col3, col4 = st.columns(4)
@@ -1213,7 +1245,9 @@ def render_migration(transactions_df: pd.DataFrame):
         migrations = _cached_compute_segment_migration(transactions_df)
 
     if migrations.empty:
-        st.warning("Insufficient data for migration analysis. Need multiple time periods with sufficient customers.")
+        st.warning(
+            "Insufficient data for migration analysis. Need multiple time periods with sufficient customers."
+        )
         return
 
     # Migration matrix
@@ -1244,16 +1278,26 @@ def render_migration(transactions_df: pd.DataFrame):
                         thickness=20,
                         line=dict(color="black", width=0.5),
                         label=agg["segment_from"].unique().tolist()
-                        + [s for s in agg["segment_to"].unique() if s not in agg["segment_from"].unique()],
+                        + [
+                            s
+                            for s in agg["segment_to"].unique()
+                            if s not in agg["segment_from"].unique()
+                        ],
                     ),
                     link=dict(
-                        source=[agg["segment_from"].unique().tolist().index(s) for s in agg["segment_from"]],
-                        target=[agg["segment_from"].unique().tolist().index(s) for s in agg["segment_to"]],
+                        source=[
+                            agg["segment_from"].unique().tolist().index(s)
+                            for s in agg["segment_from"]
+                        ],
+                        target=[
+                            agg["segment_from"].unique().tolist().index(s)
+                            for s in agg["segment_to"]
+                        ],
                         value=agg["count"],
                     ),
-)
-        ]
-    )
+                )
+            ]
+        )
     fig.update_layout(title_text="Segment Migration Flows", height=500)
     st.plotly_chart(fig, width="stretch")
 
@@ -1261,7 +1305,9 @@ def render_migration(transactions_df: pd.DataFrame):
     st.subheader("Detailed Transitions")
     agg = migrations.groupby(["period", "segment_from", "segment_to"])["count"].sum().reset_index()
     st.dataframe(
-        agg.pivot_table(index="segment_from", columns=["segment_to", "period"], values="count", fill_value=0),
+        agg.pivot_table(
+            index="segment_from", columns=["segment_to", "period"], values="count", fill_value=0
+        ),
         width="stretch",
     )
 
@@ -1274,6 +1320,7 @@ def render_retention(transactions_df: pd.DataFrame):
     # First, we need segment assignments
     with st.spinner("Computing segments..."):
         from src.analytics.segmentation_enhanced import behavioral_segmentation
+
         behavioral = behavioral_segmentation(transactions_df, n_clusters=6, method="kmeans")
 
     if behavioral.empty:
@@ -1295,7 +1342,11 @@ def render_retention(transactions_df: pd.DataFrame):
         y="retention_rate",
         color="segment",
         title="Retention Curves by Segment",
-        labels={"period_number": "Periods Since First Purchase", "retention_rate": "Retention Rate", "segment": "Segment"},
+        labels={
+            "period_number": "Periods Since First Purchase",
+            "retention_rate": "Retention Rate",
+            "segment": "Segment",
+        },
         markers=True,
     )
     fig.update_layout(height=500, yaxis_tickformat=".0%")
@@ -1303,18 +1354,25 @@ def render_retention(transactions_df: pd.DataFrame):
 
     # Retention table
     st.subheader("Retention Table")
-    pivot = retention.pivot_table(index="segment", columns="period_number", values="retention_rate", fill_value=0)
-    st.dataframe(pivot.style.format("{:.1%}").background_gradient(cmap="RdYlGn", axis=1), width="stretch")
+    pivot = retention.pivot_table(
+        index="segment", columns="period_number", values="retention_rate", fill_value=0
+    )
+    st.dataframe(
+        pivot.style.format("{:.1%}").background_gradient(cmap="RdYlGn", axis=1), width="stretch"
+    )
 
 
 def render_segment_cards(transactions_df: pd.DataFrame):
     """Render actionable segment cards with business labels, traits, and actions."""
     st.subheader("Actionable Segment Cards")
-    st.caption("Each segment gets a business label, key traits, revenue share, and recommended actions")
+    st.caption(
+        "Each segment gets a business label, key traits, revenue share, and recommended actions"
+    )
 
     # Get behavioral segments
     with st.spinner("Computing segments..."):
         from src.analytics.segmentation_enhanced import behavioral_segmentation
+
         behavioral = behavioral_segmentation(transactions_df, n_clusters=6, method="kmeans")
 
     if behavioral.empty:
@@ -1323,6 +1381,7 @@ def render_segment_cards(transactions_df: pd.DataFrame):
 
     # Get segment profiles
     from src.analytics.segmentation_enhanced import get_segment_profiles, label_segment_business
+
     profiles = get_segment_profiles(transactions_df, behavioral, segment_col="segment")
 
     # Add business labels and actions
@@ -1346,11 +1405,22 @@ def render_segment_cards(transactions_df: pd.DataFrame):
                 st.metric("Customers", f"{segment['n_customers']:,}")
                 st.metric("Repeat Rate", f"{segment['repeat_rate']:.1%}")
             with col3:
-                st.metric("Avg Recency", f"{segment.get('avg_recency', segment.get('Avg_Recency', 0)):.0f} days")
-                st.metric("Avg Frequency", f"{segment.get('avg_frequency', segment.get('Avg_Frequency', 0)):.1f}")
+                st.metric(
+                    "Avg Recency",
+                    f"{segment.get('avg_recency', segment.get('Avg_Recency', 0)):.0f} days",
+                )
+                st.metric(
+                    "Avg Frequency",
+                    f"{segment.get('avg_frequency', segment.get('Avg_Frequency', 0)):.1f}",
+                )
             with col4:
-                st.metric("Revenue/Customer", f"${segment.get('revenue_per_customer', segment.get('revenue_per_customer', 0)):,.2f}")
-                st.metric("Top Category", segment.get("top_category", segment.get("top_category", "N/A")))
+                st.metric(
+                    "Revenue/Customer",
+                    f"${segment.get('revenue_per_customer', segment.get('revenue_per_customer', 0)):,.2f}",
+                )
+                st.metric(
+                    "Top Category", segment.get("top_category", segment.get("top_category", "N/A"))
+                )
 
             # Recommended actions
             recs = get_segment_recommendations(segment.get("business_label", segment["segment"]))
@@ -1371,18 +1441,28 @@ def render_segment_cards(transactions_df: pd.DataFrame):
 
             # Top products for this segment
             st.markdown("**Top Products in Segment:**")
-            segment_customers = set(behavioral[behavioral["segment"] == segment["segment"]]["customer_id"])
+            segment_customers = set(
+                behavioral[behavioral["segment"] == segment["segment"]]["customer_id"]
+            )
             seg_trans = transactions_df[transactions_df["customer_id"].isin(segment_customers)]
             if not seg_trans.empty:
                 top_products = (
                     seg_trans.groupby("stockcode")
-                    .agg(revenue=("price", "sum"), qty=("quantity", "sum"), customers=("customer_id", "nunique"))
+                    .agg(
+                        revenue=("price", "sum"),
+                        qty=("quantity", "sum"),
+                        customers=("customer_id", "nunique"),
+                    )
                     .reset_index()
                 )
                 top_products = top_products.sort_values("revenue", ascending=False).head(5)
-                top_products["product_name"] = top_products["stockcode"].map(lambda x: f"Product {x}")
+                top_products["product_name"] = top_products["stockcode"].map(
+                    lambda x: f"Product {x}"
+                )
                 st.dataframe(
-                    top_products[["product_name", "revenue", "qty", "customers"]].style.format({"revenue": "${:,.2f}"}),
+                    top_products[["product_name", "revenue", "qty", "customers"]].style.format(
+                        {"revenue": "${:,.2f}"}
+                    ),
                     width="stretch",
                 )
 
@@ -1391,6 +1471,7 @@ def render_segment_cards(transactions_df: pd.DataFrame):
 # EXISTING HELPER FUNCTIONS (preserved from original)
 # =====================================================================
 
+
 def _render_rfm_segment_distribution(rfm_scored: pd.DataFrame):
     """Render RFM segment distribution."""
     st.subheader("RFM Segment Distribution")
@@ -1398,7 +1479,12 @@ def _render_rfm_segment_distribution(rfm_scored: pd.DataFrame):
     seg_counts.columns = ["Segment", "Customers"]
     col1, col2 = st.columns(2)
     with col1:
-        fig = px.pie(seg_counts, values="Customers", names="Segment", title="Customer Distribution by RFM Segment")
+        fig = px.pie(
+            seg_counts,
+            values="Customers",
+            names="Segment",
+            title="Customer Distribution by RFM Segment",
+        )
         st.plotly_chart(fig, width="stretch")
     with col2:
         seg_rev = (
@@ -1459,7 +1545,11 @@ def _render_rfm_3d_visualization(rfm_scored: pd.DataFrame):
         color="segment",
         hover_data=["customer_id", "avg_order_value", "n_unique_products"],
         title="RFM Space Colored by Segment",
-        labels={"recency_days": "Recency (days)", "frequency": "Frequency", "monetary": "Monetary ($)"},
+        labels={
+            "recency_days": "Recency (days)",
+            "frequency": "Frequency",
+            "monetary": "Monetary ($)",
+        },
     )
     fig.update_layout(height=600)
     st.plotly_chart(fig, width="stretch")
@@ -1508,7 +1598,12 @@ def _render_kmeans_segment_distribution(rfm_clustered: pd.DataFrame):
     seg_counts.columns = ["Segment", "Customers"]
     col1, col2 = st.columns(2)
     with col1:
-        fig = px.pie(seg_counts, values="Customers", names="Segment", title="Customer Distribution by K-Means Segment")
+        fig = px.pie(
+            seg_counts,
+            values="Customers",
+            names="Segment",
+            title="Customer Distribution by K-Means Segment",
+        )
         st.plotly_chart(fig, width="stretch")
     with col2:
         cluster_profiles = (
@@ -1529,7 +1624,11 @@ def _render_kmeans_segment_distribution(rfm_clustered: pd.DataFrame):
             y="total_revenue",
             color="n_customers",
             title="Revenue by K-Means Segment",
-            labels={"segment": "Segment", "total_revenue": "Revenue ($)", "n_customers": "Customers"},
+            labels={
+                "segment": "Segment",
+                "total_revenue": "Revenue ($)",
+                "n_customers": "Customers",
+            },
         )
         st.plotly_chart(fig, width="stretch")
 
@@ -1622,7 +1721,9 @@ def _render_value_distribution(value_segments: pd.DataFrame):
     seg_counts.columns = ["Segment", "Customers"]
     col1, col2 = st.columns(2)
     with col1:
-        fig = px.pie(seg_counts, values="Customers", names="Segment", title="Value Segment Distribution")
+        fig = px.pie(
+            seg_counts, values="Customers", names="Segment", title="Value Segment Distribution"
+        )
         st.plotly_chart(fig, width="stretch")
     with col2:
         seg_rev = (
@@ -1642,7 +1743,11 @@ def _render_value_distribution(value_segments: pd.DataFrame):
             y="total_revenue",
             color="customers",
             title="Revenue by Value Segment",
-            labels={"value_segment": "Segment", "total_revenue": "Revenue ($)", "customers": "Customers"},
+            labels={
+                "value_segment": "Segment",
+                "total_revenue": "Revenue ($)",
+                "customers": "Customers",
+            },
         )
         st.plotly_chart(fig, width="stretch")
 
@@ -1666,7 +1771,11 @@ def _render_value_revenue(value_segments: pd.DataFrame):
         y="total_revenue",
         color="customers",
         title="Revenue by Value Segment",
-        labels={"value_segment": "Segment", "total_revenue": "Revenue ($)", "customers": "Customers"},
+        labels={
+            "value_segment": "Segment",
+            "total_revenue": "Revenue ($)",
+            "customers": "Customers",
+        },
     )
     st.plotly_chart(fig, width="stretch")
 
@@ -1802,7 +1911,9 @@ def _render_behavioral_radar(profiles: pd.DataFrame, key_features: list):
 def _render_behavioral_box_plots(behavioral: pd.DataFrame, feature_cols: list):
     st.subheader("Key Differentiators")
     diff_feature = st.selectbox("Select Feature", feature_cols, key="seg_tab_behav_diff_feature")
-    fig = px.box(behavioral, x="segment", y=diff_feature, color="segment", title=f"{diff_feature} by Segment")
+    fig = px.box(
+        behavioral, x="segment", y=diff_feature, color="segment", title=f"{diff_feature} by Segment"
+    )
     st.plotly_chart(fig, width="stretch")
 
 
@@ -1813,10 +1924,16 @@ def _render_behavioral_revenue(transactions_df: pd.DataFrame, behavioral: pd.Dat
     merged = df.merge(behavioral[["customer_id", "segment"]], on="customer_id", how="left")
     seg_rev = (
         merged.groupby("segment")
-        .agg(customers=("customer_id", "nunique"), revenue=("revenue", "sum"), avg_order=("revenue", "mean"))
+        .agg(
+            customers=("customer_id", "nunique"),
+            revenue=("revenue", "sum"),
+            avg_order=("revenue", "mean"),
+        )
         .reset_index()
     )
-    fig = px.bar(seg_rev, x="segment", y="revenue", color="customers", title="Revenue by Behavioral Segment")
+    fig = px.bar(
+        seg_rev, x="segment", y="revenue", color="customers", title="Revenue by Behavioral Segment"
+    )
     st.plotly_chart(fig, width="stretch")
 
 
@@ -1828,7 +1945,8 @@ def _render_behavioral_switching(transactions_df: pd.DataFrame, behavioral: pd.D
         for segment, customers in segment_customers.items():
             if customers:
                 seg_switches = switch_matrix[
-                    switch_matrix["from_product"].isin(customers) | switch_matrix["to_product"].isin(customers)
+                    switch_matrix["from_product"].isin(customers)
+                    | switch_matrix["to_product"].isin(customers)
                 ]
                 if not seg_switches.empty:
                     st.write(f"**{segment}** - Top switches:")
@@ -1841,7 +1959,9 @@ def _render_value_distribution(value_segments: pd.DataFrame):
     seg_counts.columns = ["Segment", "Customers"]
     col1, col2 = st.columns(2)
     with col1:
-        fig = px.pie(seg_counts, values="Customers", names="Segment", title="Value Segment Distribution")
+        fig = px.pie(
+            seg_counts, values="Customers", names="Segment", title="Value Segment Distribution"
+        )
         st.plotly_chart(fig, width="stretch")
     with col2:
         seg_rev = (
@@ -1861,7 +1981,11 @@ def _render_value_distribution(value_segments: pd.DataFrame):
             y="total_revenue",
             color="customers",
             title="Revenue by Value Segment",
-            labels={"value_segment": "Segment", "total_revenue": "Revenue ($)", "customers": "Customers"},
+            labels={
+                "value_segment": "Segment",
+                "total_revenue": "Revenue ($)",
+                "customers": "Customers",
+            },
         )
         st.plotly_chart(fig, width="stretch")
 
@@ -1885,7 +2009,11 @@ def _render_value_revenue(value_segments: pd.DataFrame):
         y="total_revenue",
         color="customers",
         title="Revenue by Value Segment",
-        labels={"value_segment": "Segment", "total_revenue": "Revenue ($)", "customers": "Customers"},
+        labels={
+            "value_segment": "Segment",
+            "total_revenue": "Revenue ($)",
+            "customers": "Customers",
+        },
     )
     st.plotly_chart(fig, width="stretch")
 
@@ -2021,7 +2149,9 @@ def _render_behavioral_radar(profiles: pd.DataFrame, key_features: list):
 def _render_behavioral_box_plots(behavioral: pd.DataFrame, feature_cols: list):
     st.subheader("Key Differentiators")
     diff_feature = st.selectbox("Select Feature", feature_cols, key="seg_tab_behav_diff_feature")
-    fig = px.box(behavioral, x="segment", y=diff_feature, color="segment", title=f"{diff_feature} by Segment")
+    fig = px.box(
+        behavioral, x="segment", y=diff_feature, color="segment", title=f"{diff_feature} by Segment"
+    )
     st.plotly_chart(fig, width="stretch")
 
 
@@ -2032,10 +2162,16 @@ def _render_behavioral_revenue(transactions_df: pd.DataFrame, behavioral: pd.Dat
     merged = df.merge(behavioral[["customer_id", "segment"]], on="customer_id", how="left")
     seg_rev = (
         merged.groupby("segment")
-        .agg(customers=("customer_id", "nunique"), revenue=("revenue", "sum"), avg_order=("revenue", "mean"))
+        .agg(
+            customers=("customer_id", "nunique"),
+            revenue=("revenue", "sum"),
+            avg_order=("revenue", "mean"),
+        )
         .reset_index()
     )
-    fig = px.bar(seg_rev, x="segment", y="revenue", color="customers", title="Revenue by Behavioral Segment")
+    fig = px.bar(
+        seg_rev, x="segment", y="revenue", color="customers", title="Revenue by Behavioral Segment"
+    )
     st.plotly_chart(fig, width="stretch")
 
 
@@ -2066,7 +2202,10 @@ def _render_markov_tab(transition_matrix: pd.DataFrame, product_lookup: dict):
     st.plotly_chart(fig, width="stretch")
 
     with st.expander("View Raw Matrix"):
-        st.dataframe(transition_matrix.style.format("{:.3f}").background_gradient(cmap="Blues"), width="stretch")
+        st.dataframe(
+            transition_matrix.style.format("{:.3f}").background_gradient(cmap="Blues"),
+            width="stretch",
+        )
 
 
 def _render_brand_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
@@ -2081,6 +2220,7 @@ def _render_brand_switching_tab(transactions_df: pd.DataFrame, product_lookup: d
 
     with st.spinner("Computing brand switching..."):
         from src.analytics import compute_brand_switching_matrix, detect_brand_switching
+
         brand_switches = detect_brand_switching(transactions_df, window_days=window_days)
 
     if brand_switches.empty:
@@ -2106,16 +2246,26 @@ def _render_brand_switching_tab(transactions_df: pd.DataFrame, product_lookup: d
     # Category-level view
     if "category" in brand_switches.columns:
         st.subheader("Switching by Category")
-        selected_cat = st.selectbox("Category", ["All"] + sorted(brand_switches["category"].unique()), key="brand_switch_cat")
+        selected_cat = st.selectbox(
+            "Category",
+            ["All"] + sorted(brand_switches["category"].unique()),
+            key="brand_switch_cat",
+        )
 
-        cat_switches = brand_switches if selected_cat == "All" else brand_switches[brand_switches["category"] == selected_cat]
+        cat_switches = (
+            brand_switches
+            if selected_cat == "All"
+            else brand_switches[brand_switches["category"] == selected_cat]
+        )
 
         if not cat_switches.empty:
             cat_matrix = compute_brand_switching_matrix(cat_switches)
 
             if not cat_matrix.empty:
                 fig = px.imshow(
-                    cat_matrix.set_index(["category", "from_brand"]).loc[:, "switch_rate"].unstack(),
+                    cat_matrix.set_index(["category", "from_brand"])
+                    .loc[:, "switch_rate"]
+                    .unstack(),
                     color_continuous_scale="RdYlGn",
                     title=f"Brand Switching Rates - {selected_cat}",
                     labels={"x": "To Brand", "y": "From Brand", "color": "Switch Rate"},
@@ -2150,7 +2300,9 @@ def _render_loyalty_tab(loyalty: pd.DataFrame):
 
     col1, col2 = st.columns(2)
     with col1:
-        fig = px.pie(seg_counts, values="Customers", names="Segment", title="Loyalty Segment Distribution")
+        fig = px.pie(
+            seg_counts, values="Customers", names="Segment", title="Loyalty Segment Distribution"
+        )
         st.plotly_chart(fig, width="stretch")
 
     with col2:
@@ -2300,7 +2452,9 @@ def _render_product_profile_tab(
             fig.update_layout(yaxis={"categoryorder": "total ascending"})
             st.plotly_chart(fig, width="stretch")
         else:
-            st.info(f"No strong co-purchases found for {product_lookup.get(selected_product, selected_product)}")
+            st.info(
+                f"No strong co-purchases found for {product_lookup.get(selected_product, selected_product)}"
+            )
 
 
 def _render_top_pairs_tab(top_pairs: pd.DataFrame, min_lift: float):
@@ -2859,7 +3013,9 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
         categories = ["All"] + sorted(transactions_df["category"].unique().tolist())
         selected_category = st.selectbox("Filter by Category", categories)
         if selected_category != "All":
-            transactions_df = transactions_df[transactions_df["category"] == selected_category].copy()
+            transactions_df = transactions_df[
+                transactions_df["category"] == selected_category
+            ].copy()
             st.info(
                 f"Filtered to category: {selected_category} ({len(transactions_df)} transactions)"
             )
@@ -2960,7 +3116,11 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
         # Need affinity matrix for bundling
         basket = create_basket_matrix(transactions_df)
         if len(basket.columns) > top_n_products:
-            basket = basket[top_products] if "top_products" in locals() else basket.iloc[:, :top_n_products]
+            basket = (
+                basket[top_products]
+                if "top_products" in locals()
+                else basket.iloc[:, :top_n_products]
+            )
 
         freq_items = run_fpgrowth(basket, min_support=0.001, max_len=2)
         affinity_matrix = pd.DataFrame(

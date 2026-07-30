@@ -142,7 +142,11 @@ def detect_communities_leiden(
 
     # Run Leiden
     partition = leidenalg.find_partition(
-        g, leidenalg.RBConfigurationVertexPartition, weights="weight", resolution_parameter=resolution, seed=seed
+        g,
+        leidenalg.RBConfigurationVertexPartition,
+        weights="weight",
+        resolution_parameter=resolution,
+        seed=seed,
     )
 
     # Map back to original node names
@@ -297,8 +301,8 @@ def merge_community_dendrograms(
     Returns:
         (global_linkage_matrix, global_ordered_labels)
     """
-    from scipy.cluster.hierarchy import linkage
-    from scipy.spatial.distance import squareform
+    from scipy.cluster.hierarchy import linkage  # noqa: F401
+    from scipy.spatial.distance import squareform  # noqa: F401
 
     # Get community sizes and max internal distances
     comm_sizes = {}
@@ -335,7 +339,9 @@ def merge_community_dendrograms(
             # Single node - just add as leaf
             current_labels.append(labels[0])
             # Merge with previous cluster at inter_dist
-            current_linkages.append(np.array([[next_node_idx - n, next_node_idx - 1, inter_dist, n + 1]]))
+            current_linkages.append(
+                np.array([[next_node_idx - n, next_node_idx - 1, inter_dist, n + 1]])
+            )
         else:
             # Shift linkage indices
             shifted = link_mat.copy()
@@ -345,7 +351,16 @@ def merge_community_dendrograms(
 
             # Merge with previous at inter_dist
             current_linkages.append(
-                np.array([[next_node_idx - n, next_node_idx - 1, inter_dist, sum(comm_sizes[ci] for ci in comm_ids[:comm_ids.index(comm_id)+1])]])
+                np.array(
+                    [
+                        [
+                            next_node_idx - n,
+                            next_node_idx - 1,
+                            inter_dist,
+                            sum(comm_sizes[ci] for ci in comm_ids[: comm_ids.index(comm_id) + 1]),
+                        ]
+                    ]
+                )
             )
 
         next_node_idx = len(current_labels)
@@ -396,8 +411,6 @@ def community_detection_pipeline(
     partition = detect_communities(graph, method, resolution, seed)
 
     # 3. Hierarchical clustering within communities
-    comm_dendrograms = hierarchical_clustering_within_communities(
-        similarity_matrix, partition
-    )
+    comm_dendrograms = hierarchical_clustering_within_communities(similarity_matrix, partition)
 
     return graph, partition, comm_dendrograms

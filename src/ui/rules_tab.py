@@ -170,9 +170,7 @@ def _render_rules_table_tab(display_rules: pd.DataFrame, filtered: pd.DataFrame)
     )
 
     if selected_cols:
-        numeric_cols = [
-            c for c in selected_cols if display_rules[c].dtype in ["float64", "int64"]
-        ]
+        numeric_cols = [c for c in selected_cols if display_rules[c].dtype in ["float64", "int64"]]
         if numeric_cols:
             sort_col = st.selectbox(
                 "Sort by",

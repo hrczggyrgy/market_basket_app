@@ -213,8 +213,16 @@ def tree_to_sunburst_data(
     colors: List[str] = []
 
     _COLOR_MAP = [
-        "lightblue", "lightcoral", "lightyellow", "lightpink", "lightcyan",
-        "lightsalmon", "lightgreen", "lightgray", "lavender", "wheat",
+        "lightblue",
+        "lightcoral",
+        "lightyellow",
+        "lightpink",
+        "lightcyan",
+        "lightsalmon",
+        "lightgreen",
+        "lightgray",
+        "lavender",
+        "wheat",
     ]
 
     def traverse(node, parent_id: str = "") -> None:
@@ -254,9 +262,7 @@ def plot_sunburst(
             maxdepth=-1,
             insidetextorientation="radial",
             marker=dict(colors=colors, line=dict(width=1, color="white")),
-            hovertemplate=(
-                "<b>%{label}</b><br>Products: %{value}<br>Path: %{id}<extra></extra>"
-            ),
+            hovertemplate=("<b>%{label}</b><br>Products: %{value}<br>Path: %{id}<extra></extra>"),
             textinfo="label+value",
         )
     )
@@ -281,8 +287,16 @@ def tree_to_treemap_data(
     colors: List[str] = []
 
     _COLOR_MAP = [
-        "lightblue", "lightcoral", "lightyellow", "lightpink", "lightcyan",
-        "lightsalmon", "lightgreen", "lightgray", "lavender", "wheat",
+        "lightblue",
+        "lightcoral",
+        "lightyellow",
+        "lightpink",
+        "lightcyan",
+        "lightsalmon",
+        "lightgreen",
+        "lightgray",
+        "lavender",
+        "wheat",
     ]
 
     def traverse(node, parent_id: str = "") -> None:
@@ -324,9 +338,7 @@ def plot_treemap(
             values=values,
             branchvalues="total",
             marker=dict(colors=colors, line=dict(width=1, color="white")),
-            hovertemplate=(
-                "<b>%{label}</b><br>Value: %{value}<br>Path: %{id}<extra></extra>"
-            ),
+            hovertemplate=("<b>%{label}</b><br>Value: %{value}<br>Path: %{id}<extra></extra>"),
             textinfo="label+value",
             textfont=dict(size=11),
         )
@@ -397,9 +409,7 @@ def plot_behavioral_heatmap(
     autoscaling.
     """
     if matrix_df.empty:
-        return go.Figure().add_annotation(
-            text="No data", x=0.5, y=0.5, showarrow=False
-        )
+        return go.Figure().add_annotation(text="No data", x=0.5, y=0.5, showarrow=False)
 
     data_max = float(matrix_df.values.max())
     resolved_zmin = 0.0 if zmin is None else zmin
@@ -440,9 +450,7 @@ def plot_switching_network(
     Plot switching flows as directed network graph.
     """
     if switching_df.empty:
-        return go.Figure().add_annotation(
-            text="No switching data", x=0.5, y=0.5, showarrow=False
-        )
+        return go.Figure().add_annotation(text="No switching data", x=0.5, y=0.5, showarrow=False)
 
     df = switching_df[switching_df["switch_rate"] >= min_rate].copy()
 
@@ -510,9 +518,7 @@ def plot_switching_network(
         height=height,
         showlegend=False,
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(
-            showgrid=False, zeroline=False, showticklabels=False, scaleanchor="x"
-        ),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, scaleanchor="x"),
         margin=dict(t=60, b=20, l=20, r=20),
         plot_bgcolor="white",
     )

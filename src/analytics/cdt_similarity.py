@@ -319,7 +319,7 @@ def compute_cosine_tfidf_matrix(
 
     TF: binary purchase indicator per customer
     IDF: log(n_customers / n_customers_buying_product)
-    
+
     Cosine similarity = (TF-IDF vector_A) dot (TF-IDF vector_B) / (|A| * |B|)
 
     Args:
@@ -453,7 +453,12 @@ def build_similarity_matrix(
         )
     elif method == "jaccard":
         return _build_similarity_matrix_vectorized(
-            transactions_df, customer_col, product_col, "jaccard", min_cooccurrence, min_product_support
+            transactions_df,
+            customer_col,
+            product_col,
+            "jaccard",
+            min_cooccurrence,
+            min_product_support,
         )
     elif method == "pmi":
         return compute_pmi_matrix(
@@ -497,7 +502,12 @@ def build_similarity_matrix_ensemble(
     matrices = {}
     for method in methods:
         matrices[method] = build_similarity_matrix(
-            transactions_df, customer_col, product_col, method, min_cooccurrence, min_product_support
+            transactions_df,
+            customer_col,
+            product_col,
+            method,
+            min_cooccurrence,
+            min_product_support,
         )
 
     if weights:

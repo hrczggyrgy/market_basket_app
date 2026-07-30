@@ -1161,13 +1161,14 @@ def get_segment_profiles(
 # ENHANCED SEGMENTATION FEATURES & METHODS
 # =====================================================================
 
+
 def compute_enhanced_behavioral_features(
     transactions_df: pd.DataFrame,
     snapshot_date: Optional[pd.Timestamp] = None,
 ) -> pd.DataFrame:
     """
     Compute enhanced behavioral features beyond classic RFM.
-    
+
     Adds: basket complexity, switching entropy, category breadth, repeat rate,
     time-to-second-purchase, price sensitivity, promotion affinity, etc.
     """
@@ -1184,19 +1185,19 @@ def compute_enhanced_behavioral_features(
     if "transaction_id" in transactions_df.columns:
         df["_basket"] = df["transaction_id"]
     else:
-        df["_basket"] = (
-            df["customer_id"].astype(str)
-            + "_"
-            + df["date"].dt.strftime("%Y%m%d")
-        )
+        df["_basket"] = df["customer_id"].astype(str) + "_" + df["date"].dt.strftime("%Y%m%d")
 
     # Pre-compute basket-level stats
-    basket_stats = df.groupby("_basket").agg(
-        basket_value=("revenue", "sum"),
-        basket_units=("quantity", "sum"),
-        basket_depth=("stockcode", "nunique"),
-        basket_categories=(cat_col, "nunique"),
-    ).reset_index()
+    basket_stats = (
+        df.groupby("_basket")
+        .agg(
+            basket_value=("revenue", "sum"),
+            basket_units=("quantity", "sum"),
+            basket_depth=("stockcode", "nunique"),
+            basket_categories=(cat_col, "nunique"),
+        )
+        .reset_index()
+    )
 
     # Customer-level aggregations
     features = (
@@ -1223,19 +1224,29 @@ def compute_enhanced_behavioral_features(
     )
 
     # Merge basket stats
-    cust_basket = basket_stats.groupby(
-        df.groupby("_basket")["customer_id"].first()
-    ).agg(
-        avg_basket_value=("basket_value", "mean"),
-        avg_basket_depth=("basket_depth", "mean"),
-        avg_basket_categories=("basket_categories", "mean"),
-        std_basket_value=("basket_value", "std"),
-    ).reset_index()
-    cust_basket.columns = ["customer_id", "avg_basket_value", "avg_basket_depth", "avg_basket_categories", "std_basket_value"]
+    cust_basket = (
+        basket_stats.groupby(df.groupby("_basket")["customer_id"].first())
+        .agg(
+            avg_basket_value=("basket_value", "mean"),
+            avg_basket_depth=("basket_depth", "mean"),
+            avg_basket_categories=("basket_categories", "mean"),
+            std_basket_value=("basket_value", "std"),
+        )
+        .reset_index()
+    )
+    cust_basket.columns = [
+        "customer_id",
+        "avg_basket_value",
+        "avg_basket_depth",
+        "avg_basket_categories",
+        "std_basket_value",
+    ]
     features = features.merge(cust_basket, on="customer_id", how="left")
 
     # Derived features
-    features["customer_lifetime_days"] = (features["last_purchase"] - features["first_purchase"]).dt.days
+    features["customer_lifetime_days"] = (
+        features["last_purchase"] - features["first_purchase"]
+    ).dt.days
     features["purchase_interval"] = np.where(
         features["frequency"] > 1,
         features["customer_lifetime_days"] / (features["frequency"] - 1),
@@ -1243,97 +1254,138 @@ def compute_enhanced_behavioral_features(
     )
     features["items_per_order"] = features["n_items"] / features["frequency"]
     features["revenue_per_item"] = features["monetary"] / features["n_items"].replace(0, np.nan)
-    features["order_value_cv"] = features["std_order_value"] / features["avg_order_value"].replace(0, np.nan)
+    features["order_value_cv"] = features["std_order_value"] / features["avg_order_value"].replace(
+        0, np.nan
+    )
     features["weekend_ratio"] = features["n_weekend_purchases"] / features["frequency"]
 
     # ========== NEW ENHANCED FEATURES ==========
-    
+
     # 1. Category breadth (diversity)
-    features["category_breadth"] = features["n_unique_categories"] / features["n_unique_products"].replace(0, 1)
-    
+    features["category_breadth"] = features["n_unique_categories"] / features[
+        "n_unique_products"
+    ].replace(0, 1)
+
     # 2. Product concentration (HHI)
     cust_product = pd.crosstab(transactions_df["customer_id"], transactions_df["stockcode"])
     cust_product = (cust_product > 0).astype(int)
     product_shares = cust_product.div(cust_product.sum(axis=1), axis=0)
-    product_hhi = (product_shares ** 2).sum(axis=1).rename("product_hhi")
+    product_hhi = (product_shares**2).sum(axis=1).rename("product_hhi")
     features = features.set_index("customer_id").join(product_hhi).reset_index()
     features["product_hhi"] = features["product_hhi"].fillna(1.0)
-    
+
     # 3. Repeat rate & time-to-second-purchase
-    purchase_seq = transactions_df.sort_values(["customer_id", "date"]).groupby("customer_id")["date"].apply(list).reset_index()
+    purchase_seq = (
+        transactions_df.sort_values(["customer_id", "date"])
+        .groupby("customer_id")["date"]
+        .apply(list)
+        .reset_index()
+    )
     purchase_seq.columns = ["customer_id", "purchase_dates"]
-    
+
     def compute_repeat_and_tt2p(dates):
         dates = sorted(dates)
         n_purchases = len(dates)
         if n_purchases < 2:
             return {"repeat_rate": 0, "tt2p_days": np.nan, "median_interpurchase_days": np.nan}
-        repeat = sum(1 for i in range(1, n_purchases) if dates[i] != dates[i-1])
-        gaps = [(dates[i] - dates[i-1]).days for i in range(1, n_purchases) if dates[i] != dates[i-1]]
+        repeat = sum(1 for i in range(1, n_purchases) if dates[i] != dates[i - 1])
+        gaps = [
+            (dates[i] - dates[i - 1]).days
+            for i in range(1, n_purchases)
+            if dates[i] != dates[i - 1]
+        ]
         return {
             "repeat_rate": repeat / (n_purchases - 1) if n_purchases > 1 else 0,
             "tt2p_days": gaps[0] if gaps else np.nan,
             "median_interpurchase_days": np.median(gaps) if gaps else np.nan,
         }
-    
+
     seq_features = purchase_seq["purchase_dates"].apply(compute_repeat_and_tt2p).apply(pd.Series)
     purchase_seq = pd.concat([purchase_seq, seq_features], axis=1)
-    features = features.merge(purchase_seq[["customer_id", "repeat_rate", "tt2p_days", "median_interpurchase_days"]], on="customer_id", how="left")
-    
+    features = features.merge(
+        purchase_seq[["customer_id", "repeat_rate", "tt2p_days", "median_interpurchase_days"]],
+        on="customer_id",
+        how="left",
+    )
+
     # 4. Switching entropy (category level)
     if "category" in transactions_df.columns:
-        cust_cat_seq = transactions_df.sort_values(["customer_id", "date"]).groupby("customer_id")["category"].apply(list).reset_index()
-        
+        cust_cat_seq = (
+            transactions_df.sort_values(["customer_id", "date"])
+            .groupby("customer_id")["category"]
+            .apply(list)
+            .reset_index()
+        )
+
         def compute_switching_entropy(cats):
             if len(cats) < 2:
                 return 0
-            transitions = [(cats[i], cats[i+1]) for i in range(len(cats)-1) if cats[i] != cats[i+1]]
+            transitions = [
+                (cats[i], cats[i + 1]) for i in range(len(cats) - 1) if cats[i] != cats[i + 1]
+            ]
             if not transitions:
                 return 0
             trans_counts = pd.Series(transitions).value_counts()
             probs = trans_counts / trans_counts.sum()
             return entropy(probs)
-        
-        cat_entropy = cust_cat_seq["category"].apply(compute_switching_entropy).rename("switching_entropy")
+
+        cat_entropy = (
+            cust_cat_seq["category"].apply(compute_switching_entropy).rename("switching_entropy")
+        )
         cust_cat_seq = pd.concat([cust_cat_seq, cat_entropy], axis=1)
-        features = features.merge(cust_cat_seq[["customer_id", "switching_entropy"]], on="customer_id", how="left")
+        features = features.merge(
+            cust_cat_seq[["customer_id", "switching_entropy"]], on="customer_id", how="left"
+        )
     else:
         features["switching_entropy"] = 0
-    
+
     # 5. Net switching tendency (using switching module)
     from src.analytics.switching import get_customer_loyalty_metrics
+
     loyalty_metrics = get_customer_loyalty_metrics(transactions_df)
-    loyalty_metrics = loyalty_metrics[["customer_id", "switch_count", "switch_rate", "concentration_hhi", "loyalty_segment"]]
+    loyalty_metrics = loyalty_metrics[
+        ["customer_id", "switch_count", "switch_rate", "concentration_hhi", "loyalty_segment"]
+    ]
     features = features.merge(loyalty_metrics, on="customer_id", how="left")
-    
+
     # 5. Price sensitivity proxy (CV of price paid)
-    features["price_sensitivity"] = features["std_order_value"] / features["avg_order_value"].replace(0, np.nan)
-    
+    features["price_sensitivity"] = features["std_order_value"] / features[
+        "avg_order_value"
+    ].replace(0, np.nan)
+
     # 6. Promotion affinity (if promo flags exist)
     # Already captured by price_cv / price_sensitivity
-    
+
     # 7. Basket penetration per customer
-    total_baskets = transactions_df["_basket"].nunique() if "_basket" in transactions_df.columns else transactions_df["transaction_id"].nunique()
-    features["basket_penetration"] = features["n_baskets"] / total_baskets if total_baskets > 0 else 0
-    
+    total_baskets = (
+        transactions_df["_basket"].nunique()
+        if "_basket" in transactions_df.columns
+        else transactions_df["transaction_id"].nunique()
+    )
+    features["basket_penetration"] = (
+        features["n_baskets"] / total_baskets if total_baskets > 0 else 0
+    )
+
     # 8. Average days between purchases (interpurchase time)
     features["avg_days_between"] = features["median_interpurchase_days"]
-    
+
     # 9. Seasonality of purchase behavior
     features["month_of_year"] = features["first_purchase"].dt.month
-    
+
     # Fill NaNs
-    features = features.fillna({
-        "tt2p_days": features["median_interpurchase_days"],
-        "switching_entropy": 0,
-        "switch_count": 0,
-        "switch_rate": 0,
-        "concentration_hhi": 1.0,
-        "loyalty_segment": "Unknown",
-        "price_sensitivity": 0,
-        "tt2p_days": features["purchase_interval"],
-    })
-    
+    features = features.fillna(
+        {
+            "tt2p_days": features["median_interpurchase_days"],
+            "switching_entropy": 0,
+            "switch_count": 0,
+            "switch_rate": 0,
+            "concentration_hhi": 1.0,
+            "loyalty_segment": "Unknown",
+            "price_sensitivity": 0,
+            "tt2p_days": features["purchase_interval"],
+        }
+    )
+
     return features
 
 
@@ -1345,12 +1397,27 @@ def compute_rfm_features(
     enhanced = compute_enhanced_behavioral_features(transactions_df, snapshot_date)
     # Keep only classic RFM columns for compatibility
     rfm_cols = [
-        "customer_id", "recency_days", "frequency", "monetary",
-        "avg_order_value", "max_order_value", "n_items", "n_unique_products",
-        "n_unique_categories", "first_purchase", "last_purchase",
-        "avg_price_paid", "std_order_value", "customer_lifetime_days",
-        "purchase_interval", "items_per_order", "revenue_per_item", "order_value_cv",
-        "recency_segment", "frequency_segment", "monetary_segment",
+        "customer_id",
+        "recency_days",
+        "frequency",
+        "monetary",
+        "avg_order_value",
+        "max_order_value",
+        "n_items",
+        "n_unique_products",
+        "n_unique_categories",
+        "first_purchase",
+        "last_purchase",
+        "avg_price_paid",
+        "std_order_value",
+        "customer_lifetime_days",
+        "purchase_interval",
+        "items_per_order",
+        "revenue_per_item",
+        "order_value_cv",
+        "recency_segment",
+        "frequency_segment",
+        "monetary_segment",
     ]
     available = [c for c in rfm_cols if c in enhanced.columns]
     return enhanced[available]
@@ -1364,57 +1431,60 @@ def compute_segment_migration(
 ) -> pd.DataFrame:
     """
     Compute segment migration matrix over time.
-    
+
     Returns transition matrix showing segment-to-segment movement per period.
     """
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
-    
+
     if snapshot_date is None:
         snapshot_date = df["date"].max()
-    
+
     periods = df["date"].dt.to_period("M").unique()
     periods = sorted(periods)
-    
+
     migrations = []
-    
+
     for i in range(1, len(periods)):
-        prev_period = periods[i-1]
+        prev_period = periods[i - 1]
         curr_period = periods[i]
-        
+
         prev_end = prev_period.to_timestamp(how="end")
         prev_start = df["date"].min()
-        
+
         prev_data = df[(df["date"] >= prev_start) & (df["date"] <= prev_end)]
-        curr_data = df[(df["date"] >= prev_period.to_timestamp()) & (df["date"] <= curr_period.to_timestamp(how="end"))]
-        
+        curr_data = df[
+            (df["date"] >= prev_period.to_timestamp())
+            & (df["date"] <= curr_period.to_timestamp(how="end"))
+        ]
+
         if len(prev_data) < 100 or len(curr_data) < 100:
             continue
-            
+
         from src.analytics.segmentation import behavioral_segmentation
-        
+
         prev_seg = behavioral_segmentation(prev_data, n_clusters=6, method="kmeans")
         curr_seg = behavioral_segmentation(curr_data, n_clusters=6, method="kmeans")
-        
+
         common = set(prev_seg["customer_id"]) & set(curr_seg["customer_id"])
         if len(common) < 10:
             continue
-            
+
         prev_seg = prev_seg[prev_seg["customer_id"].isin(common)]
         curr_seg = curr_seg[curr_seg["customer_id"].isin(common)]
-        
+
         merged = prev_seg[["customer_id", "segment"]].merge(
             curr_seg[["customer_id", "segment"]], on="customer_id", suffixes=("_from", "_to")
         )
-        
+
         trans = merged.groupby(["segment_from", "segment_to"]).size().reset_index(name="count")
         trans["period"] = str(curr_period)
         migrations.append(trans)
-    
+
     if not migrations:
         return pd.DataFrame()
-    
+
     return pd.concat(migrations, ignore_index=True)
 
 
@@ -1425,18 +1495,20 @@ def compute_segment_migration_matrix(
     """Convert segment transitions to a square matrix."""
     if transitions.empty:
         return pd.DataFrame()
-    
+
     agg = transitions.groupby(["segment_from", "segment_to"])["count"].sum().reset_index()
-    
-    all_segments = set(transitions["segment_from"].unique()) | set(transitions["segment_to"].unique())
+
+    all_segments = set(transitions["segment_from"].unique()) | set(
+        transitions["segment_to"].unique()
+    )
     if segment_order is None:
         segment_order = sorted(all_segments)
-    
+
     matrix = pd.DataFrame(0, index=segment_order, columns=segment_order)
     for _, row in agg.iterrows():
         if row["segment_from"] in matrix.index and row["segment_to"] in matrix.columns:
             matrix.loc[row["segment_from"], row["segment_to"]] = row["count"]
-    
+
     return matrix
 
 
@@ -1448,46 +1520,44 @@ def compute_segment_retention(
 ) -> pd.DataFrame:
     """
     Compute retention curves by segment.
-    
+
     Returns DataFrame with columns: segment, period, retention_rate, n_customers
     """
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["period"] = df["date"].dt.to_period("M")
-    
+
     # Merge segment assignments
     df = df.merge(segment_assignments[["customer_id", "segment"]], on="customer_id", how="left")
-    
+
     # Get cohort (first period per customer per segment)
     cohort = df.groupby(["customer_id", "segment"])["period"].min().reset_index()
     cohort.columns = ["customer_id", "segment", "cohort_period"]
-    
+
     # Merge back
     df = df.merge(cohort, on=["customer_id", "segment"])
     df["period_number"] = (df["period"] - df["cohort_period"]).apply(lambda x: x.n)
     df = df[df["period_number"] >= 0]
-    
+
     # Retention by segment and period
     retention = (
         df.groupby(["segment", "cohort_period", "period_number"])["customer_id"]
         .nunique()
         .reset_index()
     )
-    
-    cohort_sizes = retention[retention["period_number"] == 0][["segment", "cohort_period", "customer_id"]].rename(
-        columns={"customer_id": "cohort_size"}
-    )
-    
+
+    cohort_sizes = retention[retention["period_number"] == 0][
+        ["segment", "cohort_period", "customer_id"]
+    ].rename(columns={"customer_id": "cohort_size"})
+
     retention = retention.merge(cohort_sizes, on=["segment", "cohort_period"])
     retention["retention_rate"] = retention["customer_id"] / retention["cohort_size"]
-    
+
     # Average across cohorts
     avg_retention = (
-        retention.groupby(["segment", "period_number"])["retention_rate"]
-        .mean()
-        .reset_index()
+        retention.groupby(["segment", "period_number"])["retention_rate"].mean().reset_index()
     )
-    
+
     return avg_retention
 
 
@@ -1503,7 +1573,7 @@ def compute_umap_projection(
         # Fallback to PCA
         pca = PCA(n_components=n_components, random_state=random_state)
         return pca.fit_transform(features)
-    
+
     reducer = umap.UMAP(
         n_components=n_components,
         n_neighbors=n_neighbors,
@@ -1522,45 +1592,52 @@ def compute_pca_projection(features: np.ndarray, n_components: int = 2) -> np.nd
 def label_segment_business(profile: pd.Series, segment_id: int) -> Tuple[str, str]:
     """
     Generate business label and action recommendation for a segment.
-    
+
     Returns (label, action)
     """
     # Extract key metrics
     recency = profile.get("recency_days", profile.get("avg_recency", 999))
-    freq = profile.get("frequency", profile.get("avg_frequency", profile.get("purchase_frequency", 0)))
+    freq = profile.get(
+        "frequency", profile.get("avg_frequency", profile.get("purchase_frequency", 0))
+    )
     monetary = profile.get("monetary", profile.get("avg_monetary", profile.get("total_revenue", 0)))
     depth = profile.get("avg_basket_depth", profile.get("n_products", 0))
     switch = profile.get("switch_rate", profile.get("switching_entropy", 0))
     repeat = profile.get("repeat_rate", 0)
-    
+
     # High value
-    if monetary > profile.get("monetary_75", monetary * 2) and freq > profile.get("freq_75", freq * 2):
+    if monetary > profile.get("monetary_75", monetary * 2) and freq > profile.get(
+        "freq_75", freq * 2
+    ):
         return "Champions", "Protect & reward: VIP access, early product previews, exclusive offers"
-    
+
     if monetary > profile.get("monetary_75", monetary * 2):
         return "Big Spenders", "Cross-sell premium bundles, increase basket depth"
-    
+
     if freq > profile.get("freq_75", freq * 2) and recency < 30:
         return "Frequent Buyers", "Loyalty program, subscription offers, referral incentives"
-    
+
     if recency < 30 and freq < profile.get("freq_25", 1):
         return "New Customers", "Welcome series, second-purchase incentive, onboarding"
-    
+
     if recency > 180 and monetary > profile.get("monetary_50", monetary):
-        return "Dormant High Value", "Win-back campaign with personalized offer, reactivation discount"
-    
+        return (
+            "Dormant High Value",
+            "Win-back campaign with personalized offer, reactivation discount",
+        )
+
     if recency > 180:
         return "Churned", "Low-cost reactivation, survey for feedback"
-    
+
     if switch > 0.5:
         return "Switchers", "Lock-in with bundles, personalized recommendations, reduce friction"
-    
+
     if repeat < 0.2:
         return "One-time Buyers", "Second-purchase trigger, product education, sample offers"
-    
+
     if depth > profile.get("depth_75", depth * 2):
         return "Variety Seekers", "Cross-sell new arrivals, recommendation engine, subscription box"
-    
+
     return "Regular", "Standard engagement, periodic promotions, feedback surveys"
 
 
@@ -1583,12 +1660,20 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["Win-back campaigns", "Generic newsletters"],
         },
         "New Customers": {
-            "primary": ["Welcome sequence", "Second-purchase discount (15-20%)", "Product education"],
+            "primary": [
+                "Welcome sequence",
+                "Second-purchase discount (15-20%)",
+                "Product education",
+            ],
             "secondary": ["First-review incentive", "Social proof showcase"],
             "avoid": ["Premium upsell immediately", "Complex loyalty terms"],
         },
         "Dormant High Value": {
-            "primary": ["Personalized win-back offer (20-30%)", "New arrival preview", "Dedicated support"],
+            "primary": [
+                "Personalized win-back offer (20-30%)",
+                "New arrival preview",
+                "Dedicated support",
+            ],
             "secondary": ["Survey for churn reason", "Re-engagement email series"],
             "avoid": ["Generic blast emails", "Irrelevant cross-sell"],
         },
@@ -1598,12 +1683,20 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["High-cost retention", "Complex offers"],
         },
         "Switchers": {
-            "primary": ["Bundle lock-in", "Personalized recommendations", "Reduce switching friction"],
+            "primary": [
+                "Bundle lock-in",
+                "Personalized recommendations",
+                "Reduce switching friction",
+            ],
             "secondary": ["Category loyalty bonus", "Subscription for staples"],
             "avoid": ["Price wars", "Generic promotions"],
         },
         "One-time Buyers": {
-            "primary": ["Second-purchase trigger (24-48h)", "Product how-to content", "Sample with next order"],
+            "primary": [
+                "Second-purchase trigger (24-48h)",
+                "Product how-to content",
+                "Sample with next order",
+            ],
             "secondary": ["Review request", "Social proof emails"],
             "avoid": ["High-value upsell", "Complex loyalty enrollment"],
         },
@@ -1618,11 +1711,14 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["Over-communication", "Premium positioning"],
         },
     }
-    return playbooks.get(segment_name, {
-        "primary": ["Standard engagement", "Periodic promotions"],
-        "secondary": ["Feedback collection", "Category expansion"],
-        "avoid": ["Over-personalization", "Aggressive tactics"],
-    })
+    return playbooks.get(
+        segment_name,
+        {
+            "primary": ["Standard engagement", "Periodic promotions"],
+            "secondary": ["Feedback collection", "Category expansion"],
+            "avoid": ["Over-personalization", "Aggressive tactics"],
+        },
+    )
 
 
 def compute_umap_projection(
@@ -1637,7 +1733,7 @@ def compute_umap_projection(
         # Fallback to PCA
         pca = PCA(n_components=n_components, random_state=random_state)
         return pca.fit_transform(features)
-    
+
     reducer = umap.UMAP(
         n_components=n_components,
         n_neighbors=n_neighbors,
@@ -1656,45 +1752,52 @@ def compute_pca_projection(features: np.ndarray, n_components: int = 2) -> np.nd
 def label_segment_business(profile: pd.Series, segment_id: int) -> Tuple[str, str]:
     """
     Generate business label and action recommendation for a segment.
-    
+
     Returns (label, action)
     """
     # Extract key metrics
     recency = profile.get("recency_days", profile.get("avg_recency", 999))
-    freq = profile.get("frequency", profile.get("avg_frequency", profile.get("purchase_frequency", 0)))
+    freq = profile.get(
+        "frequency", profile.get("avg_frequency", profile.get("purchase_frequency", 0))
+    )
     monetary = profile.get("monetary", profile.get("avg_monetary", profile.get("total_revenue", 0)))
     depth = profile.get("avg_basket_depth", profile.get("n_products", 0))
     switch = profile.get("switch_rate", profile.get("switching_entropy", 0))
     repeat = profile.get("repeat_rate", 0)
-    
+
     # High value
-    if monetary > profile.get("monetary_75", monetary * 2) and freq > profile.get("freq_75", freq * 2):
+    if monetary > profile.get("monetary_75", monetary * 2) and freq > profile.get(
+        "freq_75", freq * 2
+    ):
         return "Champions", "Protect & reward: VIP access, early product previews, exclusive offers"
-    
+
     if monetary > profile.get("monetary_75", monetary * 2):
         return "Big Spenders", "Cross-sell premium bundles, increase basket depth"
-    
+
     if freq > profile.get("freq_75", freq * 2) and recency < 30:
         return "Frequent Buyers", "Loyalty program, subscription offers, referral incentives"
-    
+
     if recency < 30 and freq < profile.get("freq_25", 1):
         return "New Customers", "Welcome series, second-purchase incentive, onboarding"
-    
+
     if recency > 180 and monetary > profile.get("monetary_50", monetary):
-        return "Dormant High Value", "Win-back campaign with personalized offer, reactivation discount"
-    
+        return (
+            "Dormant High Value",
+            "Win-back campaign with personalized offer, reactivation discount",
+        )
+
     if recency > 180:
         return "Churned", "Low-cost reactivation, survey for feedback"
-    
+
     if switch > 0.5:
         return "Switchers", "Lock-in with bundles, personalized recommendations, reduce friction"
-    
+
     if repeat < 0.2:
         return "One-time Buyers", "Second-purchase trigger, product education, sample offers"
-    
+
     if depth > profile.get("depth_75", depth * 2):
         return "Variety Seekers", "Cross-sell new arrivals, recommendation engine, subscription box"
-    
+
     return "Regular", "Standard engagement, periodic promotions, feedback surveys"
 
 
@@ -1717,12 +1820,20 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["Win-back campaigns", "Generic newsletters"],
         },
         "New Customers": {
-            "primary": ["Welcome sequence", "Second-purchase discount (15-20%)", "Product education"],
+            "primary": [
+                "Welcome sequence",
+                "Second-purchase discount (15-20%)",
+                "Product education",
+            ],
             "secondary": ["First-review incentive", "Social proof showcase"],
             "avoid": ["Premium upsell immediately", "Complex loyalty terms"],
         },
         "Dormant High Value": {
-            "primary": ["Personalized win-back offer (20-30%)", "New arrival preview", "Dedicated support"],
+            "primary": [
+                "Personalized win-back offer (20-30%)",
+                "New arrival preview",
+                "Dedicated support",
+            ],
             "secondary": ["Survey for churn reason", "Re-engagement email series"],
             "avoid": ["Generic blast emails", "Irrelevant cross-sell"],
         },
@@ -1732,12 +1843,20 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["High-cost retention", "Complex offers"],
         },
         "Switchers": {
-            "primary": ["Bundle lock-in", "Personalized recommendations", "Reduce switching friction"],
+            "primary": [
+                "Bundle lock-in",
+                "Personalized recommendations",
+                "Reduce switching friction",
+            ],
             "secondary": ["Category loyalty bonus", "Subscription for staples"],
             "avoid": ["Price wars", "Generic promotions"],
         },
         "One-time Buyers": {
-            "primary": ["Second-purchase trigger (24-48h)", "Product how-to content", "Sample with next order"],
+            "primary": [
+                "Second-purchase trigger (24-48h)",
+                "Product how-to content",
+                "Sample with next order",
+            ],
             "secondary": ["Review request", "Social proof emails"],
             "avoid": ["High-value upsell", "Complex loyalty enrollment"],
         },
@@ -1752,11 +1871,14 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["Over-communication", "Premium positioning"],
         },
     }
-    return playbooks.get(segment_name, {
-        "primary": ["Standard engagement", "Periodic promotions"],
-        "secondary": ["Feedback collection", "Category expansion"],
-        "avoid": ["Over-personalization", "Aggressive tactics"],
-    })
+    return playbooks.get(
+        segment_name,
+        {
+            "primary": ["Standard engagement", "Periodic promotions"],
+            "secondary": ["Feedback collection", "Category expansion"],
+            "avoid": ["Over-personalization", "Aggressive tactics"],
+        },
+    )
 
 
 def compute_umap_projection(
@@ -1771,7 +1893,7 @@ def compute_umap_projection(
         # Fallback to PCA
         pca = PCA(n_components=n_components, random_state=random_state)
         return pca.fit_transform(features)
-    
+
     reducer = umap.UMAP(
         n_components=n_components,
         n_neighbors=n_neighbors,
@@ -1790,45 +1912,52 @@ def compute_pca_projection(features: np.ndarray, n_components: int = 2) -> np.nd
 def label_segment_business(profile: pd.Series, segment_id: int) -> Tuple[str, str]:
     """
     Generate business label and action recommendation for a segment.
-    
+
     Returns (label, action)
     """
     # Extract key metrics
     recency = profile.get("recency_days", profile.get("avg_recency", 999))
-    freq = profile.get("frequency", profile.get("avg_frequency", profile.get("purchase_frequency", 0)))
+    freq = profile.get(
+        "frequency", profile.get("avg_frequency", profile.get("purchase_frequency", 0))
+    )
     monetary = profile.get("monetary", profile.get("avg_monetary", profile.get("total_revenue", 0)))
     depth = profile.get("avg_basket_depth", profile.get("n_products", 0))
     switch = profile.get("switch_rate", profile.get("switching_entropy", 0))
     repeat = profile.get("repeat_rate", 0)
-    
+
     # High value
-    if monetary > profile.get("monetary_75", monetary * 2) and freq > profile.get("freq_75", freq * 2):
+    if monetary > profile.get("monetary_75", monetary * 2) and freq > profile.get(
+        "freq_75", freq * 2
+    ):
         return "Champions", "Protect & reward: VIP access, early product previews, exclusive offers"
-    
+
     if monetary > profile.get("monetary_75", monetary * 2):
         return "Big Spenders", "Cross-sell premium bundles, increase basket depth"
-    
+
     if freq > profile.get("freq_75", freq * 2) and recency < 30:
         return "Frequent Buyers", "Loyalty program, subscription offers, referral incentives"
-    
+
     if recency < 30 and freq < profile.get("freq_25", 1):
         return "New Customers", "Welcome series, second-purchase incentive, onboarding"
-    
+
     if recency > 180 and monetary > profile.get("monetary_50", monetary):
-        return "Dormant High Value", "Win-back campaign with personalized offer, reactivation discount"
-    
+        return (
+            "Dormant High Value",
+            "Win-back campaign with personalized offer, reactivation discount",
+        )
+
     if recency > 180:
         return "Churned", "Low-cost reactivation, survey for feedback"
-    
+
     if switch > 0.5:
         return "Switchers", "Lock-in with bundles, personalized recommendations, reduce friction"
-    
+
     if repeat < 0.2:
         return "One-time Buyers", "Second-purchase trigger, product education, sample offers"
-    
+
     if depth > profile.get("depth_75", depth * 2):
         return "Variety Seekers", "Cross-sell new arrivals, recommendation engine, subscription box"
-    
+
     return "Regular", "Standard engagement, periodic promotions, feedback surveys"
 
 
@@ -1851,12 +1980,20 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["Win-back campaigns", "Generic newsletters"],
         },
         "New Customers": {
-            "primary": ["Welcome sequence", "Second-purchase discount (15-20%)", "Product education"],
+            "primary": [
+                "Welcome sequence",
+                "Second-purchase discount (15-20%)",
+                "Product education",
+            ],
             "secondary": ["First-review incentive", "Social proof showcase"],
             "avoid": ["Premium upsell immediately", "Complex loyalty terms"],
         },
         "Dormant High Value": {
-            "primary": ["Personalized win-back offer (20-30%)", "New arrival preview", "Dedicated support"],
+            "primary": [
+                "Personalized win-back offer (20-30%)",
+                "New arrival preview",
+                "Dedicated support",
+            ],
             "secondary": ["Survey for churn reason", "Re-engagement email series"],
             "avoid": ["Generic blast emails", "Irrelevant cross-sell"],
         },
@@ -1866,12 +2003,20 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["High-cost retention", "Complex offers"],
         },
         "Switchers": {
-            "primary": ["Bundle lock-in", "Personalized recommendations", "Reduce switching friction"],
+            "primary": [
+                "Bundle lock-in",
+                "Personalized recommendations",
+                "Reduce switching friction",
+            ],
             "secondary": ["Category loyalty bonus", "Subscription for staples"],
             "avoid": ["Price wars", "Generic promotions"],
         },
         "One-time Buyers": {
-            "primary": ["Second-purchase trigger (24-48h)", "Product how-to content", "Sample with next order"],
+            "primary": [
+                "Second-purchase trigger (24-48h)",
+                "Product how-to content",
+                "Sample with next order",
+            ],
             "secondary": ["Review request", "Social proof emails"],
             "avoid": ["High-value upsell", "Complex loyalty enrollment"],
         },
@@ -1886,11 +2031,14 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["Over-communication", "Premium positioning"],
         },
     }
-    return playbooks.get(segment_name, {
-        "primary": ["Standard engagement", "Periodic promotions"],
-        "secondary": ["Feedback collection", "Category expansion"],
-        "avoid": ["Over-personalization", "Aggressive tactics"],
-    })
+    return playbooks.get(
+        segment_name,
+        {
+            "primary": ["Standard engagement", "Periodic promotions"],
+            "secondary": ["Feedback collection", "Category expansion"],
+            "avoid": ["Over-personalization", "Aggressive tactics"],
+        },
+    )
 
 
 def compute_umap_projection(
@@ -1905,7 +2053,7 @@ def compute_umap_projection(
         # Fallback to PCA
         pca = PCA(n_components=n_components, random_state=random_state)
         return pca.fit_transform(features)
-    
+
     reducer = umap.UMAP(
         n_components=n_components,
         n_neighbors=n_neighbors,
@@ -1924,45 +2072,52 @@ def compute_pca_projection(features: np.ndarray, n_components: int = 2) -> np.nd
 def label_segment_business(profile: pd.Series, segment_id: int) -> Tuple[str, str]:
     """
     Generate business label and action recommendation for a segment.
-    
+
     Returns (label, action)
     """
     # Extract key metrics
     recency = profile.get("recency_days", profile.get("avg_recency", 999))
-    freq = profile.get("frequency", profile.get("avg_frequency", profile.get("purchase_frequency", 0)))
+    freq = profile.get(
+        "frequency", profile.get("avg_frequency", profile.get("purchase_frequency", 0))
+    )
     monetary = profile.get("monetary", profile.get("avg_monetary", profile.get("total_revenue", 0)))
     depth = profile.get("avg_basket_depth", profile.get("n_products", 0))
     switch = profile.get("switch_rate", profile.get("switching_entropy", 0))
     repeat = profile.get("repeat_rate", 0)
-    
+
     # High value
-    if monetary > profile.get("monetary_75", monetary * 2) and freq > profile.get("freq_75", freq * 2):
+    if monetary > profile.get("monetary_75", monetary * 2) and freq > profile.get(
+        "freq_75", freq * 2
+    ):
         return "Champions", "Protect & reward: VIP access, early product previews, exclusive offers"
-    
+
     if monetary > profile.get("monetary_75", monetary * 2):
         return "Big Spenders", "Cross-sell premium bundles, increase basket depth"
-    
+
     if freq > profile.get("freq_75", freq * 2) and recency < 30:
         return "Frequent Buyers", "Loyalty program, subscription offers, referral incentives"
-    
+
     if recency < 30 and freq < profile.get("freq_25", 1):
         return "New Customers", "Welcome series, second-purchase incentive, onboarding"
-    
+
     if recency > 180 and monetary > profile.get("monetary_50", monetary):
-        return "Dormant High Value", "Win-back campaign with personalized offer, reactivation discount"
-    
+        return (
+            "Dormant High Value",
+            "Win-back campaign with personalized offer, reactivation discount",
+        )
+
     if recency > 180:
         return "Churned", "Low-cost reactivation, survey for feedback"
-    
+
     if switch > 0.5:
         return "Switchers", "Lock-in with bundles, personalized recommendations, reduce friction"
-    
+
     if repeat < 0.2:
         return "One-time Buyers", "Second-purchase trigger, product education, sample offers"
-    
+
     if depth > profile.get("depth_75", depth * 2):
         return "Variety Seekers", "Cross-sell new arrivals, recommendation engine, subscription box"
-    
+
     return "Regular", "Standard engagement, periodic promotions, feedback surveys"
 
 
@@ -1985,12 +2140,20 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["Win-back campaigns", "Generic newsletters"],
         },
         "New Customers": {
-            "primary": ["Welcome sequence", "Second-purchase discount (15-20%)", "Product education"],
+            "primary": [
+                "Welcome sequence",
+                "Second-purchase discount (15-20%)",
+                "Product education",
+            ],
             "secondary": ["First-review incentive", "Social proof showcase"],
             "avoid": ["Premium upsell immediately", "Complex loyalty terms"],
         },
         "Dormant High Value": {
-            "primary": ["Personalized win-back offer (20-30%)", "New arrival preview", "Dedicated support"],
+            "primary": [
+                "Personalized win-back offer (20-30%)",
+                "New arrival preview",
+                "Dedicated support",
+            ],
             "secondary": ["Survey for churn reason", "Re-engagement email series"],
             "avoid": ["Generic blast emails", "Irrelevant cross-sell"],
         },
@@ -2000,12 +2163,20 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["High-cost retention", "Complex offers"],
         },
         "Switchers": {
-            "primary": ["Bundle lock-in", "Personalized recommendations", "Reduce switching friction"],
+            "primary": [
+                "Bundle lock-in",
+                "Personalized recommendations",
+                "Reduce switching friction",
+            ],
             "secondary": ["Category loyalty bonus", "Subscription for staples"],
             "avoid": ["Price wars", "Generic promotions"],
         },
         "One-time Buyers": {
-            "primary": ["Second-purchase trigger (24-48h)", "Product how-to content", "Sample with next order"],
+            "primary": [
+                "Second-purchase trigger (24-48h)",
+                "Product how-to content",
+                "Sample with next order",
+            ],
             "secondary": ["Review request", "Social proof emails"],
             "avoid": ["High-value upsell", "Complex loyalty enrollment"],
         },
@@ -2020,11 +2191,14 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["Over-communication", "Premium positioning"],
         },
     }
-    return playbooks.get(segment_name, {
-        "primary": ["Standard engagement", "Periodic promotions"],
-        "secondary": ["Feedback collection", "Category expansion"],
-        "avoid": ["Over-personalization", "Aggressive tactics"],
-    })
+    return playbooks.get(
+        segment_name,
+        {
+            "primary": ["Standard engagement", "Periodic promotions"],
+            "secondary": ["Feedback collection", "Category expansion"],
+            "avoid": ["Over-personalization", "Aggressive tactics"],
+        },
+    )
 
 
 def compute_umap_projection(
@@ -2039,7 +2213,7 @@ def compute_umap_projection(
         # Fallback to PCA
         pca = PCA(n_components=n_components, random_state=random_state)
         return pca.fit_transform(features)
-    
+
     reducer = umap.UMAP(
         n_components=n_components,
         n_neighbors=n_neighbors,
@@ -2058,45 +2232,52 @@ def compute_pca_projection(features: np.ndarray, n_components: int = 2) -> np.nd
 def label_segment_business(profile: pd.Series, segment_id: int) -> Tuple[str, str]:
     """
     Generate business label and action recommendation for a segment.
-    
+
     Returns (label, action)
     """
     # Extract key metrics
     recency = profile.get("recency_days", profile.get("avg_recency", 999))
-    freq = profile.get("frequency", profile.get("avg_frequency", profile.get("purchase_frequency", 0)))
+    freq = profile.get(
+        "frequency", profile.get("avg_frequency", profile.get("purchase_frequency", 0))
+    )
     monetary = profile.get("monetary", profile.get("avg_monetary", profile.get("total_revenue", 0)))
     depth = profile.get("avg_basket_depth", profile.get("n_products", 0))
     switch = profile.get("switch_rate", profile.get("switching_entropy", 0))
     repeat = profile.get("repeat_rate", 0)
-    
+
     # High value
-    if monetary > profile.get("monetary_75", monetary * 2) and freq > profile.get("freq_75", freq * 2):
+    if monetary > profile.get("monetary_75", monetary * 2) and freq > profile.get(
+        "freq_75", freq * 2
+    ):
         return "Champions", "Protect & reward: VIP access, early product previews, exclusive offers"
-    
+
     if monetary > profile.get("monetary_75", monetary * 2):
         return "Big Spenders", "Cross-sell premium bundles, increase basket depth"
-    
+
     if freq > profile.get("freq_75", freq * 2) and recency < 30:
         return "Frequent Buyers", "Loyalty program, subscription offers, referral incentives"
-    
+
     if recency < 30 and freq < profile.get("freq_25", 1):
         return "New Customers", "Welcome series, second-purchase incentive, onboarding"
-    
+
     if recency > 180 and monetary > profile.get("monetary_50", monetary):
-        return "Dormant High Value", "Win-back campaign with personalized offer, reactivation discount"
-    
+        return (
+            "Dormant High Value",
+            "Win-back campaign with personalized offer, reactivation discount",
+        )
+
     if recency > 180:
         return "Churned", "Low-cost reactivation, survey for feedback"
-    
+
     if switch > 0.5:
         return "Switchers", "Lock-in with bundles, personalized recommendations, reduce friction"
-    
+
     if repeat < 0.2:
         return "One-time Buyers", "Second-purchase trigger, product education, sample offers"
-    
+
     if depth > profile.get("depth_75", depth * 2):
         return "Variety Seekers", "Cross-sell new arrivals, recommendation engine, subscription box"
-    
+
     return "Regular", "Standard engagement, periodic promotions, feedback surveys"
 
 
@@ -2119,12 +2300,20 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["Win-back campaigns", "Generic newsletters"],
         },
         "New Customers": {
-            "primary": ["Welcome sequence", "Second-purchase discount (15-20%)", "Product education"],
+            "primary": [
+                "Welcome sequence",
+                "Second-purchase discount (15-20%)",
+                "Product education",
+            ],
             "secondary": ["First-review incentive", "Social proof showcase"],
             "avoid": ["Premium upsell immediately", "Complex loyalty terms"],
         },
         "Dormant High Value": {
-            "primary": ["Personalized win-back offer (20-30%)", "New arrival preview", "Dedicated support"],
+            "primary": [
+                "Personalized win-back offer (20-30%)",
+                "New arrival preview",
+                "Dedicated support",
+            ],
             "secondary": ["Survey for churn reason", "Re-engagement email series"],
             "avoid": ["Generic blast emails", "Irrelevant cross-sell"],
         },
@@ -2134,12 +2323,20 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["High-cost retention", "Complex offers"],
         },
         "Switchers": {
-            "primary": ["Bundle lock-in", "Personalized recommendations", "Reduce switching friction"],
+            "primary": [
+                "Bundle lock-in",
+                "Personalized recommendations",
+                "Reduce switching friction",
+            ],
             "secondary": ["Category loyalty bonus", "Subscription for staples"],
             "avoid": ["Price wars", "Generic promotions"],
         },
         "One-time Buyers": {
-            "primary": ["Second-purchase trigger (24-48h)", "Product how-to content", "Sample with next order"],
+            "primary": [
+                "Second-purchase trigger (24-48h)",
+                "Product how-to content",
+                "Sample with next order",
+            ],
             "secondary": ["Review request", "Social proof emails"],
             "avoid": ["High-value upsell", "Complex loyalty enrollment"],
         },
@@ -2154,11 +2351,14 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["Over-communication", "Premium positioning"],
         },
     }
-    return playbooks.get(segment_name, {
-        "primary": ["Standard engagement", "Periodic promotions"],
-        "secondary": ["Feedback collection", "Category expansion"],
-        "avoid": ["Over-personalization", "Aggressive tactics"],
-    })
+    return playbooks.get(
+        segment_name,
+        {
+            "primary": ["Standard engagement", "Periodic promotions"],
+            "secondary": ["Feedback collection", "Category expansion"],
+            "avoid": ["Over-personalization", "Aggressive tactics"],
+        },
+    )
 
 
 def compute_umap_projection(
@@ -2173,7 +2373,7 @@ def compute_umap_projection(
         # Fallback to PCA
         pca = PCA(n_components=n_components, random_state=random_state)
         return pca.fit_transform(features)
-    
+
     reducer = umap.UMAP(
         n_components=n_components,
         n_neighbors=n_neighbors,
@@ -2192,45 +2392,52 @@ def compute_pca_projection(features: np.ndarray, n_components: int = 2) -> np.nd
 def label_segment_business(profile: pd.Series, segment_id: int) -> Tuple[str, str]:
     """
     Generate business label and action recommendation for a segment.
-    
+
     Returns (label, action)
     """
     # Extract key metrics
     recency = profile.get("recency_days", profile.get("avg_recency", 999))
-    freq = profile.get("frequency", profile.get("avg_frequency", profile.get("purchase_frequency", 0)))
+    freq = profile.get(
+        "frequency", profile.get("avg_frequency", profile.get("purchase_frequency", 0))
+    )
     monetary = profile.get("monetary", profile.get("avg_monetary", profile.get("total_revenue", 0)))
     depth = profile.get("avg_basket_depth", profile.get("n_products", 0))
     switch = profile.get("switch_rate", profile.get("switching_entropy", 0))
     repeat = profile.get("repeat_rate", 0)
-    
+
     # High value
-    if monetary > profile.get("monetary_75", monetary * 2) and freq > profile.get("freq_75", freq * 2):
+    if monetary > profile.get("monetary_75", monetary * 2) and freq > profile.get(
+        "freq_75", freq * 2
+    ):
         return "Champions", "Protect & reward: VIP access, early product previews, exclusive offers"
-    
+
     if monetary > profile.get("monetary_75", monetary * 2):
         return "Big Spenders", "Cross-sell premium bundles, increase basket depth"
-    
+
     if freq > profile.get("freq_75", freq * 2) and recency < 30:
         return "Frequent Buyers", "Loyalty program, subscription offers, referral incentives"
-    
+
     if recency < 30 and freq < profile.get("freq_25", 1):
         return "New Customers", "Welcome series, second-purchase incentive, onboarding"
-    
+
     if recency > 180 and monetary > profile.get("monetary_50", monetary):
-        return "Dormant High Value", "Win-back campaign with personalized offer, reactivation discount"
-    
+        return (
+            "Dormant High Value",
+            "Win-back campaign with personalized offer, reactivation discount",
+        )
+
     if recency > 180:
         return "Churned", "Low-cost reactivation, survey for feedback"
-    
+
     if switch > 0.5:
         return "Switchers", "Lock-in with bundles, personalized recommendations, reduce friction"
-    
+
     if repeat < 0.2:
         return "One-time Buyers", "Second-purchase trigger, product education, sample offers"
-    
+
     if depth > profile.get("depth_75", depth * 2):
         return "Variety Seekers", "Cross-sell new arrivals, recommendation engine, subscription box"
-    
+
     return "Regular", "Standard engagement, periodic promotions, feedback surveys"
 
 
@@ -2253,12 +2460,20 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["Win-back campaigns", "Generic newsletters"],
         },
         "New Customers": {
-            "primary": ["Welcome sequence", "Second-purchase discount (15-20%)", "Product education"],
+            "primary": [
+                "Welcome sequence",
+                "Second-purchase discount (15-20%)",
+                "Product education",
+            ],
             "secondary": ["First-review incentive", "Social proof showcase"],
             "avoid": ["Premium upsell immediately", "Complex loyalty terms"],
         },
         "Dormant High Value": {
-            "primary": ["Personalized win-back offer (20-30%)", "New arrival preview", "Dedicated support"],
+            "primary": [
+                "Personalized win-back offer (20-30%)",
+                "New arrival preview",
+                "Dedicated support",
+            ],
             "secondary": ["Survey for churn reason", "Re-engagement email series"],
             "avoid": ["Generic blast emails", "Irrelevant cross-sell"],
         },
@@ -2268,12 +2483,20 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["High-cost retention", "Complex offers"],
         },
         "Switchers": {
-            "primary": ["Bundle lock-in", "Personalized recommendations", "Reduce switching friction"],
+            "primary": [
+                "Bundle lock-in",
+                "Personalized recommendations",
+                "Reduce switching friction",
+            ],
             "secondary": ["Category loyalty bonus", "Subscription for staples"],
             "avoid": ["Price wars", "Generic promotions"],
         },
         "One-time Buyers": {
-            "primary": ["Second-purchase trigger (24-48h)", "Product how-to content", "Sample with next order"],
+            "primary": [
+                "Second-purchase trigger (24-48h)",
+                "Product how-to content",
+                "Sample with next order",
+            ],
             "secondary": ["Review request", "Social proof emails"],
             "avoid": ["High-value upsell", "Complex loyalty enrollment"],
         },
@@ -2288,11 +2511,14 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["Over-communication", "Premium positioning"],
         },
     }
-    return playbooks.get(segment_name, {
-        "primary": ["Standard engagement", "Periodic promotions"],
-        "secondary": ["Feedback collection", "Category expansion"],
-        "avoid": ["Over-personalization", "Aggressive tactics"],
-    })
+    return playbooks.get(
+        segment_name,
+        {
+            "primary": ["Standard engagement", "Periodic promotions"],
+            "secondary": ["Feedback collection", "Category expansion"],
+            "avoid": ["Over-personalization", "Aggressive tactics"],
+        },
+    )
 
 
 def compute_umap_projection(
@@ -2307,7 +2533,7 @@ def compute_umap_projection(
         # Fallback to PCA
         pca = PCA(n_components=n_components, random_state=random_state)
         return pca.fit_transform(features)
-    
+
     reducer = umap.UMAP(
         n_components=n_components,
         n_neighbors=n_neighbors,
@@ -2326,45 +2552,52 @@ def compute_pca_projection(features: np.ndarray, n_components: int = 2) -> np.nd
 def label_segment_business(profile: pd.Series, segment_id: int) -> Tuple[str, str]:
     """
     Generate business label and action recommendation for a segment.
-    
+
     Returns (label, action)
     """
     # Extract key metrics
     recency = profile.get("recency_days", profile.get("avg_recency", 999))
-    freq = profile.get("frequency", profile.get("avg_frequency", profile.get("purchase_frequency", 0)))
+    freq = profile.get(
+        "frequency", profile.get("avg_frequency", profile.get("purchase_frequency", 0))
+    )
     monetary = profile.get("monetary", profile.get("avg_monetary", profile.get("total_revenue", 0)))
     depth = profile.get("avg_basket_depth", profile.get("n_products", 0))
     switch = profile.get("switch_rate", profile.get("switching_entropy", 0))
     repeat = profile.get("repeat_rate", 0)
-    
+
     # High value
-    if monetary > profile.get("monetary_75", monetary * 2) and freq > profile.get("freq_75", freq * 2):
+    if monetary > profile.get("monetary_75", monetary * 2) and freq > profile.get(
+        "freq_75", freq * 2
+    ):
         return "Champions", "Protect & reward: VIP access, early product previews, exclusive offers"
-    
+
     if monetary > profile.get("monetary_75", monetary * 2):
         return "Big Spenders", "Cross-sell premium bundles, increase basket depth"
-    
+
     if freq > profile.get("freq_75", freq * 2) and recency < 30:
         return "Frequent Buyers", "Loyalty program, subscription offers, referral incentives"
-    
+
     if recency < 30 and freq < profile.get("freq_25", 1):
         return "New Customers", "Welcome series, second-purchase incentive, onboarding"
-    
+
     if recency > 180 and monetary > profile.get("monetary_50", monetary):
-        return "Dormant High Value", "Win-back campaign with personalized offer, reactivation discount"
-    
+        return (
+            "Dormant High Value",
+            "Win-back campaign with personalized offer, reactivation discount",
+        )
+
     if recency > 180:
         return "Churned", "Low-cost reactivation, survey for feedback"
-    
+
     if switch > 0.5:
         return "Switchers", "Lock-in with bundles, personalized recommendations, reduce friction"
-    
+
     if repeat < 0.2:
         return "One-time Buyers", "Second-purchase trigger, product education, sample offers"
-    
+
     if depth > profile.get("depth_75", depth * 2):
         return "Variety Seekers", "Cross-sell new arrivals, recommendation engine, subscription box"
-    
+
     return "Regular", "Standard engagement, periodic promotions, feedback surveys"
 
 
@@ -2387,12 +2620,20 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["Win-back campaigns", "Generic newsletters"],
         },
         "New Customers": {
-            "primary": ["Welcome sequence", "Second-purchase discount (15-20%)", "Product education"],
+            "primary": [
+                "Welcome sequence",
+                "Second-purchase discount (15-20%)",
+                "Product education",
+            ],
             "secondary": ["First-review incentive", "Social proof showcase"],
             "avoid": ["Premium upsell immediately", "Complex loyalty terms"],
         },
         "Dormant High Value": {
-            "primary": ["Personalized win-back offer (20-30%)", "New arrival preview", "Dedicated support"],
+            "primary": [
+                "Personalized win-back offer (20-30%)",
+                "New arrival preview",
+                "Dedicated support",
+            ],
             "secondary": ["Survey for churn reason", "Re-engagement email series"],
             "avoid": ["Generic blast emails", "Irrelevant cross-sell"],
         },
@@ -2402,12 +2643,20 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["High-cost retention", "Complex offers"],
         },
         "Switchers": {
-            "primary": ["Bundle lock-in", "Personalized recommendations", "Reduce switching friction"],
+            "primary": [
+                "Bundle lock-in",
+                "Personalized recommendations",
+                "Reduce switching friction",
+            ],
             "secondary": ["Category loyalty bonus", "Subscription for staples"],
             "avoid": ["Price wars", "Generic promotions"],
         },
         "One-time Buyers": {
-            "primary": ["Second-purchase trigger (24-48h)", "Product how-to content", "Sample with next order"],
+            "primary": [
+                "Second-purchase trigger (24-48h)",
+                "Product how-to content",
+                "Sample with next order",
+            ],
             "secondary": ["Review request", "Social proof emails"],
             "avoid": ["High-value upsell", "Complex loyalty enrollment"],
         },
@@ -2422,11 +2671,14 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["Over-communication", "Premium positioning"],
         },
     }
-    return playbooks.get(segment_name, {
-        "primary": ["Standard engagement", "Periodic promotions"],
-        "secondary": ["Feedback collection", "Category expansion"],
-        "avoid": ["Over-personalization", "Aggressive tactics"],
-    })
+    return playbooks.get(
+        segment_name,
+        {
+            "primary": ["Standard engagement", "Periodic promotions"],
+            "secondary": ["Feedback collection", "Category expansion"],
+            "avoid": ["Over-personalization", "Aggressive tactics"],
+        },
+    )
 
 
 def compute_umap_projection(
@@ -2441,7 +2693,7 @@ def compute_umap_projection(
         # Fallback to PCA
         pca = PCA(n_components=n_components, random_state=random_state)
         return pca.fit_transform(features)
-    
+
     reducer = umap.UMAP(
         n_components=n_components,
         n_neighbors=n_neighbors,

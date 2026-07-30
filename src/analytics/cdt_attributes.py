@@ -89,16 +89,11 @@ def derive_basket_size_affinity(
 
     df = transactions_df.copy()
     if "transaction_id" in df.columns:
-        basket_depth = (
-            df.groupby("transaction_id")[product_col]
-            .nunique()
-            .rename("basket_depth")
-        )
+        basket_depth = df.groupby("transaction_id")[product_col].nunique().rename("basket_depth")
         df = df.merge(basket_depth.reset_index(), on="transaction_id", how="left")
     else:
         df["_bid"] = (
-            df["customer_id"].astype(str) + "_"
-            + pd.to_datetime(df["date"]).dt.strftime("%Y%m%d")
+            df["customer_id"].astype(str) + "_" + pd.to_datetime(df["date"]).dt.strftime("%Y%m%d")
         )
         basket_depth = df.groupby("_bid")[product_col].nunique().rename("basket_depth")
         df = df.merge(basket_depth.reset_index(), left_on="_bid", right_on="_bid", how="left")
@@ -131,11 +126,7 @@ def derive_seasonality_class(
     df["month"] = df["date"].dt.to_period("M")
 
     all_months = df["month"].nunique()
-    monthly_qty = (
-        df.groupby([product_col, "month"])["quantity"]
-        .sum()
-        .reset_index()
-    )
+    monthly_qty = df.groupby([product_col, "month"])["quantity"].sum().reset_index()
 
     classes = {}
     for prod, grp in monthly_qty.groupby(product_col):
@@ -182,9 +173,9 @@ def derive_substitution_tier(
     sim = similarity_matrix.copy()
     np.fill_diagonal(sim.values, np.nan)  # exclude self-similarity
 
-    mean_top_k = sim.apply(
-        lambda row: row.nlargest(top_k).mean(), axis=1
-    ).rename("mean_top_k_similarity")
+    mean_top_k = sim.apply(lambda row: row.nlargest(top_k).mean(), axis=1).rename(
+        "mean_top_k_similarity"
+    )
 
     tier = pd.qcut(mean_top_k, q=n_tiers, labels=labels, duplicates="drop")
     return tier.rename("substitution_tier")
@@ -249,24 +240,46 @@ def get_candidate_attributes(
 # =====================================================================
 
 SIZE_PATTERNS = [
-    r'\b(\d+(?:\.\d+)?)\s*(ML|L|G|KG|OZ|LB|PCS|PK|COUNT)\b',
-    r'\b(\d+(?:\.\d+)?)\s*[Xx]\s*(\d+(?:\.\d+)?)\s*(ML|L|G|KG|OZ|LB)\b',
-    r'\b(\d+)\s*(PACK|PK)\b',
-    r'\b(\d+)\s*(UNIT|CT|CNT)\b',
+    r"\b(\d+(?:\.\d+)?)\s*(ML|L|G|KG|OZ|LB|PCS|PK|COUNT)\b",
+    r"\b(\d+(?:\.\d+)?)\s*[Xx]\s*(\d+(?:\.\d+)?)\s*(ML|L|G|KG|OZ|LB)\b",
+    r"\b(\d+)\s*(PACK|PK)\b",
+    r"\b(\d+)\s*(UNIT|CT|CNT)\b",
 ]
 
 FLAVOUR_PATTERNS = [
-    r'\b(CHOCOLATE|VANILLA|STRAWBERRY|CHERRY|LEMON|LIME|ORANGE|APPLE|GRAPE|BERRY|MANGO|PEACH|PEAR|PINEAPPLE|BLUEBERRY|RASPBERRY|BLACKBERRY|COCONUT|CARAMEL|MOCHA|HAZELNUT|ALMOND|MINT|COFFEE|ESPRESSO|CAPPUCCINO|LATTE|COLA|ROOT BEER|GINGER ALE|TONIC|CLUB SODA|SPARKLING|STILL)\b',
-    r'\b(SALTED|UNSALTED|ROASTED|RAW|TOASTED|FRIED|BAKED|GRILLED|SMOKED|SPICY|MILD|SWEET|SAVORY|SOUR|BITTER|TANGY)\b',
-    r'\b(BEEF|CHICKEN|PORK|TURKEY|LAMB|FISH|SALMON|TUNA|SHRIMP|CRAB|LOBSTER|SEAFOOD)\b',
-    r'\b(ORGANIC|NATURAL|GLUTEN.FREE|VEGAN|VEGETARIAN|KOSHER|HALAL)\b',
+    r"\b(CHOCOLATE|VANILLA|STRAWBERRY|CHERRY|LEMON|LIME|ORANGE|APPLE|GRAPE|BERRY|MANGO|PEACH|PEAR|PINEAPPLE|BLUEBERRY|RASPBERRY|BLACKBERRY|COCONUT|CARAMEL|MOCHA|HAZELNUT|ALMOND|MINT|COFFEE|ESPRESSO|CAPPUCCINO|LATTE|COLA|ROOT BEER|GINGER ALE|TONIC|CLUB SODA|SPARKLING|STILL)\b",
+    r"\b(SALTED|UNSALTED|ROASTED|RAW|TOASTED|FRIED|BAKED|GRILLED|SMOKED|SPICY|MILD|SWEET|SAVORY|SOUR|BITTER|TANGY)\b",
+    r"\b(BEEF|CHICKEN|PORK|TURKEY|LAMB|FISH|SALMON|TUNA|SHRIMP|CRAB|LOBSTER|SEAFOOD)\b",
+    r"\b(ORGANIC|NATURAL|GLUTEN.FREE|VEGAN|VEGETARIAN|KOSHER|HALAL)\b",
 ]
 
 VARIANT_KEYWORDS = [
-    'REGULAR', 'DIET', 'ZERO', 'LIGHT', 'LITE', 'LOW.FAT', 'FULL.FAT',
-    'SKIMMED', 'SEMI', 'WHOLE', 'PLAIN', 'FLAVOURED', 'UNSWEETENED',
-    'SWEETENED', 'ORIGINAL', 'CLASSIC', 'PREMIUM', 'STANDARD', 'VALUE',
-    'ECONOMY', 'DELUXE', 'SELECT', 'CHOICE', 'PRIME', 'EXTRA', 'ULTRA',
+    "REGULAR",
+    "DIET",
+    "ZERO",
+    "LIGHT",
+    "LITE",
+    "LOW.FAT",
+    "FULL.FAT",
+    "SKIMMED",
+    "SEMI",
+    "WHOLE",
+    "PLAIN",
+    "FLAVOURED",
+    "UNSWEETENED",
+    "SWEETENED",
+    "ORIGINAL",
+    "CLASSIC",
+    "PREMIUM",
+    "STANDARD",
+    "VALUE",
+    "ECONOMY",
+    "DELUXE",
+    "SELECT",
+    "CHOICE",
+    "PRIME",
+    "EXTRA",
+    "ULTRA",
 ]
 
 
@@ -276,7 +289,7 @@ def extract_size_from_text(product_name: str) -> Optional[str]:
     for pattern in SIZE_PATTERNS:
         match = re.search(pattern, name, re.IGNORECASE)
         if match:
-            return match.group(0).replace(' ', '')
+            return match.group(0).replace(" ", "")
     return None
 
 
@@ -294,8 +307,8 @@ def extract_variant_from_text(product_name: str) -> Optional[str]:
     """Extract variant (diet/zero/light/etc) from product description."""
     name = product_name.upper()
     for kw in VARIANT_KEYWORDS:
-        if re.search(rf'\b{re.escape(kw)}\b', name):
-            return kw.replace('.', '-').title()
+        if re.search(rf"\b{re.escape(kw)}\b", name):
+            return kw.replace(".", "-").title()
     return None
 
 
@@ -313,7 +326,9 @@ def extract_attributes_from_product_text(
     Falls back to NaN for products where extraction fails.
     """
     # Get unique product names per stockcode
-    name_map = transactions_df.drop_duplicates(subset=[stockcode_col]).set_index(stockcode_col)[product_col]
+    name_map = transactions_df.drop_duplicates(subset=[stockcode_col]).set_index(stockcode_col)[
+        product_col
+    ]
 
     results = {}
     for sku, name in name_map.items():
@@ -326,7 +341,7 @@ def extract_attributes_from_product_text(
             "extracted_variant": variant,
         }
 
-    df = pd.DataFrame.from_dict(results, orient='index')
+    df = pd.DataFrame.from_dict(results, orient="index")
     df.index.name = stockcode_col
     return df
 

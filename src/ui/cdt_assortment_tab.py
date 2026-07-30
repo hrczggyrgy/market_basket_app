@@ -1,7 +1,6 @@
 """CDT & Assortment Tab — Customer Decision Tree, Demand Transference, Assortment Optimization."""
 
-import json
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 import networkx as nx
 import numpy as np
@@ -9,18 +8,12 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from scipy.cluster.hierarchy import dendrogram
 
 from src.analytics import (
-    build_behavioral_matrices,
     build_cdt,
-    build_customer_sequences,
-    build_similarity_matrix,
     build_similarity_matrix_ensemble,
-    compute_brand_switching_matrix,
     compute_bundling_matrix,
     compute_switching_matrix,
-    detect_switches,
     extract_product_attributes,
     find_optimal_clusters,
     get_cluster_assignments,
@@ -28,30 +21,26 @@ from src.analytics import (
     get_substitution_matrix,
     get_top_bundling_pairs,
     get_top_substitution_pairs,
-    get_top_switching_paths,
     perform_hierarchical_clustering,
+)
+from src.analytics.assortment_opt import (
+    generate_assortment_scenarios,
+    optimize_assortment_heuristic,
 )
 from src.analytics.cdt_attributes import build_transaction_derived_attributes
 from src.analytics.cdt_community import (
     build_product_graph,
-    community_detection_pipeline,
     detect_communities,
     hierarchical_clustering_within_communities,
     merge_community_dendrograms,
 )
-from src.analytics.cdt_tree_builder import tree_to_dataframe, tree_to_json
+from src.analytics.cdt_tree_builder import tree_to_dataframe
 from src.analytics.demand_transference import (
     compute_demand_transference_matrix,
-    compute_substitutable_demand_percentage,
     delist_impact_analysis,
     node_delist_impact,
 )
-from src.analytics.assortment_opt import (
-    evaluate_assortment,
-    generate_assortment_scenarios,
-    optimize_assortment_heuristic,
-)
-from src.viz.cdt_viz import create_cdt_sunburst, create_cdt_treemap, create_dendrogram_plot
+from src.viz.cdt_viz import plot_sunburst, plot_treemap
 
 
 def render_cdt_assortment_tab(
@@ -75,6 +64,7 @@ def render_cdt_assortment_tab(
 # ============================================================================
 # CDT BUILDER MODE
 # ============================================================================
+
 
 def _render_cdt_builder(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render CDT Builder with similarity methods, community detection, and tree building."""
@@ -226,7 +216,7 @@ def _render_similarity_comparison(similarity_matrices: Dict[str, pd.DataFrame]):
         with cols[i % len(cols)]:
             st.subheader(name.upper())
             # Heatmap sample (top 20 products)
-            sample_products = mat.index[:min(20, len(mat))]
+            sample_products = mat.index[: min(20, len(mat))]
             sample_mat = mat.loc[sample_products, sample_products]
             fig = px.imshow(
                 sample_mat.values,
@@ -266,17 +256,15 @@ def _render_silhouette_plot(silhouette_scores: Dict[int, float], optimal_k: int)
     scores = list(silhouette_scores.values())
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=ks, y=scores, mode="lines+markers",
-        name="Silhouette Score"
-    ))
-    fig.add_vline(x=optimal_k, line_dash="dash", line_color="red",
-                  annotation_text=f"Optimal k={optimal_k}")
+    fig.add_trace(go.Scatter(x=ks, y=scores, mode="lines+markers", name="Silhouette Score"))
+    fig.add_vline(
+        x=optimal_k, line_dash="dash", line_color="red", annotation_text=f"Optimal k={optimal_k}"
+    )
     fig.update_layout(
         xaxis_title="Number of Clusters (k)",
         yaxis_title="Silhouette Score",
         height=300,
-        margin=dict(l=0, r=0, t=30, b=0)
+        margin=dict(l=0, r=0, t=30, b=0),
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -300,34 +288,34 @@ def _render_cdt_results(
     with col3:
         st.metric("Quality Ratio", f"{metadata['quality_ratio']:.1%}")
     with col4:
-        st.metric("Nodes", metadata['n_nodes'])
+        st.metric("Nodes", metadata["n_nodes"])
     with col5:
         st.metric("Leaves / Depth", f"{metadata['n_leaves']} / {metadata['max_depth']}")
 
-    status = "✅ PASSED" if metadata['passed_threshold'] else "⚠️ BELOW THRESHOLD"
+    status = "✅ PASSED" if metadata["passed_threshold"] else "⚠️ BELOW THRESHOLD"
     st.info(f"Quality threshold ({metadata['quality_threshold']:.0%}): {status}")
 
     # Visualization tabs
-    viz_tab1, viz_tab2, viz_tab3, viz_tab4 = st.tabs([
-        "🌞 Sunburst", "📦 Treemap", "🌲 Dendrogram", "📋 Tree Table"
-    ])
+    viz_tab1, viz_tab2, viz_tab3, viz_tab4 = st.tabs(
+        ["🌞 Sunburst", "📦 Treemap", "🌲 Dendrogram", "📋 Tree Table"]
+    )
 
     with viz_tab1:
-        fig = create_cdt_sunburst(root, product_lookup)
+        fig = plot_sunburst(root)
         st.plotly_chart(fig, use_container_width=True)
 
     with viz_tab2:
-        fig = create_cdt_treemap(root, product_lookup)
+        fig = plot_treemap(root)
         st.plotly_chart(fig, use_container_width=True)
 
     with viz_tab3:
         dendro_data = get_dendrogram_data(
             linkage_matrix=np.array([]),  # placeholder - would need actual linkage
-            labels=product_lookup
+            labels=product_lookup,
         )
         # For dendrogram, we'd need the actual linkage matrix
         st.info("Dendrogram requires linkage matrix from clustering step")
-        fig = create_dendrogram_plot(np.array([]), product_lookup)
+        fig = create_dendrogram_plot(np.array([]))
         st.plotly_chart(fig, use_container_width=True)
 
     with viz_tab4:
@@ -336,7 +324,9 @@ def _render_cdt_results(
         render_export_buttons(tree_df, product_lookup, prefix="cdt")
 
     # Behavioral matrices
-    with st.expander("🔄 Behavioral Matrices (Switching / Substitution / Bundling)", expanded=False):
+    with st.expander(
+        "🔄 Behavioral Matrices (Switching / Substitution / Bundling)", expanded=False
+    ):
         _render_behavioral_matrices(sim_matrix, cluster_assignments, product_lookup)
 
 
@@ -365,7 +355,9 @@ def _render_behavioral_matrices(sim_matrix, cluster_assignments, product_lookup)
 
     with sub_tab2:
         if not substitution_df.empty:
-            st.dataframe(get_top_substitution_pairs(substitution_df, top_n=20), use_container_width=True)
+            st.dataframe(
+                get_top_substitution_pairs(substitution_df, top_n=20), use_container_width=True
+            )
         else:
             st.info("No substitution data available")
 
@@ -379,6 +371,7 @@ def _render_behavioral_matrices(sim_matrix, cluster_assignments, product_lookup)
 # ============================================================================
 # DEMAND TRANSFERENCE MODE
 # ============================================================================
+
 
 def _render_demand_transference(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render Demand Transference / Delist Simulation."""
@@ -448,14 +441,23 @@ def _render_demand_transference(transactions_df: pd.DataFrame, product_lookup: d
         with col2:
             st.metric("Revenue Recovered (est.)", f"${total_recovered:,.2f}")
         with col3:
-            st.metric("Net Impact", f"${net_impact:,.2f}",
-                     delta_color="normal" if net_impact >= 0 else "inverse")
+            st.metric(
+                "Net Impact",
+                f"${net_impact:,.2f}",
+                delta_color="normal" if net_impact >= 0 else "inverse",
+            )
 
         # Detail table
         display_df = impact_df.copy()
         display_df["product_name"] = display_df["stockcode"].map(product_names)
-        display_cols = ["stockcode", "product_name", "product_revenue",
-                       "estimated_revenue_recovered", "net_revenue_impact", "recovery_rate"]
+        display_cols = [
+            "stockcode",
+            "product_name",
+            "product_revenue",
+            "estimated_revenue_recovered",
+            "net_revenue_impact",
+            "recovery_rate",
+        ]
         st.dataframe(display_df[display_cols], use_container_width=True)
 
         # Waterfall chart
@@ -464,15 +466,18 @@ def _render_demand_transference(transactions_df: pd.DataFrame, product_lookup: d
     # Node-level SDP
     with st.expander("🎯 Node-Level Substitutable Demand % (SDP)", expanded=False):
         if cluster_assignments:
-            node_sdp = node_delist_impact(
-                transactions_df, dt_matrix, cluster_assignments
-            )
+            node_sdp = node_delist_impact(transactions_df, dt_matrix, cluster_assignments)
             st.dataframe(node_sdp, use_container_width=True)
 
             # SDP bar chart
-            fig = px.bar(node_sdp.sort_values("node_sdp", ascending=True),
-                        y="node_id", x="node_sdp", orientation="h",
-                        color="total_node_revenue", title="SDP by CDT Node")
+            fig = px.bar(
+                node_sdp.sort_values("node_sdp", ascending=True),
+                y="node_id",
+                x="node_sdp",
+                orientation="h",
+                color="total_node_revenue",
+                title="SDP by CDT Node",
+            )
             st.plotly_chart(fig, use_container_width=True)
 
 
@@ -481,18 +486,24 @@ def _render_delist_waterfall(impact_df: pd.DataFrame, product_names: dict):
     fig = go.Figure()
 
     # Starting revenue (positive)
-    fig.add_trace(go.Waterfall(
-        name="Revenue",
-        orientation="v",
-        measure=["absolute"] + ["relative"] * len(impact_df) + ["total"],
-        x=["Current Revenue"] + [product_names.get(row["stockcode"], row["stockcode"])
-                                 for _, row in impact_df.iterrows()] + ["Net Revenue"],
-        textposition="outside",
-        y=[impact_df["product_revenue"].sum()] +
-          list(-impact_df["product_revenue"]) +
-          [impact_df["estimated_revenue_recovered"].sum()],
-        connector={"line": {"color": "rgb(63, 63, 63)"}},
-    ))
+    fig.add_trace(
+        go.Waterfall(
+            name="Revenue",
+            orientation="v",
+            measure=["absolute"] + ["relative"] * len(impact_df) + ["total"],
+            x=["Current Revenue"]
+            + [
+                product_names.get(row["stockcode"], row["stockcode"])
+                for _, row in impact_df.iterrows()
+            ]
+            + ["Net Revenue"],
+            textposition="outside",
+            y=[impact_df["product_revenue"].sum()]
+            + list(-impact_df["product_revenue"])
+            + [impact_df["estimated_revenue_recovered"].sum()],
+            connector={"line": {"color": "rgb(63, 63, 63)"}},
+        )
+    )
 
     fig.update_layout(title="Delist Revenue Waterfall", height=400)
     st.plotly_chart(fig, use_container_width=True)
@@ -501,6 +512,7 @@ def _render_delist_waterfall(impact_df: pd.DataFrame, product_names: dict):
 # ============================================================================
 # ASSORTMENT OPTIMIZER MODE
 # ============================================================================
+
 
 def _render_assortment_optimizer(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render Assortment Optimizer with MILP/Heuristic solver."""
@@ -524,9 +536,8 @@ def _render_assortment_optimizer(transactions_df: pd.DataFrame, product_lookup: 
         dt_matrix = compute_demand_transference_matrix(transactions_df, switching_df)
 
         # Revenue per product
-        revenue_per_product = (
-            transactions_df.groupby("stockcode")
-            .apply(lambda x: (x["price"] * x["quantity"]).sum())
+        revenue_per_product = transactions_df.groupby("stockcode").apply(
+            lambda x: (x["price"] * x["quantity"]).sum()
         )
 
         # Cost per product (if available)
@@ -544,7 +555,8 @@ def _render_assortment_optimizer(transactions_df: pd.DataFrame, product_lookup: 
     # Solver info
     if solver == "milp":
         try:
-            from ortools.linear_solver import pywraplp
+            from ortools.linear_solver import pywraplp  # noqa: F401
+
             st.info("🔧 Using OR-Tools MILP solver")
         except ImportError:
             st.warning("OR-Tools not installed. Falling back to heuristic solver.")
@@ -554,19 +566,27 @@ def _render_assortment_optimizer(transactions_df: pd.DataFrame, product_lookup: 
 
     # Run optimization
     if st.button("🚀 Optimize Assortment", type="primary"):
-        with st.spinner(f"Optimizing assortment (max {max_skus} SKUs, {min_coverage:.0%} coverage)..."):
+        with st.spinner(
+            f"Optimizing assortment (max {max_skus} SKUs, {min_coverage:.0%} coverage)..."
+        ):
             if solver == "milp":
                 selected_skus, metrics = optimize_assortment_milp(
-                    transactions_df, dt_matrix, dt_matrix,  # sim_matrix as affinity
-                    revenue_per_product, None,  # cost_per_product
+                    transactions_df,
+                    dt_matrix,
+                    dt_matrix,  # sim_matrix as affinity
+                    revenue_per_product,
+                    None,  # cost_per_product
                     max_skus=max_skus,
                     min_coverage=min_coverage,
                     objective=objective,
                 )
             else:
                 selected_skus, metrics = optimize_assortment_heuristic(
-                    transactions_df, dt_matrix, dt_matrix,
-                    revenue_per_product, cost_per_product,
+                    transactions_df,
+                    dt_matrix,
+                    dt_matrix,
+                    revenue_per_product,
+                    cost_per_product,
                     max_skus=max_skus,
                     min_coverage=min_coverage,
                     objective=objective,
@@ -575,16 +595,21 @@ def _render_assortment_optimizer(transactions_df: pd.DataFrame, product_lookup: 
         st.success(f"Optimization complete! Selected {len(selected_skus)} SKUs")
 
         # Results
-        _render_assortment_results(selected_skus, metrics, revenue_per_product,
-                                  product_lookup, transactions_df)
+        _render_assortment_results(
+            selected_skus, metrics, revenue_per_product, product_lookup, transactions_df
+        )
 
     # Scenario Generation
     if st.button("🎲 Generate Scenarios"):
         with st.spinner("Generating diverse assortment scenarios..."):
-            base_assortment = transactions_df["stockcode"].value_counts().head(max_skus).index.tolist()
+            base_assortment = (
+                transactions_df["stockcode"].value_counts().head(max_skus).index.tolist()
+            )
             scenarios = generate_assortment_scenarios(
-                transactions_df, base_assortment, n_scenarios=10,
-                max_skus_range=(int(max_skus * 0.5), max_skus)
+                transactions_df,
+                base_assortment,
+                n_scenarios=10,
+                max_skus_range=(int(max_skus * 0.5), max_skus),
             )
 
         _render_scenario_comparison(scenarios, product_lookup, revenue_per_product)
@@ -616,41 +641,54 @@ def _render_assortment_results(
     sku_df = pd.DataFrame({"stockcode": selected_skus})
     sku_df["product_name"] = sku_df["stockcode"].map(product_lookup)
     sku_df["revenue"] = sku_df["stockcode"].map(revenue_per_product).fillna(0)
-    sku_df["category"] = sku_df["stockcode"].map(
-        transactions_df.drop_duplicates("stockcode").set_index("stockcode")["category"]
-    ) if "category" in transactions_df.columns else "N/A"
+    sku_df["category"] = (
+        sku_df["stockcode"].map(
+            transactions_df.drop_duplicates("stockcode").set_index("stockcode")["category"]
+        )
+        if "category" in transactions_df.columns
+        else "N/A"
+    )
 
     st.dataframe(sku_df.sort_values("revenue", ascending=False), use_container_width=True)
 
     # Category distribution
     if "category" in sku_df.columns:
-        cat_dist = sku_df.groupby("category").agg(
-            skus=("stockcode", "count"),
-            revenue=("revenue", "sum")
-        ).reset_index()
-        fig = px.pie(cat_dist, values="revenue", names="category",
-                    title="Optimized Assortment by Category Revenue")
+        cat_dist = (
+            sku_df.groupby("category")
+            .agg(skus=("stockcode", "count"), revenue=("revenue", "sum"))
+            .reset_index()
+        )
+        fig = px.pie(
+            cat_dist,
+            values="revenue",
+            names="category",
+            title="Optimized Assortment by Category Revenue",
+        )
         st.plotly_chart(fig, use_container_width=True)
 
     # Export
     render_export_buttons(sku_df, product_lookup, prefix="assortment")
 
 
-def _render_scenario_comparison(scenarios: list, product_lookup: dict, revenue_per_product: pd.Series):
+def _render_scenario_comparison(
+    scenarios: list, product_lookup: dict, revenue_per_product: pd.Series
+):
     """Render scenario comparison table."""
     st.subheader("📋 Scenario Comparison")
 
     rows = []
     for i, scen in enumerate(scenarios):
         skus = scen.get("skus", [])
-        rows.append({
-            "Scenario": i + 1,
-            "SKUs": len(skus),
-            "Revenue": scen.get("revenue", 0),
-            "Coverage": scen.get("coverage", 0),
-            "Recovery": scen.get("recovery_rate", 0),
-            "Categories": scen.get("n_categories", 0),
-        })
+        rows.append(
+            {
+                "Scenario": i + 1,
+                "SKUs": len(skus),
+                "Revenue": scen.get("revenue", 0),
+                "Coverage": scen.get("coverage", 0),
+                "Recovery": scen.get("recovery_rate", 0),
+                "Categories": scen.get("n_categories", 0),
+            }
+        )
 
     scen_df = pd.DataFrame(rows)
     st.dataframe(scen_df, use_container_width=True)
@@ -669,6 +707,7 @@ def _render_scenario_comparison(scenarios: list, product_lookup: dict, revenue_p
 # ============================================================================
 # HELPER: Export Buttons
 # ============================================================================
+
 
 def render_export_buttons(df: pd.DataFrame, product_lookup: dict, prefix: str = "export"):
     """Render export buttons for DataFrame."""
@@ -696,24 +735,40 @@ def render_export_buttons(df: pd.DataFrame, product_lookup: dict, prefix: str = 
 
     with col3:
         # HTML with plotly if applicable
-        st.button("📥 Export Chart (PNG)", key=f"{prefix}_png",
-                 help="Use camera icon on charts for PNG download")
+        st.button(
+            "📥 Export Chart (PNG)",
+            key=f"{prefix}_png",
+            help="Use camera icon on charts for PNG download",
+        )
 
 
 # ============================================================================
 # Viz Functions (imported from src.viz.cdt_viz)
 # ============================================================================
 
-def create_dendrogram_plot(linkage_matrix: np.ndarray, product_lookup: dict):
+
+def create_dendrogram_plot(linkage_matrix: np.ndarray, product_lookup: Optional[dict] = None):
     """Create dendrogram plot using plotly."""
     if len(linkage_matrix) == 0:
         fig = go.Figure()
-        fig.add_annotation(text="No clustering data available",
-                          xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        fig.add_annotation(
+            text="No clustering data available",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+        )
         return fig
 
     # Simplified dendrogram - would need proper implementation
     fig = go.Figure()
-    fig.add_annotation(text="Dendrogram requires linkage matrix",
-                      xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    fig.add_annotation(
+        text="Dendrogram requires linkage matrix",
+        xref="paper",
+        yref="paper",
+        x=0.5,
+        y=0.5,
+        showarrow=False,
+    )
     return fig

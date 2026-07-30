@@ -5,6 +5,31 @@ from .addon import (
     get_addon_recommendations,
     get_anchor_addon_matrix,
 )
+from .assortment_opt import (
+    evaluate_assortment,
+    generate_assortment_scenarios,
+    optimize_assortment_heuristic,
+    optimize_assortment_milp,
+)
+from .basket_metrics import (
+    compute_basket_composition,
+    compute_basket_penetration,
+    compute_basket_value_uplift,
+    compute_copurchase_index,
+    compute_shopper_loyalty_metrics,
+)
+from .cdt_attributes import (
+    FUNCTIONAL_FIT_ATTRIBUTES,
+    build_transaction_derived_attributes,
+    derive_basket_size_affinity,
+    derive_price_tier,
+    derive_seasonality_class,
+    derive_substitution_tier,
+    derive_velocity_tier,
+    extract_attributes_from_product_text,
+    get_candidate_attributes,
+    merge_extracted_attributes,
+)
 from .cdt_behavioral import (
     build_behavioral_matrices,
     compute_brand_switching_matrix,
@@ -22,6 +47,16 @@ from .cdt_clustering import (
     get_cluster_assignments,
     get_dendrogram_data,
     perform_hierarchical_clustering,
+)
+from .cdt_community import (
+    build_product_graph,
+    community_detection_pipeline,
+    detect_communities,
+    detect_communities_label_propagation,
+    detect_communities_leiden,
+    detect_communities_louvain,
+    hierarchical_clustering_within_communities,
+    merge_community_dendrograms,
 )
 from .cdt_similarity import (
     build_copurchase_tables,
@@ -43,28 +78,6 @@ from .cdt_tree_builder import (
     tree_to_dataframe,
     tree_to_json,
 )
-from .cdt_attributes import (
-    build_transaction_derived_attributes,
-    derive_price_tier,
-    derive_velocity_tier,
-    derive_basket_size_affinity,
-    derive_seasonality_class,
-    derive_substitution_tier,
-    extract_attributes_from_product_text,
-    merge_extracted_attributes,
-    FUNCTIONAL_FIT_ATTRIBUTES,
-    get_candidate_attributes,
-)
-from .cdt_community import (
-    build_product_graph,
-    detect_communities,
-    detect_communities_louvain,
-    detect_communities_leiden,
-    detect_communities_label_propagation,
-    hierarchical_clustering_within_communities,
-    merge_community_dendrograms,
-    community_detection_pipeline,
-)
 from .cohort import (
     cohort_comparison_summary,
     compute_cohort_sizes,
@@ -72,17 +85,23 @@ from .cohort import (
     period_over_period_comparison,
     year_over_year_comparison,
 )
-from .basket_metrics import (
-    compute_basket_penetration,
-    compute_basket_value_uplift,
-    compute_basket_composition,
-    compute_copurchase_index,
-    compute_shopper_loyalty_metrics,
-)
 from .copurchase import (
     compute_affinity_matrix,
     get_product_affinity_profile,
     get_top_affinity_pairs,
+)
+from .demand_transference import (
+    compute_demand_transference_matrix,
+    compute_substitutable_demand_percentage,
+    delist_impact_analysis,
+    node_delist_impact,
+)
+from .pricing import (
+    compute_kvi_score,
+    diagnose_price_curves,
+    estimate_elasticity_xgb,
+    estimate_hierarchical_elasticity,
+    estimate_loglog_elasticity,
 )
 from .product_performance import (
     compute_product_metrics,
@@ -92,35 +111,16 @@ from .product_performance import (
     product_lifecycle_stage,
     product_seasonality,
 )
-from .demand_transference import (
-    compute_demand_transference_matrix,
-    compute_substitutable_demand_percentage,
-    delist_impact_analysis,
-    node_delist_impact,
-)
 from .promo_uplift import (
-    derive_promo_flag,
     build_uplift_dataset,
-    train_t_learner_uplift,
-    train_s_learner_uplift,
-    train_xgb_uplift,
+    decompose_promo_lift,
+    derive_promo_flag,
     estimate_propensity_score,
     evaluate_uplift_model,
-    decompose_promo_lift,
     promo_roi_analysis,
-)
-from .pricing import (
-    estimate_loglog_elasticity,
-    estimate_hierarchical_elasticity,
-    estimate_elasticity_xgb,
-    compute_kvi_score,
-    diagnose_price_curves,
-)
-from .assortment_opt import (
-    evaluate_assortment,
-    generate_assortment_scenarios,
-    optimize_assortment_heuristic,
-    optimize_assortment_milp,
+    train_s_learner_uplift,
+    train_t_learner_uplift,
+    train_xgb_uplift,
 )
 from .segmentation import (
     behavioral_segmentation,
@@ -198,6 +198,16 @@ __all__ = [
     "tree_to_dataframe",
     "tree_to_json",
     "extract_product_attributes",
+    "FUNCTIONAL_FIT_ATTRIBUTES",
+    "build_transaction_derived_attributes",
+    "derive_basket_size_affinity",
+    "derive_price_tier",
+    "derive_seasonality_class",
+    "derive_substitution_tier",
+    "derive_velocity_tier",
+    "extract_attributes_from_product_text",
+    "get_candidate_attributes",
+    "merge_extracted_attributes",
     "compute_switching_matrix",
     "get_substitution_matrix",
     "compute_bundling_matrix",

@@ -20,20 +20,16 @@ References
   measure for association analysis. Information Systems, 29(4), 293-313.
 """
 
-from typing import Optional
-
 import numpy as np
 import pandas as pd
 from scipy.stats import fisher_exact
-
 
 # ---------------------------------------------------------------------------
 # 1. Statistical significance
 # ---------------------------------------------------------------------------
 
-def fisher_pvalue_from_table(
-    both: int, a_only: int, b_only: int, neither: int
-) -> float:
+
+def fisher_pvalue_from_table(both: int, a_only: int, b_only: int, neither: int) -> float:
     """Compute one-sided Fisher exact test p-value for positive association.
 
     Tests H0: products A and B are purchased independently.
@@ -132,9 +128,7 @@ def add_significance_to_pairs(
         pvalues.append(pval)
 
     result["p_value"] = pvalues
-    result["q_value"] = benjamini_hochberg_correction(
-        pd.Series(pvalues, index=result.index)
-    ).values
+    result["q_value"] = benjamini_hochberg_correction(pd.Series(pvalues, index=result.index)).values
     result["is_significant"] = result["q_value"] <= alpha
     return result
 
@@ -143,9 +137,8 @@ def add_significance_to_pairs(
 # 2. Additional association metrics
 # ---------------------------------------------------------------------------
 
-def collective_strength(
-    support_ab: float, p_a: float, p_b: float
-) -> float:
+
+def collective_strength(support_ab: float, p_a: float, p_b: float) -> float:
     """Collective strength: symmetry-corrected conviction.
 
     CS = P(A union B) / (1 - P(A union B))  *  (1 - P(A)P(B)) / (P(A)P(B))
@@ -215,10 +208,7 @@ def temporal_recency_support(
     if "transaction_id" in df.columns:
         basket_id_col = "transaction_id"
     else:
-        df["_bid"] = (
-            df["customer_id"].astype(str) + "_"
-            + df["date"].dt.strftime("%Y%m%d")
-        )
+        df["_bid"] = df["customer_id"].astype(str) + "_" + df["date"].dt.strftime("%Y%m%d")
         basket_id_col = "_bid"
 
     baskets_with_a = set(df[df[product_col] == product_a][basket_id_col])

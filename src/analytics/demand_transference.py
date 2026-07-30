@@ -11,7 +11,7 @@ References
 - Oracle Retail Science Cloud Services 19.1 Implementation Guide
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -68,8 +68,14 @@ def compute_demand_transference_matrix(
 
     return (
         result[
-            ["from_product", "to_product", "switch_rate",
-             "revenue_share_from", "demand_transference", "revenue_at_risk"]
+            [
+                "from_product",
+                "to_product",
+                "switch_rate",
+                "revenue_share_from",
+                "demand_transference",
+                "revenue_at_risk",
+            ]
         ]
         .sort_values("demand_transference", ascending=False)
         .reset_index(drop=True)
@@ -99,12 +105,7 @@ def compute_substitutable_demand_percentage(
     if total_revenue == 0:
         return {}
 
-    sdp = (
-        demand_transference_df
-        .groupby("from_product")["revenue_at_risk"]
-        .sum()
-        / total_revenue
-    )
+    sdp = demand_transference_df.groupby("from_product")["revenue_at_risk"].sum() / total_revenue
     return sdp.to_dict()
 
 
@@ -138,17 +139,19 @@ def delist_impact_analysis(
     rows = []
     for prod in products_to_delist:
         rev = product_revenue.get(prod, 0.0)
-        transferred = demand_transference_df[
-            demand_transference_df["from_product"] == prod
-        ]["revenue_at_risk"].sum()
+        transferred = demand_transference_df[demand_transference_df["from_product"] == prod][
+            "revenue_at_risk"
+        ].sum()
 
-        rows.append({
-            product_col: prod,
-            "product_revenue": rev,
-            "estimated_revenue_recovered": transferred,
-            "net_revenue_impact": transferred - rev,
-            "recovery_rate": transferred / rev if rev > 0 else np.nan,
-        })
+        rows.append(
+            {
+                product_col: prod,
+                "product_revenue": rev,
+                "estimated_revenue_recovered": transferred,
+                "net_revenue_impact": transferred - rev,
+                "recovery_rate": transferred / rev if rev > 0 else np.nan,
+            }
+        )
 
     return pd.DataFrame(rows).sort_values("net_revenue_impact").reset_index(drop=True)
 
@@ -179,31 +182,30 @@ def node_delist_impact(
         node_products = [p for p, n in cluster_assignments.items() if n == node_id]
         node_rev = sum(product_revenue.get(p, 0) for p in node_products)
 
-        node_dt = demand_transference_df[
-            demand_transference_df["from_product"].isin(node_products)
-        ]
-        internal = node_dt[
-            node_dt["to_product"].isin(node_products)
-        ]["revenue_at_risk"].sum()
-        external = node_dt[
-            ~node_dt["to_product"].isin(node_products)
-        ]["revenue_at_risk"].sum()
+        node_dt = demand_transference_df[demand_transference_df["from_product"].isin(node_products)]
+        internal = node_dt[node_dt["to_product"].isin(node_products)]["revenue_at_risk"].sum()
+        external = node_dt[~node_dt["to_product"].isin(node_products)]["revenue_at_risk"].sum()
 
-        rows.append({
-            "node_id": node_id,
-            "n_products": len(node_products),
-            "total_node_revenue": round(node_rev, 2),
-            "internal_recovery": round(internal, 2),
-            "external_leakage": round(external, 2),
-            "node_sdp": round(internal / node_rev, 4) if node_rev > 0 else np.nan,
-        })
+        rows.append(
+            {
+                "node_id": node_id,
+                "n_products": len(node_products),
+                "total_node_revenue": round(node_rev, 2),
+                "internal_recovery": round(internal, 2),
+                "external_leakage": round(external, 2),
+                "node_sdp": round(internal / node_rev, 4) if node_rev > 0 else np.nan,
+            }
+        )
 
-    return pd.DataFrame(rows).sort_values("total_node_revenue", ascending=False).reset_index(drop=True)
+    return (
+        pd.DataFrame(rows).sort_values("total_node_revenue", ascending=False).reset_index(drop=True)
+    )
 
 
 # ============================================================================
 # ADVANCED: Markov Chain & MNL Simulation
 # ============================================================================
+
 
 def build_substitution_matrix_markov(
     switching_df: pd.DataFrame,
@@ -230,7 +232,9 @@ def build_substitution_matrix_markov(
     Square DataFrame (products x products) with steady-state substitution probs.
     """
     # Build transition matrix
-    products = sorted(set(switching_df["from_product"].unique()) | set(switching_df["to_product"].unique()))
+    products = sorted(
+        set(switching_df["from_product"].unique()) | set(switching_df["to_product"].unique())
+    )
     n = len(products)
     product_idx = {p: i for i, p in enumerate(products)}
 
@@ -306,9 +310,9 @@ def build_substitution_matrix_mnl(
             rev_j = product_revenue.get(prod_j, product_revenue.mean())
 
             U[i, j] = (
-                utility_weight_price * price_j +
-                utility_weight_similarity * sim_ij +
-                utility_weight_revenue_share * np.log(rev_j + 1)
+                utility_weight_price * price_j
+                + utility_weight_similarity * sim_ij
+                + utility_weight_revenue_share * np.log(rev_j + 1)
             )
 
     # Softmax per row
@@ -388,4 +392,6 @@ def _apply_cdt_recovery_constraints(
     - External leakage penalty for cross-node recovery
     """
     # Simplified: cap total recovery
-    return min(recovered, max_recovery * sum(recovery_detail.get(d, {}).values() for d in recovery_detail))
+    return min(
+        recovered, max_recovery * sum(recovery_detail.get(d, {}).values() for d in recovery_detail)
+    )

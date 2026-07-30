@@ -182,7 +182,9 @@ def compute_entropy_gain(
         for p in group_products:
             group_counts[cluster_assignments[p]] += 1
         group_n = len(group_products)
-        group_entropy = -sum((c / group_n) * np.log(c / group_n) for c in group_counts.values() if c > 0)
+        group_entropy = -sum(
+            (c / group_n) * np.log(c / group_n) for c in group_counts.values() if c > 0
+        )
         weighted_child_entropy += (group_n / n) * group_entropy
 
     return parent_entropy - weighted_child_entropy

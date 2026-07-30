@@ -363,8 +363,8 @@ def create_sankey_from_matrix(
             if i != j:
                 lift = matrix.iloc[i, j]
                 if lift >= min_lift:
-                    sources.append(i)          # source layer: 0..n-1
-                    targets.append(n + j)      # target layer: n..2n-1
+                    sources.append(i)  # source layer: 0..n-1
+                    targets.append(n + j)  # target layer: n..2n-1
                     values.append(lift - 1.0)  # excess over independence
 
     if not values:

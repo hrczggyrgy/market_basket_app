@@ -62,13 +62,9 @@ def render_copurchase_tab(transactions_df: pd.DataFrame, product_lookup: dict, p
                 "Min Support", 0.001, 1.0, params.get("min_support", 0.005), 0.001
             )
         with col2:
-            min_lift = st.number_input(
-                "Min Lift", 0.1, 20.0, params.get("min_lift", 1.2), 0.1
-            )
+            min_lift = st.number_input("Min Lift", 0.1, 20.0, params.get("min_lift", 1.2), 0.1)
         with col3:
-            top_n_products = st.slider(
-                "Top N Products", 10, 100, params.get("top_n_products", 30)
-            )
+            top_n_products = st.slider("Top N Products", 10, 100, params.get("top_n_products", 30))
 
     with st.spinner("Computing co-purchase patterns..."):
         affinity_matrix = _cached_compute_affinity_matrix(
@@ -187,9 +183,7 @@ def _render_quadrant_tab(top_pairs: pd.DataFrame):
     )
 
     qdata = top_pairs.copy()
-    qdata["label"] = (
-        qdata["Product A Name"].str[:20] + " + " + qdata["Product B Name"].str[:20]
-    )
+    qdata["label"] = qdata["Product A Name"].str[:20] + " + " + qdata["Product B Name"].str[:20]
     median_j = qdata["jaccard"].median()
     median_k = qdata["kulczynski"].median()
 
@@ -224,9 +218,7 @@ def _render_quadrant_tab(top_pairs: pd.DataFrame):
     st.plotly_chart(fig, use_container_width=True)
 
 
-def _render_heatmap_tab(
-    affinity_matrix: pd.DataFrame, product_lookup: dict, top_n_products: int
-):
+def _render_heatmap_tab(affinity_matrix: pd.DataFrame, product_lookup: dict, top_n_products: int):
     """Render lift heatmap."""
     st.subheader("Affinity Matrix Heatmap")
 
@@ -235,8 +227,7 @@ def _render_heatmap_tab(
         return
 
     labels = [
-        product_lookup.get(col, col) if product_lookup else col
-        for col in affinity_matrix.columns
+        product_lookup.get(col, col) if product_lookup else col for col in affinity_matrix.columns
     ]
 
     fig = go.Figure(
@@ -267,9 +258,7 @@ def _render_profile_tab(
     """Render single-product affinity profile."""
     st.subheader("Affinity Profile for a Single Product")
 
-    products = sorted(
-        set(top_pairs["product_a"]).union(set(top_pairs["product_b"]))
-    )
+    products = sorted(set(top_pairs["product_a"]).union(set(top_pairs["product_b"])))
     target_product = st.selectbox(
         "Select Product",
         options=products,
@@ -280,9 +269,7 @@ def _render_profile_tab(
     if not target_product:
         return
 
-    profile = _cached_get_product_affinity_profile(
-        transactions_df, target_product, min_lift, 20
-    )
+    profile = _cached_get_product_affinity_profile(transactions_df, target_product, min_lift, 20)
 
     if profile.empty:
         st.info("No affinity profile found for this product")

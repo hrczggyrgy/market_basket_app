@@ -12,15 +12,15 @@ References
 - Martin et al. (2020) "Fundamental basket size patterns", J. Retailing & Consumer Svcs.
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _total_baskets(transactions_df: pd.DataFrame) -> int:
     """Total unique baskets (trips) in the dataset."""
@@ -44,6 +44,7 @@ def _basket_ids(transactions_df: pd.DataFrame) -> pd.Series:
 # ---------------------------------------------------------------------------
 # 1. Basket penetration
 # ---------------------------------------------------------------------------
+
 
 def compute_basket_penetration(
     transactions_df: pd.DataFrame,
@@ -89,14 +90,8 @@ def compute_basket_penetration(
     if "category" in df.columns:
         cat_map = df.groupby(product_col)["category"].first()
         result["category"] = result[product_col].map(cat_map)
-        cat_baskets = (
-            df.groupby("category")["_basket"]
-            .nunique()
-            .rename("category_total_baskets")
-        )
-        result = result.merge(
-            cat_baskets.reset_index(), on="category", how="left"
-        )
+        cat_baskets = df.groupby("category")["_basket"].nunique().rename("category_total_baskets")
+        result = result.merge(cat_baskets.reset_index(), on="category", how="left")
         result["category_basket_penetration"] = (
             result["baskets_with_product"] / result["category_total_baskets"]
         )
@@ -129,9 +124,7 @@ def basket_penetration_over_time(
         .rename("baskets_with_product")
         .reset_index()
     )
-    product_period = product_period.merge(
-        period_totals.reset_index(), on="period", how="left"
-    )
+    product_period = product_period.merge(period_totals.reset_index(), on="period", how="left")
     product_period["basket_penetration"] = (
         product_period["baskets_with_product"] / product_period["total_baskets"]
     )
@@ -141,6 +134,7 @@ def basket_penetration_over_time(
 # ---------------------------------------------------------------------------
 # 2. Basket composition KPIs
 # ---------------------------------------------------------------------------
+
 
 def compute_basket_composition(
     transactions_df: pd.DataFrame,
@@ -160,24 +154,23 @@ def compute_basket_composition(
     df["_basket"] = _basket_ids(df)
     df["revenue"] = df["price"] * df["quantity"]
 
-    basket_stats = (
-        df.groupby("_basket")
-        .agg(
-            basket_value=("revenue", "sum"),
-            basket_units=("quantity", "sum"),
-            basket_depth=("stockcode", "nunique"),
-        )
+    basket_stats = df.groupby("_basket").agg(
+        basket_value=("revenue", "sum"),
+        basket_units=("quantity", "sum"),
+        basket_depth=("stockcode", "nunique"),
     )
 
-    return pd.DataFrame({
-        "avg_basket_value": [basket_stats["basket_value"].mean()],
-        "median_basket_value": [basket_stats["basket_value"].median()],
-        "p25_basket_value": [basket_stats["basket_value"].quantile(0.25)],
-        "p75_basket_value": [basket_stats["basket_value"].quantile(0.75)],
-        "avg_basket_size_units": [basket_stats["basket_units"].mean()],
-        "avg_basket_depth_skus": [basket_stats["basket_depth"].mean()],
-        "total_baskets": [len(basket_stats)],
-    })
+    return pd.DataFrame(
+        {
+            "avg_basket_value": [basket_stats["basket_value"].mean()],
+            "median_basket_value": [basket_stats["basket_value"].median()],
+            "p25_basket_value": [basket_stats["basket_value"].quantile(0.25)],
+            "p75_basket_value": [basket_stats["basket_value"].quantile(0.75)],
+            "avg_basket_size_units": [basket_stats["basket_units"].mean()],
+            "avg_basket_depth_skus": [basket_stats["basket_depth"].mean()],
+            "total_baskets": [len(basket_stats)],
+        }
+    )
 
 
 def compute_basket_value_uplift(
@@ -202,7 +195,8 @@ def compute_basket_value_uplift(
 
     # Top-N products by frequency
     top_products = (
-        df.groupby(product_col)["_basket"].nunique()
+        df.groupby(product_col)["_basket"]
+        .nunique()
         .sort_values(ascending=False)
         .head(top_n)
         .index.tolist()
@@ -219,18 +213,28 @@ def compute_basket_value_uplift(
         ]
         avg_with = baskets_with.mean() if len(baskets_with) > 0 else np.nan
         avg_without = baskets_without.mean() if len(baskets_without) > 0 else np.nan
-        uplift = avg_with - avg_without if not np.isnan(avg_with) and not np.isnan(avg_without) else np.nan
+        uplift = (
+            avg_with - avg_without
+            if not np.isnan(avg_with) and not np.isnan(avg_without)
+            else np.nan
+        )
         uplift_pct = uplift / avg_without * 100 if avg_without and avg_without > 0 else np.nan
-        rows.append({
-            product_col: prod,
-            "baskets_with": len(baskets_with),
-            "avg_basket_value_with": avg_with,
-            "avg_basket_value_without": avg_without,
-            "basket_value_uplift": uplift,
-            "basket_value_uplift_pct": uplift_pct,
-        })
+        rows.append(
+            {
+                product_col: prod,
+                "baskets_with": len(baskets_with),
+                "avg_basket_value_with": avg_with,
+                "avg_basket_value_without": avg_without,
+                "basket_value_uplift": uplift,
+                "basket_value_uplift_pct": uplift_pct,
+            }
+        )
 
-    return pd.DataFrame(rows).sort_values("basket_value_uplift", ascending=False).reset_index(drop=True)
+    return (
+        pd.DataFrame(rows)
+        .sort_values("basket_value_uplift", ascending=False)
+        .reset_index(drop=True)
+    )
 
 
 def compute_cross_category_basket_rate(
@@ -269,6 +273,7 @@ def compute_cross_category_basket_rate(
 # 3. Co-purchase index (Dunnhumby / Circana indexed affinity)
 # ---------------------------------------------------------------------------
 
+
 def compute_copurchase_index(
     transactions_df: pd.DataFrame,
     top_n_products: int = 50,
@@ -286,50 +291,49 @@ def compute_copurchase_index(
     total_baskets = df["_basket"].nunique()
 
     top_products = (
-        df.groupby("stockcode")["_basket"].nunique()
+        df.groupby("stockcode")["_basket"]
+        .nunique()
         .sort_values(ascending=False)
         .head(top_n_products)
         .index.tolist()
     )
 
     basket_product = (
-        df[df["stockcode"].isin(top_products)]
-        .groupby("_basket")["stockcode"]
-        .apply(set)
+        df[df["stockcode"].isin(top_products)].groupby("_basket")["stockcode"].apply(set)
     )
     penetration = {
-        p: sum(1 for s in basket_product if p in s) / total_baskets
-        for p in top_products
+        p: sum(1 for s in basket_product if p in s) / total_baskets for p in top_products
     }
 
     rows = []
     for i, pa in enumerate(top_products):
-        for pb in top_products[i + 1:]:
+        for pb in top_products[i + 1 :]:
             both = sum(1 for s in basket_product if pa in s and pb in s)
             p_ab = both / total_baskets
             p_a = penetration[pa]
             p_b = penetration[pb]
             if p_a > 0 and p_b > 0 and p_ab > 0:
                 index = (p_ab / (p_a * p_b)) * 100
-                rows.append({
-                    "product_a": pa,
-                    "product_b": pb,
-                    "copurchase_index": round(index, 1),
-                    "baskets_both": both,
-                    "basket_penetration_a": round(p_a, 4),
-                    "basket_penetration_b": round(p_b, 4),
-                })
+                rows.append(
+                    {
+                        "product_a": pa,
+                        "product_b": pb,
+                        "copurchase_index": round(index, 1),
+                        "baskets_both": both,
+                        "basket_penetration_a": round(p_a, 4),
+                        "basket_penetration_b": round(p_b, 4),
+                    }
+                )
 
     return (
-        pd.DataFrame(rows)
-        .sort_values("copurchase_index", ascending=False)
-        .reset_index(drop=True)
+        pd.DataFrame(rows).sort_values("copurchase_index", ascending=False).reset_index(drop=True)
     )
 
 
 # ---------------------------------------------------------------------------
 # 4. Shopper loyalty metrics (transaction-derived)
 # ---------------------------------------------------------------------------
+
 
 def compute_shopper_loyalty_metrics(
     transactions_df: pd.DataFrame,
@@ -365,12 +369,7 @@ def compute_shopper_loyalty_metrics(
             continue
 
         # Repeat rate
-        repeat_buyers = (
-            prod_df.groupby("customer_id")["date"]
-            .nunique()
-            .gt(1)
-            .sum()
-        )
+        repeat_buyers = prod_df.groupby("customer_id")["date"].nunique().gt(1).sum()
         repeat_rate = repeat_buyers / n_buyers
 
         # Reorder interval & time to second purchase
@@ -403,18 +402,28 @@ def compute_shopper_loyalty_metrics(
                 # Exclusivity: buyers who bought only 1 unique product in category
                 cat_unique_per_buyer = cat_df.groupby("customer_id")[product_col].nunique()
                 exclusive = (cat_unique_per_buyer == 1).sum()
-                exclusivity_rate = exclusive / len(cat_unique_per_buyer) if len(cat_unique_per_buyer) > 0 else np.nan
+                exclusivity_rate = (
+                    exclusive / len(cat_unique_per_buyer)
+                    if len(cat_unique_per_buyer) > 0
+                    else np.nan
+                )
 
-        rows.append({
-            product_col: prod,
-            "n_buyers": n_buyers,
-            "repeat_rate": round(repeat_rate, 4),
-            "switcher_rate": round(1 - repeat_rate, 4),
-            "reorder_interval_days": round(reorder_interval, 1) if not np.isnan(reorder_interval) else np.nan,
-            "time_to_second_purchase_days": round(tt2p, 1) if not np.isnan(tt2p) else np.nan,
-            "loyalty_index": round(loyalty_index, 4) if not np.isnan(loyalty_index) else np.nan,
-            "exclusivity_rate": round(exclusivity_rate, 4) if not np.isnan(exclusivity_rate) else np.nan,
-        })
+        rows.append(
+            {
+                product_col: prod,
+                "n_buyers": n_buyers,
+                "repeat_rate": round(repeat_rate, 4),
+                "switcher_rate": round(1 - repeat_rate, 4),
+                "reorder_interval_days": round(reorder_interval, 1)
+                if not np.isnan(reorder_interval)
+                else np.nan,
+                "time_to_second_purchase_days": round(tt2p, 1) if not np.isnan(tt2p) else np.nan,
+                "loyalty_index": round(loyalty_index, 4) if not np.isnan(loyalty_index) else np.nan,
+                "exclusivity_rate": round(exclusivity_rate, 4)
+                if not np.isnan(exclusivity_rate)
+                else np.nan,
+            }
+        )
 
     return (
         pd.DataFrame(rows)

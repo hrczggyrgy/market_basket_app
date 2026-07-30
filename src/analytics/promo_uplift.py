@@ -14,24 +14,24 @@ References
 """
 
 import warnings
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 from scipy.stats import mannwhitneyu
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 
 try:
     import xgboost as xgb
+
     XGB_AVAILABLE = True
 except ImportError:
     XGB_AVAILABLE = False
 
 try:
-    from causalml.inference.tree import UpliftTreeClassifier, UpliftRandomForestClassifier
+    from causalml.inference.tree import UpliftRandomForestClassifier, UpliftTreeClassifier
+
     CAUSALML_AVAILABLE = True
 except ImportError:
     CAUSALML_AVAILABLE = False
@@ -42,6 +42,7 @@ warnings.filterwarnings("ignore")
 # ============================================================================
 # PROMO DETECTION
 # ============================================================================
+
 
 def derive_promo_flag(
     transactions_df: pd.DataFrame,
@@ -77,14 +78,16 @@ def derive_promo_flag(
             base = baseline.iloc[i]
             if base > 0 and price < base * (1 - drop_threshold):
                 discount = (base - price) / base
-                promos.append({
-                    "stockcode": sku,
-                    "date": date,
-                    "price": price,
-                    "baseline_price": base,
-                    "discount_pct": discount * 100,
-                    "is_promo": True,
-                })
+                promos.append(
+                    {
+                        "stockcode": sku,
+                        "date": date,
+                        "price": price,
+                        "baseline_price": base,
+                        "discount_pct": discount * 100,
+                        "is_promo": True,
+                    }
+                )
 
     return pd.DataFrame(promos)
 
@@ -119,12 +122,16 @@ def build_uplift_dataset(
     promo_df[date_col] = pd.to_datetime(promo_df[date_col])
     promo_df["week"] = promo_df[date_col].dt.to_period("W")
 
-    weekly = df.groupby([customer_col, product_col, "week"]).agg(
-        total_qty=(qty_col, "sum"),
-        total_rev=("revenue", "sum"),
-        avg_price=(price_col, "mean"),
-        n_txns=("transaction_id", "nunique"),
-    ).reset_index()
+    weekly = (
+        df.groupby([customer_col, product_col, "week"])
+        .agg(
+            total_qty=(qty_col, "sum"),
+            total_rev=("revenue", "sum"),
+            avg_price=(price_col, "mean"),
+            n_txns=("transaction_id", "nunique"),
+        )
+        .reset_index()
+    )
 
     # Merge promo flag
     promo_weekly = promo_df.groupby([product_col, "week"])["is_promo"].any().reset_index()
@@ -138,37 +145,51 @@ def build_uplift_dataset(
 
     # Features
     feature_cols = [
-        "total_qty", "total_rev", "avg_price", "n_txns",
+        "total_qty",
+        "total_rev",
+        "avg_price",
+        "n_txns",
         # Lag features
-        "total_qty_lag1", "avg_price_lag1",
+        "total_qty_lag1",
+        "avg_price_lag1",
         # Customer aggregates
     ]
 
     # Add customer-level features
-    cust_features = df.groupby(customer_col).agg(
-        cust_total_qty=(qty_col, "sum"),
-        cust_total_rev=("revenue", "sum"),
-        cust_n_products=(product_col, "nunique"),
-        cust_avg_price=(price_col, "mean"),
-        cust_n_txns=("transaction_id", "nunique"),
-        cust_first_date=(date_col, "min"),
-        cust_last_date=(date_col, "max"),
-    ).reset_index()
+    cust_features = (
+        df.groupby(customer_col)
+        .agg(
+            cust_total_qty=(qty_col, "sum"),
+            cust_total_rev=("revenue", "sum"),
+            cust_n_products=(product_col, "nunique"),
+            cust_avg_price=(price_col, "mean"),
+            cust_n_txns=("transaction_id", "nunique"),
+            cust_first_date=(date_col, "min"),
+            cust_last_date=(date_col, "max"),
+        )
+        .reset_index()
+    )
 
     cust_features["cust_lifetime_days"] = (
         cust_features["cust_last_date"] - cust_features["cust_first_date"]
     ).dt.days
-    cust_features["cust_freq"] = cust_features["cust_n_txns"] / cust_features["cust_lifetime_days"].clip(lower=1)
+    cust_features["cust_freq"] = cust_features["cust_n_txns"] / cust_features[
+        "cust_lifetime_days"
+    ].clip(lower=1)
 
     weekly = weekly.merge(cust_features, on=customer_col, how="left")
 
     # Add product-level features
-    prod_features = df.groupby(product_col).agg(
-        prod_total_qty=(qty_col, "sum"),
-        prod_total_rev=("revenue", "sum"),
-        prod_avg_price=(price_col, "mean"),
-        prod_price_cv=(price_col, lambda x: x.std() / x.mean() if x.mean() > 0 else 0),
-    ).reset_index()
+    prod_features = (
+        df.groupby(product_col)
+        .agg(
+            prod_total_qty=(qty_col, "sum"),
+            prod_total_rev=("revenue", "sum"),
+            prod_avg_price=(price_col, "mean"),
+            prod_price_cv=(price_col, lambda x: x.std() / x.mean() if x.mean() > 0 else 0),
+        )
+        .reset_index()
+    )
 
     weekly = weekly.merge(prod_features, on=product_col, how="left")
 
@@ -184,10 +205,21 @@ def build_uplift_dataset(
     weekly = weekly.fillna(0)
 
     # Define X, treatment, y
-    X_cols = [c for c in weekly.columns if c not in [
-        customer_col, product_col, "week", "is_promo", "treatment",
-        "next_week_qty", "cust_first_date", "cust_last_date"
-    ]]
+    X_cols = [
+        c
+        for c in weekly.columns
+        if c
+        not in [
+            customer_col,
+            product_col,
+            "week",
+            "is_promo",
+            "treatment",
+            "next_week_qty",
+            "cust_first_date",
+            "cust_last_date",
+        ]
+    ]
     X = weekly[X_cols]
     treatment = weekly["treatment"]
     y = weekly["next_week_qty"]
@@ -198,6 +230,7 @@ def build_uplift_dataset(
 # ============================================================================
 # UPLIFT LEARNERS
 # ============================================================================
+
 
 def train_t_learner_uplift(
     X: pd.DataFrame,
@@ -387,6 +420,7 @@ def train_uplift_tree(
 # PROPENSITY SCORE STRATIFICATION
 # ============================================================================
 
+
 def estimate_propensity_score(
     X: pd.DataFrame,
     treatment: pd.Series,
@@ -457,9 +491,7 @@ def propensity_stratification_uplift(
 
         # Mann-Whitney U test
         if len(T_s[T_s == 1]) > 1 and len(T_s[T_s == 0]) > 1:
-            u_stat, p_val = mannwhitneyu(
-                y_s[T_s == 1], y_s[T_s == 0], alternative="two-sided"
-            )
+            u_stat, p_val = mannwhitneyu(y_s[T_s == 1], y_s[T_s == 0], alternative="two-sided")
         else:
             u_stat, p_val = np.nan, np.nan
 
@@ -489,6 +521,7 @@ def propensity_stratification_uplift(
 # ============================================================================
 # UPLIFT EVALUATION
 # ============================================================================
+
 
 def evaluate_uplift_model(
     X_test: pd.DataFrame,
@@ -541,7 +574,9 @@ def evaluate_uplift_model(
     random_curve_x = qini_x
     random_curve_y = [x * qini_y[-1] for x in qini_x]
     auuc = np.trapz(qini_y, qini_x) - np.trapz(random_curve_y, random_curve_x)
-    auuc = max(0, auuc / (qini_y[-1] - random_curve_y[-1]) if qini_y[-1] != random_curve_y[-1] else 0)
+    auuc = max(
+        0, auuc / (qini_y[-1] - random_curve_y[-1]) if qini_y[-1] != random_curve_y[-1] else 0
+    )
 
     # Uplift @ k
     top_k = min(n_bins, 3)
@@ -603,6 +638,7 @@ def qini_curve(
 # PROMO DECOMPOSITION (Incrementality / Forward Buy / Substitution)
 # ============================================================================
 
+
 def decompose_promo_lift(
     transactions_df: pd.DataFrame,
     promo_df: pd.DataFrame,
@@ -623,9 +659,9 @@ def decompose_promo_lift(
     df["is_promo"] = False
     for _, promo in promo_df.iterrows():
         mask = (
-            (df["stockcode"] == promo["stockcode"]) &
-            (df["date"] >= promo["date"]) &
-            (df["date"] < promo["date"] + pd.Timedelta(days=promo_window_days))
+            (df["stockcode"] == promo["stockcode"])
+            & (df["date"] >= promo["date"])
+            & (df["date"] < promo["date"] + pd.Timedelta(days=promo_window_days))
         )
         df.loc[mask, "is_promo"] = True
 
@@ -633,7 +669,9 @@ def decompose_promo_lift(
     non_promo = df[~df["is_promo"]]
     promo = df[df["is_promo"]]
 
-    baseline_daily_qty = non_promo.groupby("stockcode")["quantity"].sum() / non_promo["date"].nunique()
+    baseline_daily_qty = (
+        non_promo.groupby("stockcode")["quantity"].sum() / non_promo["date"].nunique()
+    )
     promo_daily_qty = promo.groupby("stockcode")["quantity"].sum() / promo["date"].nunique()
 
     # Total lift
@@ -650,10 +688,10 @@ def decompose_promo_lift(
         post_end = post_start + pd.Timedelta(days=promo_window_days)
 
         post_promo = df[
-            (df["stockcode"] == sku) &
-            (df["date"] >= post_start) &
-            (df["date"] <= post_end) &
-            (~df["is_promo"])
+            (df["stockcode"] == sku)
+            & (df["date"] >= post_start)
+            & (df["date"] <= post_end)
+            & (~df["is_promo"])
         ]
 
         if len(post_promo) > 0:
@@ -671,20 +709,16 @@ def decompose_promo_lift(
     for sku in promo["stockcode"].unique():
         promo_txns = promo[promo["stockcode"] == sku]["transaction_id"].unique()
         basket_other = df[
-            (df["transaction_id"].isin(promo_txns)) &
-            (df["stockcode"] != sku) &
-            (~df["is_promo"])
+            (df["transaction_id"].isin(promo_txns)) & (df["stockcode"] != sku) & (~df["is_promo"])
         ]
 
         if len(basket_other) > 0:
             # Compare to baseline co-purchase
-            baseline_other = df[
-                (df["stockcode"] == sku) &
-                (~df["is_promo"])
-            ]["transaction_id"].unique()
+            baseline_other = df[(df["stockcode"] == sku) & (~df["is_promo"])][
+                "transaction_id"
+            ].unique()
             baseline_basket = df[
-                (df["transaction_id"].isin(baseline_other)) &
-                (df["stockcode"] != sku)
+                (df["transaction_id"].isin(baseline_other)) & (df["stockcode"] != sku)
             ]
 
             promo_rate = basket_other["quantity"].sum() / len(promo_txns)
@@ -738,16 +772,18 @@ def promo_roi_analysis(
         incremental_profit = inc_rev * margin_pct - promo_cost
         roi = (incremental_profit / promo_cost * 100) if promo_cost > 0 else 0
 
-        results.append({
-            "stockcode": sku,
-            "total_lift_pct": total_lift * 100,
-            "incrementality_pct": inc * 100,
-            "forward_buy_pct": fwd * 100,
-            "substitution_pct": sub * 100,
-            "incremental_revenue": inc_rev,
-            "incremental_profit": incremental_profit,
-            "promo_cost": promo_cost,
-            "roi_pct": roi,
-        })
+        results.append(
+            {
+                "stockcode": sku,
+                "total_lift_pct": total_lift * 100,
+                "incrementality_pct": inc * 100,
+                "forward_buy_pct": fwd * 100,
+                "substitution_pct": sub * 100,
+                "incremental_revenue": inc_rev,
+                "incremental_profit": incremental_profit,
+                "promo_cost": promo_cost,
+                "roi_pct": roi,
+            }
+        )
 
     return pd.DataFrame(results).sort_values("roi_pct", ascending=False)

@@ -144,7 +144,9 @@ def render_product_dashboard(transactions_df: pd.DataFrame, product_lookup: dict
                 "velocity": "{:.1f}",
                 "price_index": "{:.2f}",
             }
-        ).background_gradient(cmap="RdYlGn", subset=["total_revenue", "basket_penetration", "repeat_rate", "velocity"]),
+        ).background_gradient(
+            cmap="RdYlGn", subset=["total_revenue", "basket_penetration", "repeat_rate", "velocity"]
+        ),
         width="stretch",
     )
 
@@ -210,7 +212,9 @@ def render_product_dashboard(transactions_df: pd.DataFrame, product_lookup: dict
 def render_opportunity_scatter(transactions_df: pd.DataFrame, product_lookup: dict):
     """Render product opportunity scatter: penetration vs velocity."""
     st.subheader("Product Opportunity Scatter")
-    st.caption("X = Basket Penetration (reach) | Y = Velocity (demand intensity) | Bubble = Revenue | Color = Repeat Rate")
+    st.caption(
+        "X = Basket Penetration (reach) | Y = Velocity (demand intensity) | Bubble = Revenue | Color = Repeat Rate"
+    )
 
     with st.spinner("Computing opportunity metrics..."):
         metrics = compute_product_dashboard_metrics(transactions_df)
@@ -224,7 +228,9 @@ def render_opportunity_scatter(transactions_df: pd.DataFrame, product_lookup: di
     # Filter controls
     col1, col2, col3 = st.columns(3)
     with col1:
-        min_revenue = st.number_input("Min Revenue", 0, int(metrics["total_revenue"].max()), 0, key="opp_min_rev")
+        min_revenue = st.number_input(
+            "Min Revenue", 0, int(metrics["total_revenue"].max()), 0, key="opp_min_rev"
+        )
     with col2:
         max_points = st.slider("Max Points", 20, 200, 100, key="opp_max_points")
 
@@ -232,7 +238,11 @@ def render_opportunity_scatter(transactions_df: pd.DataFrame, product_lookup: di
     plot_df = plot_df.nlargest(max_points, "total_revenue")
 
     # Ensure required columns exist
-    x_col = "basket_penetration" if "basket_penetration" in plot_df.columns else "unique_shopper_penetration"
+    x_col = (
+        "basket_penetration"
+        if "basket_penetration" in plot_df.columns
+        else "unique_shopper_penetration"
+    )
     y_col = "velocity" if "velocity" in plot_df.columns else "sell_through_rate"
     color_col = "repeat_rate" if "repeat_rate" in plot_df.columns else "revenue_per_customer"
     size_col = "total_revenue"
@@ -243,7 +253,16 @@ def render_opportunity_scatter(transactions_df: pd.DataFrame, product_lookup: di
         y=y_col,
         size=size_col,
         color=color_col,
-        hover_data=["product_name", "total_revenue", "total_quantity", "avg_price", "unique_customers", "repeat_rate", "velocity", "price_index"],
+        hover_data=[
+            "product_name",
+            "total_revenue",
+            "total_quantity",
+            "avg_price",
+            "unique_customers",
+            "repeat_rate",
+            "velocity",
+            "price_index",
+        ],
         title="Product Opportunity Map: Penetration vs Velocity",
         labels={
             x_col: "Basket Penetration (Reach)",
@@ -259,8 +278,12 @@ def render_opportunity_scatter(transactions_df: pd.DataFrame, product_lookup: di
     if x_col in plot_df.columns and y_col in plot_df.columns:
         x_mid = plot_df[x_col].median()
         y_mid = plot_df[y_col].median()
-        fig.add_vline(x=x_mid, line_dash="dash", line_color="gray", annotation_text="Median Penetration")
-        fig.add_hline(y=y_mid, line_dash="dash", line_color="gray", annotation_text="Median Velocity")
+        fig.add_vline(
+            x=x_mid, line_dash="dash", line_color="gray", annotation_text="Median Penetration"
+        )
+        fig.add_hline(
+            y=y_mid, line_dash="dash", line_color="gray", annotation_text="Median Velocity"
+        )
 
     fig.update_layout(height=600)
     st.plotly_chart(fig, width="stretch")
@@ -281,6 +304,7 @@ def render_monthly_trends(transactions_df: pd.DataFrame, product_lookup: dict):
 
     with st.spinner("Computing monthly trends..."):
         from src.analytics.basket_metrics import basket_penetration_over_time
+
         pen_trends = basket_penetration_over_time(transactions_df)
 
     if pen_trends.empty:
@@ -334,7 +358,12 @@ def render_monthly_trends(transactions_df: pd.DataFrame, product_lookup: dict):
     df["revenue"] = df["price"] * df["quantity"]
     df["period"] = df["date"].dt.to_period("M")
 
-    rev_trends = df[df["stockcode"].isin(selected_products)].groupby(["stockcode", "period"])["revenue"].sum().reset_index()
+    rev_trends = (
+        df[df["stockcode"].isin(selected_products)]
+        .groupby(["stockcode", "period"])["revenue"]
+        .sum()
+        .reset_index()
+    )
     rev_trends["period_dt"] = rev_trends["period"].dt.to_timestamp()
     rev_trends["product_name"] = rev_trends["stockcode"].map(product_lookup)
 
@@ -379,9 +408,13 @@ def render_loyalty_repeat(transactions_df: pd.DataFrame, product_lookup: dict):
     with col2:
         st.metric("Products with >50% Repeat", f"{(loyalty['repeat_rate'] > 0.5).sum()}")
     with col3:
-        st.metric("Median Time to 2nd Purchase", f"{loyalty['median_days_to_second'].median():.0f} days")
+        st.metric(
+            "Median Time to 2nd Purchase", f"{loyalty['median_days_to_second'].median():.0f} days"
+        )
     with col4:
-        st.metric("Products with Fast Loyalty (<30d)", f"{(loyalty['median_days_to_second'] < 30).sum()}")
+        st.metric(
+            "Products with Fast Loyalty (<30d)", f"{(loyalty['median_days_to_second'] < 30).sum()}"
+        )
 
     # Scatter: Repeat Rate vs Time to 2nd Purchase
     col1, col2 = st.columns(2)
@@ -447,7 +480,8 @@ def render_loyalty_repeat(transactions_df: pd.DataFrame, product_lookup: dict):
                 "p25_days_to_second": "{:.0f}",
                 "p75_days_to_second": "{:.0f}",
             }
-        ).background_gradient(cmap="RdYlGn", subset=["repeat_rate"]),
+        )
+        .background_gradient(cmap="RdYlGn", subset=["repeat_rate"]),
         width="stretch",
     )
 
@@ -462,7 +496,9 @@ def render_switching_uplift(transactions_df: pd.DataFrame, product_lookup: dict)
 
     with tab1:
         st.subheader("Switching Gain/Loss")
-        st.caption("Gain = customers switching TO this product | Loss = customers switching FROM this product")
+        st.caption(
+            "Gain = customers switching TO this product | Loss = customers switching FROM this product"
+        )
 
         with st.spinner("Computing switching metrics..."):
             switching = compute_switching_gain_loss(transactions_df)
@@ -489,7 +525,14 @@ def render_switching_uplift(transactions_df: pd.DataFrame, product_lookup: dict)
                 y="gain_customers",
                 size="total_customers",
                 color="net_gain",
-                hover_data=["product_name", "gain_customers", "loss_customers", "net_gain", "gain_rate", "loss_rate"],
+                hover_data=[
+                    "product_name",
+                    "gain_customers",
+                    "loss_customers",
+                    "net_gain",
+                    "gain_rate",
+                    "loss_rate",
+                ],
                 title="Switching Gain vs Loss",
                 labels={
                     "loss_customers": "Customers Switching FROM",
@@ -501,14 +544,24 @@ def render_switching_uplift(transactions_df: pd.DataFrame, product_lookup: dict)
             )
             fig.add_shape(
                 type="line",
-                x0=0, y0=0, x1=switching["loss_customers"].max(), y1=switching["gain_customers"].max(),
+                x0=0,
+                y0=0,
+                x1=switching["loss_customers"].max(),
+                y1=switching["gain_customers"].max(),
                 line=dict(dash="dash", color="gray"),
             )
             fig.update_layout(height=500)
             st.plotly_chart(fig, width="stretch")
 
             # Table
-            display_cols = ["product_name", "gain_customers", "loss_customers", "net_gain", "gain_rate", "loss_rate"]
+            display_cols = [
+                "product_name",
+                "gain_customers",
+                "loss_customers",
+                "net_gain",
+                "gain_rate",
+                "loss_rate",
+            ]
             st.dataframe(
                 switching[display_cols]
                 .style.format(
@@ -516,7 +569,8 @@ def render_switching_uplift(transactions_df: pd.DataFrame, product_lookup: dict)
                         "gain_rate": "{:.1%}",
                         "loss_rate": "{:.1%}",
                     }
-                ).background_gradient(cmap="RdYlGn", subset=["net_gain", "gain_rate"]),
+                )
+                .background_gradient(cmap="RdYlGn", subset=["net_gain", "gain_rate"]),
                 width="stretch",
             )
 
@@ -540,7 +594,9 @@ def render_switching_uplift(transactions_df: pd.DataFrame, product_lookup: dict)
             with col2:
                 st.metric("Avg Uplift %", f"{uplift['basket_value_uplift_pct'].mean():.1f}%")
             with col3:
-                st.metric("Products with Positive Uplift", f"{(uplift['basket_value_uplift'] > 0).sum()}")
+                st.metric(
+                    "Products with Positive Uplift", f"{(uplift['basket_value_uplift'] > 0).sum()}"
+                )
             with col4:
                 st.metric("Max Uplift", f"${uplift['basket_value_uplift'].max():.2f}")
 
@@ -562,7 +618,14 @@ def render_switching_uplift(transactions_df: pd.DataFrame, product_lookup: dict)
             st.plotly_chart(fig, width="stretch")
 
             # Table
-            display_cols = ["product_name", "baskets_with", "avg_basket_value_with", "avg_basket_value_without", "basket_value_uplift", "basket_value_uplift_pct"]
+            display_cols = [
+                "product_name",
+                "baskets_with",
+                "avg_basket_value_with",
+                "avg_basket_value_without",
+                "basket_value_uplift",
+                "basket_value_uplift_pct",
+            ]
             display_cols = [c for c in display_cols if c in uplift.columns]
 
             st.dataframe(
@@ -574,7 +637,8 @@ def render_switching_uplift(transactions_df: pd.DataFrame, product_lookup: dict)
                         "basket_value_uplift": "${:.2f}",
                         "basket_value_uplift_pct": "{:.1f}%",
                     }
-                ).background_gradient(cmap="RdYlGn", subset=["basket_value_uplift_pct"]),
+                )
+                .background_gradient(cmap="RdYlGn", subset=["basket_value_uplift_pct"]),
                 width="stretch",
             )
 
@@ -670,7 +734,8 @@ def render_lifecycle_analysis(transactions_df: pd.DataFrame, product_lookup: dic
                 "total_quantity": "{:,.0f}",
                 "avg_price": "${:.2f}",
             }
-        ).background_gradient(cmap="RdYlGn", subset=["growth_rate"]),
+        )
+        .background_gradient(cmap="RdYlGn", subset=["growth_rate"]),
         width="stretch",
     )
 
@@ -713,8 +778,18 @@ def render_seasonality_analysis(transactions_df: pd.DataFrame, product_lookup: d
             month_data = month_data.sort_values("Month")
 
             month_names = {
-                1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
-                7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
+                1: "Jan",
+                2: "Feb",
+                3: "Mar",
+                4: "Apr",
+                5: "May",
+                6: "Jun",
+                7: "Jul",
+                8: "Aug",
+                9: "Sep",
+                10: "Oct",
+                11: "Nov",
+                12: "Dec",
             }
             month_data["Month_Name"] = month_data["Month"].map(month_names)
 
@@ -752,8 +827,18 @@ def render_seasonality_analysis(transactions_df: pd.DataFrame, product_lookup: d
         month_data = month_data.sort_values("Month")
 
         month_names = {
-            1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
-            7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
+            1: "Jan",
+            2: "Feb",
+            3: "Mar",
+            4: "Apr",
+            5: "May",
+            6: "Jun",
+            7: "Jul",
+            8: "Aug",
+            9: "Sep",
+            10: "Oct",
+            11: "Nov",
+            12: "Dec",
         }
         month_data["Month_Name"] = month_data["Month"].map(month_names)
 
@@ -805,12 +890,18 @@ def render_affinity_analysis(transactions_df: pd.DataFrame, product_lookup: dict
         with st.spinner("Computing affinity scores..."):
             from src.analytics.product_performance import product_affinity_score
 
-            affinity = product_affinity_score(transactions_df, selected_product, min_support=min_support)
+            affinity = product_affinity_score(
+                transactions_df, selected_product, min_support=min_support
+            )
 
         if affinity.empty:
-            st.warning(f"No strong affinities found for {product_lookup.get(selected_product, selected_product)}")
+            st.warning(
+                f"No strong affinities found for {product_lookup.get(selected_product, selected_product)}"
+            )
         else:
-            st.subheader(f"Top Affinities for {product_lookup.get(selected_product, selected_product)}")
+            st.subheader(
+                f"Top Affinities for {product_lookup.get(selected_product, selected_product)}"
+            )
 
             affinity["product_name"] = affinity["product"].map(product_lookup)
 
@@ -825,7 +916,8 @@ def render_affinity_analysis(transactions_df: pd.DataFrame, product_lookup: dict
                         "lift": "{:.2f}",
                         "leverage": "{:.4f}",
                     }
-                ).background_gradient(cmap="RdYlGn", subset=["lift", "confidence"]),
+                )
+                .background_gradient(cmap="RdYlGn", subset=["lift", "confidence"]),
                 width="stretch",
             )
 
@@ -890,7 +982,9 @@ def render_affinity_analysis(transactions_df: pd.DataFrame, product_lookup: dict
         if pairs:
             pairs_df = pd.DataFrame(pairs).sort_values("Lift", ascending=False).head(20)
             st.dataframe(
-                pairs_df.style.format({"Lift": "{:.2f}"}).background_gradient(cmap="RdYlGn", subset=["Lift"]),
+                pairs_df.style.format({"Lift": "{:.2f}"}).background_gradient(
+                    cmap="RdYlGn", subset=["Lift"]
+                ),
                 width="stretch",
             )
             render_analytics_export(pairs_df, "Top_Cross_Sell_Pairs")
@@ -917,7 +1011,9 @@ def render_price_elasticity(transactions_df: pd.DataFrame, product_lookup: dict,
     with st.spinner("Estimating price elasticity..."):
         from src.analytics.product_performance import price_elasticity_analysis
 
-        elasticity = price_elasticity_analysis(transactions_df, selected_product, min_periods=min_periods)
+        elasticity = price_elasticity_analysis(
+            transactions_df, selected_product, min_periods=min_periods
+        )
 
     if elasticity.get("elasticity") is None:
         st.warning(f"Cannot estimate elasticity: {elasticity.get('message', 'Insufficient data')}")
@@ -1012,7 +1108,8 @@ def render_performance_comparison(
 
     # Metric selection
     available_metrics = [
-        c for c in [
+        c
+        for c in [
             "total_revenue",
             "total_quantity",
             "avg_price",
@@ -1050,14 +1147,16 @@ def render_performance_comparison(
         st.subheader("Multi-Metric Radar Comparison")
 
         radar_metrics = [
-            m for m in [
+            m
+            for m in [
                 "total_revenue",
                 "total_quantity",
                 "avg_price",
                 "basket_penetration",
                 "repeat_rate",
                 "velocity",
-            ] if m in comparison.columns
+            ]
+            if m in comparison.columns
         ]
 
         if radar_metrics:
@@ -1102,7 +1201,8 @@ def render_performance_comparison(
                 "unique_customers": "{:,.0f}",
                 "price_index": "{:.2f}",
             }
-        ).background_gradient(cmap="RdYlGn"),
+        )
+        .background_gradient(cmap="RdYlGn"),
         width="stretch",
     )
 
