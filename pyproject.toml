@@ -50,6 +50,14 @@ full = [
     "shap>=0.42.0",
     "lifelines>=0.28.0",
 ]
+science = [
+    "python-louvain>=0.16",
+    "igraph>=0.10.0",
+    "leidenalg>=0.10.0",
+    "causalml>=1.0.0",
+    "pymc>=5.0.0",
+    "ortools>=9.0.0",
+]
 
 [tool.ruff]
 line-length = 100

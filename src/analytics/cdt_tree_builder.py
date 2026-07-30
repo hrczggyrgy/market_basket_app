@@ -3,7 +3,7 @@
 Constructs the Customer Decision Tree by:
 1. Starting from hierarchical clusters (bottom level = products)
 2. Testing attributes (brand, size, flavor, category) against cluster structure
-3. Selecting best attribute split at each level using mutual information
+3. Selecting best attribute split at each level using mutual information / Gini / Entropy
 4. Recursing until no meaningful splits remain
 5. Scoring tree quality against unconstrained clustering baseline
 """
@@ -31,6 +31,8 @@ class TreeNode:
     size: int = 0
     is_leaf: bool = True
     cluster_id: Optional[int] = None  # original cluster ID from hierarchical clustering
+    split_criterion: Optional[str] = None  # 'mutual_info', 'gini', 'entropy'
+    split_score: float = 0.0  # MI, Gini gain, or Entropy gain
 
     def to_dict(self) -> Dict:
         return {
@@ -43,6 +45,8 @@ class TreeNode:
             "size": self.size,
             "is_leaf": self.is_leaf,
             "cluster_id": self.cluster_id,
+            "split_criterion": self.split_criterion,
+            "split_score": self.split_score,
             "children": [c.to_dict() for c in self.children],
         }
 
@@ -94,18 +98,139 @@ def compute_mutual_information(
     return mi
 
 
+def compute_gini_gain(
+    cluster_assignments: Dict[str, int],
+    attribute_values: Dict[str, str],
+) -> float:
+    """
+    Compute Gini impurity reduction (Gini gain) from splitting by attribute.
+
+    Gini(parent) - Σ (|child|/|parent|) * Gini(child)
+
+    Higher gain = better split.
+    """
+    products = list(cluster_assignments.keys())
+    if not products:
+        return 0.0
+
+    n = len(products)
+
+    # Parent Gini
+    cluster_counts = defaultdict(int)
+    for p in products:
+        cluster_counts[cluster_assignments[p]] += 1
+    parent_gini = 1.0 - sum((c / n) ** 2 for c in cluster_counts.values())
+
+    # Child Gini (weighted)
+    attr_groups = defaultdict(list)
+    for p in products:
+        attr_groups[attribute_values.get(p, "UNKNOWN")].append(p)
+
+    if len(attr_groups) < 2:
+        return 0.0
+
+    weighted_child_gini = 0.0
+    for group_products in attr_groups.values():
+        if len(group_products) < 2:
+            continue
+        group_counts = defaultdict(int)
+        for p in group_products:
+            group_counts[cluster_assignments[p]] += 1
+        group_n = len(group_products)
+        group_gini = 1.0 - sum((c / group_n) ** 2 for c in group_counts.values())
+        weighted_child_gini += (group_n / n) * group_gini
+
+    return parent_gini - weighted_child_gini
+
+
+def compute_entropy_gain(
+    cluster_assignments: Dict[str, int],
+    attribute_values: Dict[str, str],
+) -> float:
+    """
+    Compute Entropy reduction (Information Gain) from splitting by attribute.
+
+    Entropy(parent) - Σ (|child|/|parent|) * Entropy(child)
+
+    Higher gain = better split.
+    """
+    products = list(cluster_assignments.keys())
+    if not products:
+        return 0.0
+
+    n = len(products)
+
+    # Parent Entropy
+    cluster_counts = defaultdict(int)
+    for p in products:
+        cluster_counts[cluster_assignments[p]] += 1
+    parent_entropy = -sum((c / n) * np.log(c / n) for c in cluster_counts.values() if c > 0)
+
+    # Child Entropy (weighted)
+    attr_groups = defaultdict(list)
+    for p in products:
+        attr_groups[attribute_values.get(p, "UNKNOWN")].append(p)
+
+    if len(attr_groups) < 2:
+        return 0.0
+
+    weighted_child_entropy = 0.0
+    for group_products in attr_groups.values():
+        if len(group_products) < 2:
+            continue
+        group_counts = defaultdict(int)
+        for p in group_products:
+            group_counts[cluster_assignments[p]] += 1
+        group_n = len(group_products)
+        group_entropy = -sum((c / group_n) * np.log(c / group_n) for c in group_counts.values() if c > 0)
+        weighted_child_entropy += (group_n / n) * group_entropy
+
+    return parent_entropy - weighted_child_entropy
+
+
+def compute_split_score(
+    products: List[str],
+    cluster_assignments: Dict[str, int],
+    attribute_values: Dict[str, str],
+    criterion: str = "mutual_info",
+    alpha: float = 0.5,
+) -> float:
+    """
+    Compute split score using specified criterion.
+
+    Args:
+        criterion: 'mutual_info', 'gini', 'entropy', or 'mixed'
+        alpha: Weight for entropy when criterion='mixed' (entropy weight, Gini weight = 1-alpha)
+    """
+    if criterion == "mutual_info":
+        return compute_mutual_information(cluster_assignments, attribute_values)
+    elif criterion == "gini":
+        return compute_gini_gain(cluster_assignments, attribute_values)
+    elif criterion == "entropy":
+        return compute_entropy_gain(cluster_assignments, attribute_values)
+    elif criterion == "mixed":
+        # Interpolate between entropy and Gini
+        entropy_gain = compute_entropy_gain(cluster_assignments, attribute_values)
+        gini_gain = compute_gini_gain(cluster_assignments, attribute_values)
+        return alpha * entropy_gain + (1 - alpha) * gini_gain
+    else:
+        raise ValueError(f"Unknown split criterion: {criterion}")
+
+
 def compute_attribute_split_quality(
     products: List[str],
     cluster_assignments: Dict[str, int],
     attribute_values: Dict[str, str],
     similarity_matrix: pd.DataFrame,
     min_cluster_size: int = 3,
+    criterion: str = "mutual_info",
+    alpha: float = 0.5,
 ) -> Tuple[float, Dict[str, List[str]]]:
     """
     Evaluate how well an attribute splits a set of products.
 
     Returns:
-        (mutual_information, dict of attribute_value -> product_list)
+        (split_score, dict of attribute_value -> product_list)
     """
     # Filter to products in this set with valid attribute values
     relevant_products = [p for p in products if p in attribute_values and p in cluster_assignments]
@@ -116,7 +241,7 @@ def compute_attribute_split_quality(
     sub_assignments = {p: cluster_assignments[p] for p in relevant_products}
     sub_attrs = {p: attribute_values[p] for p in relevant_products}
 
-    mi = compute_mutual_information(sub_assignments, sub_attrs)
+    score = compute_split_score(relevant_products, sub_assignments, sub_attrs, criterion, alpha)
 
     # Group products by attribute value
     attr_groups = defaultdict(list)
@@ -126,7 +251,7 @@ def compute_attribute_split_quality(
     # Filter groups below min size
     attr_groups = {k: v for k, v in attr_groups.items() if len(v) >= min_cluster_size}
 
-    return mi, dict(attr_groups)
+    return score, dict(attr_groups)
 
 
 def find_best_attribute_split(
@@ -136,6 +261,8 @@ def find_best_attribute_split(
     similarity_matrix: pd.DataFrame,
     min_cluster_size: int = 3,
     candidate_attributes: Optional[List[str]] = None,
+    criterion: str = "mutual_info",
+    alpha: float = 0.5,
 ) -> Tuple[Optional[str], Dict[str, List[str]], float]:
     """
     Find the attribute that best explains the cluster structure.
@@ -147,36 +274,40 @@ def find_best_attribute_split(
         similarity_matrix: For computing within-group similarity
         min_cluster_size: Minimum products per attribute value group
         candidate_attributes: List of attribute columns to test (None = all)
+        criterion: 'mutual_info', 'gini', 'entropy', 'mixed'
+        alpha: Weight for entropy in mixed criterion
 
     Returns:
-        (best_attribute_name, groups_dict, mutual_information_score)
+        (best_attribute_name, groups_dict, split_score)
     """
     if candidate_attributes is None:
         candidate_attributes = attributes_df.columns.tolist()
 
     best_attr = None
     best_groups = {}
-    best_mi = 0.0
+    best_score = 0.0
 
     for attr in candidate_attributes:
         if attr not in attributes_df.columns:
             continue
 
         attr_values = attributes_df[attr].dropna().to_dict()
-        mi, groups = compute_attribute_split_quality(
+        score, groups = compute_attribute_split_quality(
             products,
             cluster_assignments,
             attr_values,
             similarity_matrix,
             min_cluster_size,
+            criterion,
+            alpha,
         )
 
-        if mi > best_mi and len(groups) >= 2:  # Need at least 2 groups to split
-            best_mi = mi
+        if score > best_score and len(groups) >= 2:  # Need at least 2 groups to split
+            best_score = score
             best_attr = attr
             best_groups = groups
 
-    return best_attr, best_groups, best_mi
+    return best_attr, best_groups, best_score
 
 
 def compute_within_group_similarity(
@@ -205,6 +336,8 @@ def build_cdt_recursive(
     min_cluster_size: int = 3,
     candidate_attributes: Optional[List[str]] = None,
     parent_attr: Optional[str] = None,
+    criterion: str = "mutual_info",
+    alpha: float = 0.5,
 ) -> TreeNode:
     """
     Recursively build CDT from bottom up.
@@ -218,6 +351,8 @@ def build_cdt_recursive(
         min_cluster_size: Minimum products per node
         candidate_attributes: Attributes available for splitting
         parent_attr: Attribute used by parent (avoid reusing)
+        criterion: Split criterion ('mutual_info', 'gini', 'entropy', 'mixed')
+        alpha: Entropy weight for mixed criterion
 
     Returns:
         TreeNode root of this subtree
@@ -246,17 +381,19 @@ def build_cdt_recursive(
         )
 
     # Find best attribute split
-    best_attr, groups, mi = find_best_attribute_split(
+    best_attr, groups, score = find_best_attribute_split(
         products,
         cluster_assignments,
         attributes_df,
         similarity_matrix,
         min_cluster_size,
         available_attrs,
+        criterion,
+        alpha,
     )
 
     # No good split found - make leaf
-    if best_attr is None or len(groups) < 2 or mi <= 0:
+    if best_attr is None or len(groups) < 2 or score <= 0:
         return TreeNode(
             node_id=node_id,
             name=f"Leaf ({len(products)} products)",
@@ -278,6 +415,8 @@ def build_cdt_recursive(
             min_cluster_size,
             candidate_attributes,
             parent_attr=best_attr,
+            criterion=criterion,
+            alpha=alpha,
         )
         child.attribute = best_attr
         child.attribute_value = attr_value
@@ -297,13 +436,15 @@ def build_cdt_recursive(
 
     return TreeNode(
         node_id=node_id,
-        name=f"Split: {best_attr} (MI={mi:.3f})",
+        name=f"Split: {best_attr} ({criterion}={score:.3f})",
         products=products,
         attribute=best_attr,
         children=children,
         similarity_within=sim_within,
         size=len(products),
         is_leaf=False,
+        split_criterion=criterion,
+        split_score=score,
     )
 
 
@@ -376,6 +517,8 @@ def tree_to_dataframe(root: TreeNode) -> pd.DataFrame:
                 "similarity_within": node.similarity_within,
                 "is_leaf": node.is_leaf,
                 "cluster_id": node.cluster_id,
+                "split_criterion": node.split_criterion,
+                "split_score": node.split_score,
             }
         )
         for child in node.children:
@@ -397,6 +540,8 @@ def build_cdt(
     min_cluster_size: int = 3,
     quality_threshold: float = 0.60,
     candidate_attributes: Optional[List[str]] = None,
+    criterion: str = "mutual_info",
+    alpha: float = 0.5,
 ) -> Tuple[TreeNode, Dict]:
     """
     Build complete Customer Decision Tree.
@@ -408,6 +553,8 @@ def build_cdt(
         min_cluster_size: Minimum products per node
         quality_threshold: Minimum tree quality vs unconstrained baseline (0.60 = 60%)
         candidate_attributes: Attributes to consider for splitting
+        criterion: Split criterion ('mutual_info', 'gini', 'entropy', 'mixed')
+        alpha: Entropy weight for mixed criterion
 
     Returns:
         (root_node, metadata_dict)
@@ -419,7 +566,10 @@ def build_cdt(
     # Compute unconstrained baseline (best possible clustering quality)
     from .cdt_clustering import compute_unconstrained_baseline
 
-    unconstrained_baseline = compute_unconstrained_baseline(similarity_matrix)
+    if len(similarity_matrix) < 2:
+        unconstrained_baseline = 1.0
+    else:
+        unconstrained_baseline = compute_unconstrained_baseline(similarity_matrix)
 
     # Build tree
     node_id_counter = [0]
@@ -431,6 +581,8 @@ def build_cdt(
         node_id_counter,
         min_cluster_size,
         candidate_attributes,
+        criterion=criterion,
+        alpha=alpha,
     )
 
     # Compute tree quality
@@ -459,7 +611,7 @@ def prune_tree(root: TreeNode, threshold: float = 0.60) -> TreeNode:
     Prune tree branches that don't meet quality threshold.
 
     Note: This is a simple post-hoc pruning. The build process already
-    stops splitting when MI <= 0, but this can further simplify.
+    stops splitting when score <= 0, but this can further simplify.
     """
     if root.is_leaf:
         return root
@@ -488,6 +640,8 @@ def prune_tree(root: TreeNode, threshold: float = 0.60) -> TreeNode:
         similarity_within=root.similarity_within,
         size=root.size,
         is_leaf=False,
+        split_criterion=root.split_criterion,
+        split_score=root.split_score,
     )
 
 

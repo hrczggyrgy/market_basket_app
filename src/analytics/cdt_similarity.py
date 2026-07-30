@@ -240,6 +240,126 @@ def compute_jaccard(table: Dict[str, int]) -> float:
     return both / union
 
 
+def compute_pmi_matrix(
+    transactions_df: pd.DataFrame,
+    customer_col: str = "customer_id",
+    product_col: str = "stockcode",
+    min_cooccurrence: int = 5,
+    min_product_support: int = 2,
+    smoothing: float = 1.0,
+    ppmi: bool = True,
+) -> pd.DataFrame:
+    """
+    Compute Pointwise Mutual Information (PMI) matrix on customer-product co-occurrence.
+
+    PMI(A, B) = log( P(A,B) / (P(A) * P(B)) )
+    PPMI = max(PMI, 0)
+
+    Args:
+        transactions_df: Transaction DataFrame
+        customer_col: Customer identifier column
+        product_col: Product identifier column
+        min_cooccurrence: Minimum co-occurrence count
+        min_product_support: Minimum product support
+        smoothing: Additive smoothing constant
+        ppmi: If True, return Positive PMI (max(0, PMI))
+
+    Returns:
+        Square DataFrame (products x products) with PMI/PPMI scores
+    """
+    # Binary customer-product matrix
+    cust_product = pd.crosstab(transactions_df[customer_col], transactions_df[product_col])
+    cust_product = (cust_product > 0).astype(int)
+
+    # Filter rare products
+    product_support = cust_product.sum(axis=0)
+    valid_mask = product_support >= min_product_support
+    products = product_support.index[valid_mask].tolist()
+    cust_product = cust_product[products]
+
+    n_customers = len(cust_product)
+
+    # Co-occurrence matrix (vectorized)
+    cooccurrence = cust_product.T @ cust_product
+    both = cooccurrence.values.astype(float)
+
+    # Marginal probabilities with smoothing
+    p_a = (product_support[products].values + smoothing) / (n_customers + 2 * smoothing)
+    p_b = p_a.copy()
+
+    # Joint probabilities
+    p_ab = (both + smoothing) / (n_customers + smoothing)
+
+    # PMI: log(p_ab / (p_a * p_b))
+    p_a_outer = p_a[:, np.newaxis]
+    p_b_outer = p_b[np.newaxis, :]
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        pmi = np.log(p_ab / (p_a_outer * p_b_outer))
+        pmi = np.nan_to_num(pmi, nan=0.0, posinf=0.0, neginf=0.0)
+
+    if ppmi:
+        pmi = np.maximum(pmi, 0.0)
+
+    # Apply min_cooccurrence mask
+    pmi[both < min_cooccurrence] = 0.0
+    np.fill_diagonal(pmi, 1.0)
+
+    return pd.DataFrame(pmi, index=products, columns=products)
+
+
+def compute_cosine_tfidf_matrix(
+    transactions_df: pd.DataFrame,
+    customer_col: str = "customer_id",
+    product_col: str = "stockcode",
+    min_product_support: int = 2,
+) -> pd.DataFrame:
+    """
+    Compute cosine similarity on TF-IDF weighted customer-product matrix.
+
+    TF: binary purchase indicator per customer
+    IDF: log(n_customers / n_customers_buying_product)
+    
+    Cosine similarity = (TF-IDF vector_A) dot (TF-IDF vector_B) / (|A| * |B|)
+
+    Args:
+        transactions_df: Transaction DataFrame
+        customer_col: Customer identifier column
+        product_col: Product identifier column
+        min_product_support: Minimum customers buying a product
+
+    Returns:
+        Square DataFrame (products x products) with cosine similarity in [0, 1]
+    """
+    # Binary customer-product matrix
+    cust_product = pd.crosstab(transactions_df[customer_col], transactions_df[product_col])
+    cust_product = (cust_product > 0).astype(int)
+
+    # Filter rare products
+    product_support = cust_product.sum(axis=0)
+    valid_mask = product_support >= min_product_support
+    products = product_support.index[valid_mask].tolist()
+    cust_product = cust_product[products]
+
+    n_customers = len(cust_product)
+
+    # IDF weights
+    idf = np.log(n_customers / (product_support[products].values + 1e-10))
+
+    # TF-IDF matrix (sparse-friendly: multiply rows by IDF)
+    tfidf = cust_product.values * idf[np.newaxis, :]
+
+    # Cosine similarity via normalized matrix multiplication
+    norms = np.linalg.norm(tfidf, axis=0)
+    norms[norms == 0] = 1.0
+    tfidf_norm = tfidf / norms[np.newaxis, :]
+
+    sim = tfidf_norm.T @ tfidf_norm
+    np.fill_diagonal(sim, 1.0)
+
+    return pd.DataFrame(sim, index=products, columns=products)
+
+
 def _build_similarity_matrix_vectorized(
     transactions_df: pd.DataFrame,
     customer_col: str = "customer_id",
@@ -252,7 +372,7 @@ def _build_similarity_matrix_vectorized(
     Build product similarity matrix using fully vectorized matrix operations.
 
     Uses binary customer-product matrix multiplication to compute all pairwise
-    co-occurrence counts in O(n²) numpy, avoiding Python loops over pairs.
+    co-occurrence counts in O(n^2) numpy, avoiding Python loops over pairs.
     """
     # Binary customer-product matrix
     cust_product = pd.crosstab(transactions_df[customer_col], transactions_df[product_col])
@@ -290,10 +410,12 @@ def _build_similarity_matrix_vectorized(
             out=np.zeros_like(numerator, dtype=float),
             where=denominator != 0,
         )
-    else:
+    elif method == "jaccard":
         # Jaccard: intersection / union
         union = both + a_only + b_only
         sim = np.divide(both, union, out=np.zeros_like(both, dtype=float), where=union != 0)
+    else:
+        raise ValueError(f"Unknown method for vectorized: {method}")
 
     # Apply min_cooccurrence mask: zero out pairs below threshold
     sim[both < min_cooccurrence] = 0.0
@@ -317,22 +439,87 @@ def build_similarity_matrix(
         transactions_df: Transaction DataFrame
         customer_col: Customer identifier column
         product_col: Product identifier column
-        method: 'phi' or 'jaccard'
+        method: 'phi', 'jaccard', 'pmi', 'cosine_tfidf'
         min_cooccurrence: Minimum co-purchase count to compute similarity
         min_product_support: Minimum customers buying a product to include it
 
     Returns:
         Square DataFrame (products x products) with similarity scores.
-        Diagonal = 1.0. Values in [-1, 1] for Phi, [0, 1] for Jaccard.
+        Diagonal = 1.0. Values in [-1, 1] for Phi, [0, 1] for Jaccard/PMI/Cosine.
     """
-    return _build_similarity_matrix_vectorized(
-        transactions_df,
-        customer_col,
-        product_col,
-        method,
-        min_cooccurrence,
-        min_product_support,
-    )
+    if method == "phi":
+        return _build_similarity_matrix_vectorized(
+            transactions_df, customer_col, product_col, "phi", min_cooccurrence, min_product_support
+        )
+    elif method == "jaccard":
+        return _build_similarity_matrix_vectorized(
+            transactions_df, customer_col, product_col, "jaccard", min_cooccurrence, min_product_support
+        )
+    elif method == "pmi":
+        return compute_pmi_matrix(
+            transactions_df, customer_col, product_col, min_cooccurrence, min_product_support
+        )
+    elif method == "cosine_tfidf":
+        return compute_cosine_tfidf_matrix(
+            transactions_df, customer_col, product_col, min_product_support
+        )
+    else:
+        raise ValueError(f"Unknown similarity method: {method}")
+
+
+def build_similarity_matrix_ensemble(
+    transactions_df: pd.DataFrame,
+    customer_col: str = "customer_id",
+    product_col: str = "stockcode",
+    methods: Optional[List[str]] = None,
+    weights: Optional[Dict[str, float]] = None,
+    min_cooccurrence: int = 5,
+    min_product_support: int = 2,
+) -> Dict[str, pd.DataFrame]:
+    """
+    Build multiple similarity matrices and optionally return weighted ensemble.
+
+    Args:
+        transactions_df: Transaction DataFrame
+        customer_col: Customer identifier column
+        product_col: Product identifier column
+        methods: List of methods to compute (default: ['phi', 'jaccard', 'pmi', 'cosine_tfidf'])
+        weights: Dict mapping method -> weight for ensemble (default: equal)
+        min_cooccurrence: Minimum co-purchase count
+        min_product_support: Minimum product support
+
+    Returns:
+        Dict with individual matrices + 'ensemble' key if weights provided
+    """
+    if methods is None:
+        methods = ["phi", "jaccard", "pmi", "cosine_tfidf"]
+
+    matrices = {}
+    for method in methods:
+        matrices[method] = build_similarity_matrix(
+            transactions_df, customer_col, product_col, method, min_cooccurrence, min_product_support
+        )
+
+    if weights:
+        # Align on common products
+        common_products = set(matrices[methods[0]].index)
+        for m in methods[1:]:
+            common_products &= set(matrices[m].index)
+        common_products = sorted(common_products)
+
+        ensemble = pd.DataFrame(0.0, index=common_products, columns=common_products)
+        total_weight = sum(weights.get(m, 1.0) for m in methods)
+
+        for method in methods:
+            weight = weights.get(method, 1.0)
+            mat = matrices[method].loc[common_products, common_products]
+            ensemble += weight * mat
+
+        ensemble /= total_weight
+        np.fill_diagonal(ensemble.values, 1.0)
+        matrices["ensemble"] = ensemble
+
+    return matrices
 
 
 def compute_switching_matrix_from_sequences(
@@ -358,7 +545,7 @@ def compute_switching_matrix_from_sequences(
 
     rows = []
     for from_prod, targets in switch_counts.items():
-        total = from_totals[from_prod]
+        total = from_totals.get(from_prod, 0)
         for to_prod, count in targets.items():
             rows.append(
                 {

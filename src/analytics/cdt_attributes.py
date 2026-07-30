@@ -20,6 +20,7 @@ References
 - Arxiv 2405.05218: Clustering Retail Products Based on Customer Behaviour
 """
 
+import re
 from typing import Optional
 
 import numpy as np
@@ -241,3 +242,117 @@ def get_candidate_attributes(
         rest = [c for c in cols if c not in FUNCTIONAL_FIT_ATTRIBUTES]
         return ff + rest
     return cols
+
+
+# =====================================================================
+# Product Text Attribute Extraction
+# =====================================================================
+
+SIZE_PATTERNS = [
+    r'\b(\d+(?:\.\d+)?)\s*(ML|L|G|KG|OZ|LB|PCS|PK|COUNT)\b',
+    r'\b(\d+(?:\.\d+)?)\s*[Xx]\s*(\d+(?:\.\d+)?)\s*(ML|L|G|KG|OZ|LB)\b',
+    r'\b(\d+)\s*(PACK|PK)\b',
+    r'\b(\d+)\s*(UNIT|CT|CNT)\b',
+]
+
+FLAVOUR_PATTERNS = [
+    r'\b(CHOCOLATE|VANILLA|STRAWBERRY|CHERRY|LEMON|LIME|ORANGE|APPLE|GRAPE|BERRY|MANGO|PEACH|PEAR|PINEAPPLE|BLUEBERRY|RASPBERRY|BLACKBERRY|COCONUT|CARAMEL|MOCHA|HAZELNUT|ALMOND|MINT|COFFEE|ESPRESSO|CAPPUCCINO|LATTE|COLA|ROOT BEER|GINGER ALE|TONIC|CLUB SODA|SPARKLING|STILL)\b',
+    r'\b(SALTED|UNSALTED|ROASTED|RAW|TOASTED|FRIED|BAKED|GRILLED|SMOKED|SPICY|MILD|SWEET|SAVORY|SOUR|BITTER|TANGY)\b',
+    r'\b(BEEF|CHICKEN|PORK|TURKEY|LAMB|FISH|SALMON|TUNA|SHRIMP|CRAB|LOBSTER|SEAFOOD)\b',
+    r'\b(ORGANIC|NATURAL|GLUTEN.FREE|VEGAN|VEGETARIAN|KOSHER|HALAL)\b',
+]
+
+VARIANT_KEYWORDS = [
+    'REGULAR', 'DIET', 'ZERO', 'LIGHT', 'LITE', 'LOW.FAT', 'FULL.FAT',
+    'SKIMMED', 'SEMI', 'WHOLE', 'PLAIN', 'FLAVOURED', 'UNSWEETENED',
+    'SWEETENED', 'ORIGINAL', 'CLASSIC', 'PREMIUM', 'STANDARD', 'VALUE',
+    'ECONOMY', 'DELUXE', 'SELECT', 'CHOICE', 'PRIME', 'EXTRA', 'ULTRA',
+]
+
+
+def extract_size_from_text(product_name: str) -> Optional[str]:
+    """Extract size/pack info from product description."""
+    name = product_name.upper()
+    for pattern in SIZE_PATTERNS:
+        match = re.search(pattern, name, re.IGNORECASE)
+        if match:
+            return match.group(0).replace(' ', '')
+    return None
+
+
+def extract_flavour_from_text(product_name: str) -> Optional[str]:
+    """Extract flavour/variant from product description."""
+    name = product_name.upper()
+    for pattern in FLAVOUR_PATTERNS:
+        match = re.search(pattern, name, re.IGNORECASE)
+        if match:
+            return match.group(1).title()
+    return None
+
+
+def extract_variant_from_text(product_name: str) -> Optional[str]:
+    """Extract variant (diet/zero/light/etc) from product description."""
+    name = product_name.upper()
+    for kw in VARIANT_KEYWORDS:
+        if re.search(rf'\b{re.escape(kw)}\b', name):
+            return kw.replace('.', '-').title()
+    return None
+
+
+def extract_attributes_from_product_text(
+    transactions_df: pd.DataFrame,
+    product_col: str = "product",
+    stockcode_col: str = "stockcode",
+) -> pd.DataFrame:
+    """Parse size, flavour, variant from product description text.
+
+    Uses regex patterns to extract structured attributes from unstructured
+    product names. Returns DataFrame indexed by stockcode with columns:
+        extracted_size, extracted_flavour, extracted_variant
+
+    Falls back to NaN for products where extraction fails.
+    """
+    # Get unique product names per stockcode
+    name_map = transactions_df.drop_duplicates(subset=[stockcode_col]).set_index(stockcode_col)[product_col]
+
+    results = {}
+    for sku, name in name_map.items():
+        size = extract_size_from_text(name)
+        flavour = extract_flavour_from_text(name)
+        variant = extract_variant_from_text(name)
+        results[sku] = {
+            "extracted_size": size,
+            "extracted_flavour": flavour,
+            "extracted_variant": variant,
+        }
+
+    df = pd.DataFrame.from_dict(results, orient='index')
+    df.index.name = stockcode_col
+    return df
+
+
+def merge_extracted_attributes(
+    existing_attrs: pd.DataFrame,
+    extracted_attrs: pd.DataFrame,
+    prefer_existing: bool = True,
+) -> pd.DataFrame:
+    """Merge transaction-derived attributes with text-extracted attributes.
+
+    Args:
+        existing_attrs: DataFrame from build_transaction_derived_attributes
+        extracted_attrs: DataFrame from extract_attributes_from_product_text
+        prefer_existing: If True, keep existing non-null values; only fill from extracted
+
+    Returns:
+        Merged DataFrame with combined attribute columns
+    """
+    merged = existing_attrs.copy()
+    for col in extracted_attrs.columns:
+        if col in merged.columns:
+            if prefer_existing:
+                merged[col] = merged[col].fillna(extracted_attrs[col])
+            else:
+                merged[col] = extracted_attrs[col].fillna(merged[col])
+        else:
+            merged[col] = extracted_attrs[col]
+    return merged

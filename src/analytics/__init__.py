@@ -27,8 +27,11 @@ from .cdt_similarity import (
     build_copurchase_tables,
     build_customer_sequences,
     build_similarity_matrix,
+    build_similarity_matrix_ensemble,
+    compute_cosine_tfidf_matrix,
     compute_jaccard,
     compute_phi_coefficient,
+    compute_pmi_matrix,
     compute_switching_matrix_from_sequences,
     detect_switches,
 )
@@ -40,12 +43,41 @@ from .cdt_tree_builder import (
     tree_to_dataframe,
     tree_to_json,
 )
+from .cdt_attributes import (
+    build_transaction_derived_attributes,
+    derive_price_tier,
+    derive_velocity_tier,
+    derive_basket_size_affinity,
+    derive_seasonality_class,
+    derive_substitution_tier,
+    extract_attributes_from_product_text,
+    merge_extracted_attributes,
+    FUNCTIONAL_FIT_ATTRIBUTES,
+    get_candidate_attributes,
+)
+from .cdt_community import (
+    build_product_graph,
+    detect_communities,
+    detect_communities_louvain,
+    detect_communities_leiden,
+    detect_communities_label_propagation,
+    hierarchical_clustering_within_communities,
+    merge_community_dendrograms,
+    community_detection_pipeline,
+)
 from .cohort import (
     cohort_comparison_summary,
     compute_cohort_sizes,
     compute_cohorts,
     period_over_period_comparison,
     year_over_year_comparison,
+)
+from .basket_metrics import (
+    compute_basket_penetration,
+    compute_basket_value_uplift,
+    compute_basket_composition,
+    compute_copurchase_index,
+    compute_shopper_loyalty_metrics,
 )
 from .copurchase import (
     compute_affinity_matrix,
@@ -60,13 +92,29 @@ from .product_performance import (
     product_lifecycle_stage,
     product_seasonality,
 )
-from .promotional import (
-    calculate_incremental_revenue,
-    calculate_promotional_lift,
-    detect_promotions,
-    halo_effect_analysis,
-    promotion_roi_analysis,
-    promotion_timing_analysis,
+from .demand_transference import (
+    compute_demand_transference_matrix,
+    compute_substitutable_demand_percentage,
+    delist_impact_analysis,
+    node_delist_impact,
+)
+from .promo_uplift import (
+    derive_promo_flag,
+    build_uplift_dataset,
+    train_t_learner_uplift,
+    train_s_learner_uplift,
+    train_xgb_uplift,
+    estimate_propensity_score,
+    evaluate_uplift_model,
+    decompose_promo_lift,
+    promo_roi_analysis,
+)
+from .pricing import (
+    estimate_loglog_elasticity,
+    estimate_hierarchical_elasticity,
+    estimate_elasticity_xgb,
+    compute_kvi_score,
+    diagnose_price_curves,
 )
 from .segmentation import (
     behavioral_segmentation,
@@ -115,6 +163,12 @@ __all__ = [
     "promotion_roi_analysis",
     "halo_effect_analysis",
     "promotion_timing_analysis",
+    # Basket metrics
+    "compute_basket_penetration",
+    "compute_basket_value_uplift",
+    "compute_basket_composition",
+    "compute_copurchase_index",
+    "compute_shopper_loyalty_metrics",
     # CDT modules
     "build_customer_sequences",
     "detect_switches",
@@ -122,6 +176,9 @@ __all__ = [
     "compute_phi_coefficient",
     "compute_jaccard",
     "build_similarity_matrix",
+    "build_similarity_matrix_ensemble",
+    "compute_pmi_matrix",
+    "compute_cosine_tfidf_matrix",
     "compute_switching_matrix_from_sequences",
     "perform_hierarchical_clustering",
     "find_optimal_clusters",
@@ -144,4 +201,34 @@ __all__ = [
     "get_top_switching_paths",
     "detect_brand_switching",
     "compute_brand_switching_matrix",
+    # Community detection
+    "build_product_graph",
+    "detect_communities",
+    "detect_communities_louvain",
+    "detect_communities_leiden",
+    "detect_communities_label_propagation",
+    "hierarchical_clustering_within_communities",
+    "merge_community_dendrograms",
+    "community_detection_pipeline",
+    # Demand transference
+    "compute_demand_transference_matrix",
+    "compute_substitutable_demand_percentage",
+    "delist_impact_analysis",
+    "node_delist_impact",
+    # Promo uplift
+    "derive_promo_flag",
+    "build_uplift_dataset",
+    "train_t_learner_uplift",
+    "train_s_learner_uplift",
+    "train_xgb_uplift",
+    "estimate_propensity_score",
+    "evaluate_uplift_model",
+    "decompose_promo_lift",
+    "promo_roi_analysis",
+    # Pricing
+    "estimate_loglog_elasticity",
+    "estimate_hierarchical_elasticity",
+    "estimate_elasticity_xgb",
+    "compute_kvi_score",
+    "diagnose_price_curves",
 ]

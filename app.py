@@ -56,8 +56,9 @@ def main():
     # Header
     st.title("Market Basket Analysis")
     st.caption(
-        "Association Rules • Co-purchase • Add-ons • Switching • Customer Choice Modelling • "
-        "Customer Segmentation • Product Performance • Cohort Analysis • Promotional Analytics"
+        "Association Rules \u2022 Co-purchase \u2022 Add-ons \u2022 Switching \u2022 Customer Choice Modelling \u2022 "
+        "Customer Segmentation \u2022 Product Performance \u2022 Cohort Analysis \u2022 Promotional Analytics \u2022 "
+        "CDT & Assortment \u2022 Pricing & Promotions"
     )
 
     # Render sidebar and get config
@@ -145,6 +146,27 @@ def run_analysis(transactions_df: pd.DataFrame, product_lookup: dict, config: Co
             render_cohort_tab(transactions_df, product_lookup, all_params)
         elif analysis_mode == "Promotional Analytics":
             render_promotional_tab(transactions_df, product_lookup, all_params)
+        elif analysis_mode == "CDT Builder":
+            from src.ui.cdt_assortment_tab import render_cdt_assortment_tab
+            render_cdt_assortment_tab(transactions_df, product_lookup, all_params, mode="cdt")
+        elif analysis_mode == "Demand Transference":
+            from src.ui.cdt_assortment_tab import render_cdt_assortment_tab
+            render_cdt_assortment_tab(transactions_df, product_lookup, all_params, mode="transference")
+        elif analysis_mode == "Assortment Optimizer":
+            from src.ui.cdt_assortment_tab import render_cdt_assortment_tab
+            render_cdt_assortment_tab(transactions_df, product_lookup, all_params, mode="assortment")
+        elif analysis_mode == "Elasticity Analysis":
+            from src.ui.pricing_tab import render_pricing_tab
+            render_pricing_tab(transactions_df, product_lookup, all_params, mode="elasticity")
+        elif analysis_mode == "KVI Identification":
+            from src.ui.pricing_tab import render_pricing_tab
+            render_pricing_tab(transactions_df, product_lookup, all_params, mode="kvi")
+        elif analysis_mode == "Price Curve Diagnostics":
+            from src.ui.pricing_tab import render_pricing_tab
+            render_pricing_tab(transactions_df, product_lookup, all_params, mode="price_curves")
+        elif analysis_mode == "Promo Uplift Modeling":
+            from src.ui.pricing_tab import render_pricing_tab
+            render_pricing_tab(transactions_df, product_lookup, all_params, mode="promo_uplift")
         else:
             st.warning(f"Unknown analysis mode: {analysis_mode}")
 
@@ -193,7 +215,7 @@ def render_rules_analysis(transactions_df: pd.DataFrame, product_lookup: dict, p
         max_lift=params.get("max_lift", 100.0),
     )
 
-    st.info(f"{len(filtered_rules)} rules after filtering (lift ≥ {params['min_lift']})")
+    st.info(f"{len(filtered_rules)} rules after filtering (lift \u2265 {params['min_lift']})")
 
     # Create tabs for different views
     tab1, tab2, tab3, tab4 = st.tabs(

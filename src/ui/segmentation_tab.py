@@ -2811,6 +2811,20 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
                 )
                 / 100.0
             )
+            split_criterion = st.selectbox(
+                "Split Criterion",
+                ["mutual_info", "gini", "entropy", "mixed"],
+                index=0,
+                help="Attribute split scoring method",
+            )
+            split_alpha = st.slider(
+                "Split Alpha (entropy/Gini mix)",
+                0.0,
+                1.0,
+                0.5,
+                0.1,
+                help="Weight for entropy when criterion='mixed'",
+            )
 
         with col4:
             st.subheader("Behavioral")
@@ -2935,6 +2949,8 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
             min_cluster_size=min_cluster_size,
             quality_threshold=quality_threshold,
             candidate_attributes=selected_attrs if selected_attrs else None,
+            criterion=split_criterion,
+            alpha=split_alpha,
         )
 
         # Step 5: Compute behavioral matrices

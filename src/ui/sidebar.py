@@ -121,16 +121,17 @@ def render_sidebar() -> Config:
     st.sidebar.divider()
     st.sidebar.header(" Analysis Options")
 
-    # Main analysis category
+    # Main analysis category - new structure with backward compat
     analysis_category = st.sidebar.radio(
         "Analysis Category",
         [
             "Association Rules",
-            "Decision Intelligence",
+            "CDT & Assortment",           # NEW primary
+            "Pricing & Promotions",        # NEW primary
             "Customer Segmentation",
             "Product Performance",
             "Cohort Analysis",
-            "Promotional Analytics",
+            "Promotional Analytics",       # Legacy - kept for compat
         ],
         index=0,
         key="sidebar_analysis_category",
@@ -149,15 +150,28 @@ def render_sidebar() -> Config:
             index=0,
             key="sidebar_analysis_mode_assoc",
         )
-    elif analysis_category == "Decision Intelligence":
+    elif analysis_category == "CDT & Assortment":
         analysis_mode = st.sidebar.radio(
-            "Decision Intelligence Mode",
+            "CDT & Assortment Mode",
             [
-                "Choice Prediction Model",  # supervised (existing tree_tab)
-                "Decision Tree & Patterns",  # unsupervised CDT (new)
+                "CDT Builder",           # enhanced CDT with community detection
+                "Demand Transference",   # delist simulation & substitution
+                "Assortment Optimizer",  # MILP/heuristic range optimization
             ],
             index=0,
-            key="sidebar_analysis_mode_dt",
+            key="sidebar_analysis_mode_cdt",
+        )
+    elif analysis_category == "Pricing & Promotions":
+        analysis_mode = st.sidebar.radio(
+            "Pricing & Promotions Mode",
+            [
+                "Elasticity Analysis",       # price elasticity estimation
+                "KVI Identification",        # key value item scoring
+                "Price Curve Diagnostics",   # tier clustering & violations
+                "Promo Uplift Modeling",     # causal uplift estimation
+            ],
+            index=0,
+            key="sidebar_analysis_mode_pricing",
         )
     elif analysis_category == "Customer Segmentation":
         analysis_mode = "Customer Segmentation"
@@ -200,24 +214,33 @@ def render_sidebar() -> Config:
             "Min Customer Transactions", 2, 10, 3, key="switching_min_trans"
         )
 
-    elif analysis_mode == "Choice Prediction Model":
-        analysis_params["max_depth"] = st.sidebar.slider(
-            "Max Tree Depth", 2, 8, 4, key="choice_max_depth"
-        )
-        analysis_params["min_samples_leaf"] = st.sidebar.slider(
-            "Min Samples Leaf", 5, 50, 10, key="choice_min_leaf"
-        )
-        analysis_params["prediction_window"] = st.sidebar.slider(
-            "Prediction Window (days)", 7, 90, 30, key="choice_pred_window"
-        )
-
-    elif analysis_mode == "Decision Tree & Patterns":
+    elif analysis_mode == "CDT Builder":
         st.sidebar.markdown("**Similarity**")
-        analysis_params["similarity_method"] = st.sidebar.selectbox(
-            "Similarity Method", ["phi", "jaccard"], index=0, key="cdt_similarity"
+        analysis_params["similarity_methods"] = st.sidebar.multiselect(
+            "Similarity Methods",
+            ["phi", "jaccard", "pmi", "cosine_tfidf"],
+            default=["phi"],
+            key="cdt_similarity_methods",
         )
         analysis_params["min_cooccurrence"] = st.sidebar.slider(
             "Min Co-occurrence", 2, 20, 5, key="cdt_min_cooc"
+        )
+
+        st.sidebar.markdown("**Community Detection**")
+        analysis_params["community_method"] = st.sidebar.selectbox(
+            "Community Method",
+            ["none", "label_propagation", "louvain", "leiden"],
+            index=1,
+            key="cdt_community_method",
+        )
+        analysis_params["community_resolution"] = st.sidebar.slider(
+            "Resolution", 0.5, 2.0, 1.0, 0.1, key="cdt_community_resolution"
+        )
+        analysis_params["graph_min_weight"] = st.sidebar.slider(
+            "Graph Min Weight", 0.0, 0.5, 0.1, 0.05, key="cdt_graph_min_weight"
+        )
+        analysis_params["graph_max_degree"] = st.sidebar.slider(
+            "Graph Max Degree", 10, 100, 50, key="cdt_graph_max_degree"
         )
 
         st.sidebar.markdown("**Clustering**")
@@ -234,6 +257,15 @@ def render_sidebar() -> Config:
         analysis_params["quality_threshold"] = st.sidebar.slider(
             "Quality Threshold (%)", 40, 80, 60, key="cdt_quality"
         )
+        analysis_params["split_criterion"] = st.sidebar.selectbox(
+            "Split Criterion", ["mutual_info", "gini", "entropy", "mixed"], index=0, key="cdt_split_criterion"
+        )
+        analysis_params["split_alpha"] = st.sidebar.slider(
+            "Split Alpha (entropy/Gini mix)", 0.0, 1.0, 0.5, 0.1, key="cdt_split_alpha"
+        )
+        analysis_params["extract_from_text"] = st.sidebar.checkbox(
+            "Extract Attributes from Product Text", value=False, key="cdt_extract_text"
+        )
 
         st.sidebar.markdown("**Behavioral**")
         analysis_params["top_n_products"] = st.sidebar.slider(
@@ -244,6 +276,104 @@ def render_sidebar() -> Config:
         )
         analysis_params["max_sub"] = st.sidebar.slider(
             "Max Substitution", 0.0, 0.5, 0.3, 0.05, key="cdt_max_sub"
+        )
+
+    elif analysis_mode == "Demand Transference":
+        analysis_params["substitution_source"] = st.sidebar.selectbox(
+            "Substitution Source", ["switching", "cdt"], index=0, key="dt_sub_source"
+        )
+        analysis_params["delist_products"] = st.sidebar.multiselect(
+            "Products to Delist", [], key="dt_delist_products"
+        )
+        analysis_params["max_recovery"] = st.sidebar.slider(
+            "Max Recovery Constraint", 0.5, 1.0, 1.0, 0.05, key="dt_max_recovery"
+        )
+        analysis_params["show_cannibalization"] = st.sidebar.checkbox(
+            "Show Cannibalization", value=True, key="dt_show_cannibalization"
+        )
+
+    elif analysis_mode == "Assortment Optimizer":
+        analysis_params["max_skus"] = st.sidebar.slider(
+            "Max SKUs", 20, 500, 100, key="assort_max_skus"
+        )
+        analysis_params["min_coverage"] = st.sidebar.slider(
+            "Min Coverage %", 50, 95, 80, key="assort_min_coverage"
+        )
+        analysis_params["objective"] = st.sidebar.selectbox(
+            "Objective", ["revenue", "margin"], index=0, key="assort_objective"
+        )
+        analysis_params["solver"] = st.sidebar.selectbox(
+            "Solver", ["heuristic", "milp"], index=0, key="assort_solver"
+        )
+        analysis_params["time_limit"] = st.sidebar.slider(
+            "Time Limit (s)", 10, 300, 60, key="assort_time_limit"
+        )
+        analysis_params["generate_scenarios"] = st.sidebar.button(
+            "Generate Scenarios", key="assort_gen_scenarios"
+        )
+
+    elif analysis_mode == "Elasticity Analysis":
+        analysis_params["elasticity_method"] = st.sidebar.selectbox(
+            "Method", ["loglog_ols", "hierarchical_eb", "xgb"], index=0, key="price_elasticity_method"
+        )
+        analysis_params["min_periods"] = st.sidebar.slider(
+            "Min Periods", 5, 50, 10, key="price_min_periods"
+        )
+        analysis_params["min_price_variation"] = st.sidebar.slider(
+            "Min Price Variation", 0.01, 0.5, 0.05, 0.01, key="price_min_var"
+        )
+        analysis_params["show_shap"] = st.sidebar.checkbox(
+            "Show SHAP Values", value=False, key="price_show_shap"
+        )
+
+    elif analysis_mode == "KVI Identification":
+        analysis_params["kvi_method"] = st.sidebar.selectbox(
+            "Method", ["xgb_importance", "rfm_elasticity"], index=0, key="kvi_method"
+        )
+        analysis_params["top_k_kvi"] = st.sidebar.slider(
+            "Top K KVI", 10, 100, 20, key="kvi_top_k"
+        )
+        analysis_params["margin_weighted"] = st.sidebar.checkbox(
+            "Margin-Weighted (if cost available)", value=False, key="kvi_margin_weighted"
+        )
+
+    elif analysis_mode == "Price Curve Diagnostics":
+        analysis_params["price_curve_method"] = st.sidebar.selectbox(
+            "Clustering Method", ["kmeans", "gmm"], index=0, key="price_curve_method"
+        )
+        analysis_params["n_tiers"] = st.sidebar.slider(
+            "Number of Tiers", 2, 5, 3, key="price_curve_tiers"
+        )
+
+    elif analysis_mode == "Promo Uplift Modeling":
+        analysis_params["promo_drop_threshold"] = st.sidebar.slider(
+            "Promo Drop Threshold (%)", 5, 50, 15, key="promo_drop_thresh"
+        )
+        analysis_params["promo_baseline_window"] = st.sidebar.slider(
+            "Baseline Window (days)", 14, 90, 28, key="promo_baseline_window"
+        )
+        analysis_params["uplift_method"] = st.sidebar.selectbox(
+            "Uplift Method", ["t_learner", "s_learner"], index=0, key="uplift_method"
+        )
+        analysis_params["base_n_estimators"] = st.sidebar.slider(
+            "Base Learner n_estimators", 50, 500, 200, key="uplift_n_est"
+        )
+        analysis_params["base_max_depth"] = st.sidebar.slider(
+            "Base Learner max_depth", 3, 10, 5, key="uplift_max_depth"
+        )
+        analysis_params["propensity_stratification"] = st.sidebar.checkbox(
+            "Propensity Stratification", value=True, key="uplift_propensity"
+        )
+
+    elif analysis_mode == "Choice Prediction Model":
+        analysis_params["max_depth"] = st.sidebar.slider(
+            "Max Tree Depth", 2, 8, 4, key="choice_max_depth"
+        )
+        analysis_params["min_samples_leaf"] = st.sidebar.slider(
+            "Min Samples Leaf", 5, 50, 10, key="choice_min_leaf"
+        )
+        analysis_params["prediction_window"] = st.sidebar.slider(
+            "Prediction Window (days)", 7, 90, 30, key="choice_pred_window"
         )
 
     elif analysis_mode == "Customer Segmentation":
@@ -350,7 +480,6 @@ def render_data_info(df: pd.DataFrame):
         st.write(f"**Customers:** {df['customer_id'].nunique():,}")
         st.write(f"**Products:** {df['stockcode'].nunique():,}")
 
-        # BUG 6 FIX: Safe date formatting
         min_date = df["date"].min()
         max_date = df["date"].max()
         if pd.notna(min_date) and pd.notna(max_date):
