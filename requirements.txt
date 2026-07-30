@@ -18,3 +18,5 @@ shap>=0.44.0
 lifelines>=0.28.0
 ortools>=9.9.0
 causalml>=0.14.0
+pymc>=5.0.0
+pymc-marketing>=0.7.0

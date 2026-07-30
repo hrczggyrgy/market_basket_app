@@ -5,6 +5,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+from src.analytics.sufficiency import (
+    assess_data_sufficiency,
+    format_sufficiency_summary,
+)
 from src.analytics.switching import (
     compute_switching_matrix,
     compute_transition_matrix,
@@ -28,6 +32,19 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
     if transactions_df.empty:
         st.warning("No transaction data available")
         return
+
+    # Data sufficiency gate
+    sufficiency = assess_data_sufficiency(
+        transactions_df,
+        min_transactions=params.get("min_transactions", 200),
+        min_customers=params.get("min_customers", 20),
+        min_products=params.get("min_products", 5),
+        min_time_span_days=params.get("min_time_span_days", 30),
+    )
+    with st.expander("📋 Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
+        st.markdown(format_sufficiency_summary(sufficiency))
+        if sufficiency["overall"] == "insufficient":
+            st.warning("Dataset may be too small for reliable switching estimates.")
 
     with st.expander(" Switching Parameters", expanded=False):
         col1, col2 = st.columns(2)
@@ -107,6 +124,24 @@ def render_switching_tab(transactions_df: pd.DataFrame, product_lookup: dict, pa
         delta=f"{loyal_n / total_customers:.0%} of base" if total_customers else None,
         delta_color="normal",
     )
+
+    # Bootstrap CI for average switch rate
+    if not switch_matrix.empty and len(switch_matrix) >= 5:
+        from src.analytics.bootstrap import bootstrap_ci
+
+        def _mean_switch_rate(df):
+            sm = compute_switching_matrix(
+                df, window_days=window_days, min_transactions=min_transactions
+            )
+            return float(sm["switch_rate"].mean()) if not sm.empty else 0.0
+
+        with st.spinner("Bootstrapping switch rate confidence interval..."):
+            boot = bootstrap_ci(transactions_df, _mean_switch_rate, n_resamples=200, random_seed=42)
+        if boot["n_resamples"] > 0:
+            st.info(
+                f"Mean switch rate 95% CI: [{boot['lower']:.1%}, {boot['upper']:.1%}] "
+                f"(based on {boot['n_resamples']} bootstrap resamples)"
+            )
 
     tab_labels = [
         " Switching Heatmap",

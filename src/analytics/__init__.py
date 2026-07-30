@@ -134,6 +134,16 @@ from .switching import (
     get_customer_loyalty_metrics,
     get_switching_heatmap_data,
 )
+from .bootstrap import (
+    bootstrap_ci,
+    bootstrap_ci_customer,
+    bootstrap_transaction_samples,
+)
+from .sufficiency import (
+    assess_data_sufficiency,
+    format_sufficiency_summary,
+    sufficiency_badge,
+)
 
 __all__ = [
     "compute_affinity_matrix",
@@ -147,6 +157,12 @@ __all__ = [
     "detect_brand_switching",
     "get_top_switching_paths",
     "get_switching_heatmap_data",
+    "bootstrap_ci",
+    "bootstrap_ci_customer",
+    "bootstrap_transaction_samples",
+    "assess_data_sufficiency",
+    "format_sufficiency_summary",
+    "sufficiency_badge",
     "compute_rfm_features",
     "rfm_segmentation",
     "behavioral_segmentation",

@@ -16,6 +16,10 @@ from src.analytics import (
     compute_basket_value_uplift,
     compute_product_metrics,
 )
+from src.analytics.sufficiency import (
+    assess_data_sufficiency,
+    format_sufficiency_summary,
+)
 
 warnings.filterwarnings("ignore")
 
@@ -49,6 +53,22 @@ def _render_elasticity_analysis(transactions_df: pd.DataFrame, product_lookup: d
     """Render price elasticity estimation using log-log regression."""
 
     st.header("📈 Price Elasticity Analysis")
+
+    # Data sufficiency gate
+    sufficiency = assess_data_sufficiency(
+        transactions_df,
+        min_transactions=params.get("min_transactions", 500),
+        min_customers=params.get("min_customers", 30),
+        min_products=params.get("min_products", 5),
+        min_time_span_days=params.get("min_time_span_days", 60),
+        min_price_variation_cv=params.get("min_price_variation", 0.03),
+    )
+    with st.expander("📋 Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
+        st.markdown(format_sufficiency_summary(sufficiency))
+        if sufficiency["overall"] == "insufficient":
+            st.warning("Dataset may be too small for reliable elasticity estimates.")
+        elif sufficiency["overall"] == "directional":
+            st.info("Results should be treated as directional, not definitive.")
 
     method = params.get("elasticity_method", "loglog_ols")
     min_periods = params.get("min_periods", 10)
@@ -128,6 +148,8 @@ def _render_single_product_elasticity(
         st.warning(
             f"Low price variation (CV={price_cv:.3f}). Elasticity estimates may be unreliable."
         )
+    else:
+        st.info(f"Price CV: {price_cv:.3f} — sufficient variation ✅")
 
     # Log-log regression
     log_price = np.log(weekly["avg_price"].replace(0, np.nan).dropna())
