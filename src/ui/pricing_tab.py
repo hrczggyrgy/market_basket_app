@@ -130,13 +130,12 @@ def _render_single_product_elasticity(
 
     # Bayesian single-product mode (uses the hierarchical result filtered to this SKU)
     if method == "bayesian_hierarchical":
-        bayesian_mode = params.get("bayesian_mode", "fast (ADVI)")
         with st.spinner("Running Bayesian hierarchical model..."):
-            all_results = estimate_bayesian_hierarchical_elasticity(
+            all_results = _run_bayesian_elasticity_cached(
                 transactions_df,
-                min_periods=params.get("min_periods", 10),
-                min_price_variation=params.get("min_price_variation", 0.05),
-                bayesian_mode=bayesian_mode,
+                params,
+                params.get("min_periods", 10),
+                params.get("min_price_variation", 0.05),
             )
         if all_results.empty:
             st.warning("Bayesian model did not converge.")
@@ -162,6 +161,10 @@ def _render_single_product_elasticity(
             st.warning("🟡 **Uncertain** — HDI crosses zero (insufficient evidence of price effect).")
         else:
             st.info("🟢 **Positive** — HDI above zero (possible promo effect or omitted variable bias).")
+
+        # Trace diagnostics (only for NUTS)
+        if params.get("bayesian_mode", "").startswith("full"):
+            _render_trace_diagnostics()
         return
 
     prod_df = transactions_df[transactions_df["stockcode"] == product_id].copy()
@@ -250,6 +253,55 @@ def _render_single_product_elasticity(
     st.plotly_chart(fig2, use_container_width=True)
 
 
+def _run_bayesian_elasticity_cached(
+    transactions_df: pd.DataFrame,
+    params: dict,
+    min_periods: int = 10,
+    min_price_variation: float = 0.05,
+) -> pd.DataFrame:
+    """Run Bayesian hierarchical elasticity with trace caching.
+
+    Results are cached in-memory via st.cache_resource and also stored
+    in st.session_state for trace diagnostic plotting.
+    """
+    bayesian_mode = params.get("bayesian_mode", "fast (ADVI)")
+    want_trace = bayesian_mode.startswith("full")
+    model_config = {
+        "min_periods": min_periods,
+        "min_price_variation": min_price_variation,
+        "bayesian_mode": bayesian_mode,
+    }
+    cache_key = trace_cache_key(transactions_df, model_config)
+
+    # Check in-memory cache
+    cache = get_trace_cache()
+    if cache_key in cache:
+        return cache[cache_key]
+
+    if want_trace:
+        result, trace_obj = estimate_bayesian_hierarchical_elasticity(
+            transactions_df,
+            min_periods=min_periods,
+            min_price_variation=min_price_variation,
+            bayesian_mode=bayesian_mode,
+            return_trace=True,
+        )
+        if trace_obj is not None:
+            st.session_state["_bayesian_trace"] = trace_obj
+    else:
+        result = estimate_bayesian_hierarchical_elasticity(
+            transactions_df,
+            min_periods=min_periods,
+            min_price_variation=min_price_variation,
+            bayesian_mode=bayesian_mode,
+        )
+    if not result.empty:
+        result = result.rename(columns={"elasticity_mean": "elasticity"})
+        result["method"] = "bayesian_hierarchical"
+    cache[cache_key] = result
+    return result
+
+
 def estimate_all_elasticities(
     transactions_df: pd.DataFrame,
     products: List[str],
@@ -261,18 +313,9 @@ def estimate_all_elasticities(
     """Estimate elasticity for multiple products."""
 
     if method == "bayesian_hierarchical":
-        bayesian_mode = (params or {}).get("bayesian_mode", "fast (ADVI)")
-        result = estimate_bayesian_hierarchical_elasticity(
-            transactions_df,
-            min_periods=min_periods,
-            min_price_variation=min_price_variation,
-            bayesian_mode=bayesian_mode,
+        return _run_bayesian_elasticity_cached(
+            transactions_df, params or {}, min_periods, min_price_variation
         )
-        if result.empty:
-            return result
-        result = result.rename(columns={"elasticity_mean": "elasticity"})
-        result["method"] = "bayesian_hierarchical"
-        return result
 
     results = []
 
@@ -376,6 +419,8 @@ def _render_elasticity_batch_results(elasticity_df: pd.DataFrame, product_lookup
         )
         st.plotly_chart(hdi_fig, use_container_width=True)
 
+        _render_trace_diagnostics()
+
     # Histogram
     fig = px.histogram(
         elasticity_df,
@@ -419,6 +464,43 @@ def _render_elasticity_batch_results(elasticity_df: pd.DataFrame, product_lookup
 
     # Export
     render_export_buttons(elasticity_df, product_lookup, prefix="elasticity")
+
+
+def _render_trace_diagnostics():
+    """Render MCMC trace and posterior density plots from st.session_state."""
+    trace = st.session_state.get("_bayesian_trace")
+    if trace is None or not hasattr(trace, "posterior"):
+        return
+
+    try:
+        import arviz as az
+        import matplotlib.pyplot as plt
+
+        st.subheader("🔬 MCMC Trace Diagnostics")
+
+        # Extract key parameters
+        var_names = [v for v in ["mu_beta", "beta_cat", "beta_sku"] if v in trace.posterior]
+        if not var_names:
+            return
+
+        # Trace plot
+        with st.expander("Trace & Density Plots", expanded=False):
+            fig = az.plot_trace(
+                trace,
+                var_names=var_names[:3],
+                compact=True,
+                backend="matplotlib",
+            )
+            st.pyplot(fig[0][0].figure)
+            plt.close("all")
+
+        # R-hat summary
+        with st.expander("R-hat Convergence Diagnostics", expanded=False):
+            summary = az.summary(trace, var_names=var_names[:3], round_to=3)
+            st.dataframe(summary, use_container_width=True)
+
+    except Exception:
+        pass
 
 
 # ============================================================================

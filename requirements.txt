@@ -20,4 +20,4 @@ ortools>=9.9.0
 causalml>=0.14.0
 pymc>=5.0.0
 pymc-marketing>=0.7.0
-arviz>=0.18.0
+arviz>=1.0.0

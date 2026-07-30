@@ -172,7 +172,8 @@ def estimate_bayesian_hierarchical_elasticity(
     n_samples: int = 500,
     n_tune: int = 500,
     bayesian_mode: str = "fast (ADVI)",
-) -> pd.DataFrame:
+    return_trace: bool = False,
+) -> pd.DataFrame | tuple:
     """
     Three-tier Bayesian hierarchical elasticity via PyMC.
 
@@ -186,12 +187,15 @@ def estimate_bayesian_hierarchical_elasticity(
     bayesian_mode : str
         "fast (ADVI)" uses variational inference (ADVI).
         "full (NUTS)" uses NUTS MCMC (slower but exact).
+    return_trace : bool
+        If True, return (DataFrame, trace) where trace is the InferenceData
+        object from PyMC sampling.
 
     Returns
     -------
-    DataFrame with columns:
-        stockcode, category, elasticity_mean, elasticity_sd,
-        elasticity_hdi_lower, elasticity_hdi_upper, n_obs, avg_price.
+    DataFrame or (DataFrame, InferenceData | None)
+        SKU-level elasticity estimates with posterior mean, SD, and HDI.
+        If return_trace=True and bayesian_mode is NUTS, also returns the trace.
     """
     try:
         import pymc as pm
@@ -330,6 +334,8 @@ def estimate_bayesian_hierarchical_elasticity(
     sku_stats["elasticity_hdi_lower"] = beta_hdi_lower
     sku_stats["elasticity_hdi_upper"] = beta_hdi_upper
 
+    if return_trace and hasattr(trace, "posterior"):
+        return sku_stats, trace
     return sku_stats
 
 
