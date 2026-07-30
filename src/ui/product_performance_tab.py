@@ -89,7 +89,8 @@ def render_product_dashboard(transactions_df: pd.DataFrame, product_lookup: dict
     col1, col2, col3, col4, col5, col6 = st.columns(6)
 
     total_revenue = metrics["total_revenue"].sum()
-    total_qty = metrics["total_quantity"].sum()
+    qty_cols = [c for c in metrics.columns if c.startswith("total_quantity")]
+    total_qty = metrics[qty_cols[0]].sum() if qty_cols else 0
     n_products = len(metrics)
     avg_pen = metrics["basket_penetration"].mean() if "basket_penetration" in metrics else 0
     avg_repeat = metrics["repeat_rate"].mean() if "repeat_rate" in metrics else 0
@@ -247,6 +248,9 @@ def render_opportunity_scatter(transactions_df: pd.DataFrame, product_lookup: di
     color_col = "repeat_rate" if "repeat_rate" in plot_df.columns else "revenue_per_customer"
     size_col = "total_revenue"
 
+    qty_col_hover = next(
+        (c for c in plot_df.columns if c.startswith("total_quantity")), "total_quantity"
+    )
     fig = px.scatter(
         plot_df,
         x=x_col,
@@ -256,7 +260,7 @@ def render_opportunity_scatter(transactions_df: pd.DataFrame, product_lookup: di
         hover_data=[
             "product_name",
             "total_revenue",
-            "total_quantity",
+            qty_col_hover,
             "avg_price",
             "unique_customers",
             "repeat_rate",

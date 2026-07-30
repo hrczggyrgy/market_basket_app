@@ -670,6 +670,8 @@ def extract_product_attributes(
             "style",
         ]
         attribute_cols = [c for c in candidates if c in transactions_df.columns]
+    else:
+        attribute_cols = [c for c in attribute_cols if c in transactions_df.columns]
 
     if not attribute_cols:
         return pd.DataFrame(index=transactions_df[product_col].unique())

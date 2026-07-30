@@ -389,7 +389,10 @@ def rfm_segmentation(
 
 
 def behavioral_segmentation(
-    transactions_df: pd.DataFrame, n_clusters: int = 6, return_metrics: bool = False
+    transactions_df: pd.DataFrame,
+    n_clusters: int = 6,
+    return_metrics: bool = False,
+    method: str = "kmeans",
 ) -> pd.DataFrame:
     """Behavioral segmentation based on purchase patterns.
 

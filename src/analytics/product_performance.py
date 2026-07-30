@@ -707,6 +707,7 @@ def compute_product_dashboard_metrics(
 
     # Velocity
     velocity = compute_velocity(transactions_df)
+    velocity = velocity.drop(columns=["total_quantity"], errors="ignore")
     metrics = metrics.merge(velocity, on="stockcode", how="left")
 
     # Price positioning

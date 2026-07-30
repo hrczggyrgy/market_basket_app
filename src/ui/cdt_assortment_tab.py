@@ -11,6 +11,7 @@ import streamlit as st
 
 from src.analytics import (
     build_cdt,
+    build_similarity_matrix,
     build_similarity_matrix_ensemble,
     compute_bundling_matrix,
     compute_switching_matrix,

@@ -566,7 +566,8 @@ def render_behavioral_segmentation(transactions_df: pd.DataFrame, params: dict):
 
     # Persistent sub-tabs
     behav_tabs = [" Profiles", " Radar Chart", " Box Plots", " Revenue", " Switching"]
-    behav_selected = persistent_tabs(behav_tabs, "behavioral_view_tabs", default_tab=0)
+    behav_idx = persistent_tabs(behav_tabs, "behavioral_view_tabs", default_tab=0)
+    behav_selected = behav_tabs[behav_idx]
 
     feature_cols = [c for c in behavioral.columns if c not in ["customer_id", "cluster", "segment"]]
     profiles = behavioral.groupby("segment")[feature_cols].mean().round(2)

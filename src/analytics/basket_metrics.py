@@ -115,7 +115,8 @@ def basket_penetration_over_time(
     df = transactions_df.copy()
     df["_basket"] = _basket_ids(df)
     df["date"] = pd.to_datetime(df["date"])
-    df["period"] = df["date"].dt.to_period(freq)
+    period_freq = freq.replace("ME", "M")
+    df["period"] = df["date"].dt.to_period(period_freq)
 
     period_totals = df.groupby("period")["_basket"].nunique().rename("total_baskets")
     product_period = (

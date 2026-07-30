@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from scipy.stats import entropy
 from sklearn.cluster import DBSCAN, AgglomerativeClustering, KMeans
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.metrics import (
