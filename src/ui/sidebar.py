@@ -157,6 +157,7 @@ def render_sidebar() -> Config:
                 "CDT Builder",  # enhanced CDT with community detection
                 "Demand Transference",  # delist simulation & substitution
                 "Assortment Optimizer",  # MILP/heuristic range optimization
+                "CDT Benchmark",  # synthetic validation
             ],
             index=0,
             key="sidebar_analysis_mode_cdt",
@@ -326,6 +327,20 @@ def render_sidebar() -> Config:
             "Generate Scenarios", key="assort_gen_scenarios"
         )
 
+    elif analysis_mode == "CDT Benchmark":
+        analysis_params["bench_n_products"] = st.sidebar.slider(
+            "Products", 10, 80, 30, key="cdt_bench_n_products"
+        )
+        analysis_params["bench_n_clusters"] = st.sidebar.slider(
+            "True Clusters", 2, 6, 3, key="cdt_bench_n_clusters"
+        )
+        analysis_params["bench_n_customers"] = st.sidebar.slider(
+            "Customers", 50, 500, 200, key="cdt_bench_n_customers"
+        )
+        analysis_params["bench_noise"] = st.sidebar.slider(
+            "Noise Level", 0.0, 0.5, 0.2, 0.05, key="cdt_bench_noise"
+        )
+
     elif analysis_mode == "Elasticity Analysis":
         analysis_params["elasticity_method"] = st.sidebar.selectbox(
             "Method",
@@ -404,10 +419,17 @@ def render_sidebar() -> Config:
 
     elif analysis_mode == "Customer Segmentation":
         analysis_params["rfm_method"] = st.sidebar.radio(
-            "RFM Method", ["Quantile (Classic)", "K-Means"], key="sidebar_rfm_method"
+            "Segmentation Method",
+            [
+                "Behavioral Clustering (Recommended)",
+                "RFM Quantile (Simple, legacy)",
+                "RFM K-Means (Simple, legacy)",
+            ],
+            index=0,
+            key="sidebar_rfm_method",
         )
         analysis_params["n_segments"] = st.sidebar.slider(
-            "K-Means Segments", 3, 12, 8, key="sidebar_n_segments"
+            "K-Means / Behavioral Segments", 3, 12, 8, key="sidebar_n_segments"
         )
         analysis_params["behavioral_clusters"] = st.sidebar.slider(
             "Behavioral Clusters", 3, 10, 6, key="sidebar_behav_clusters"

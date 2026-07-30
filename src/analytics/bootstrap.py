@@ -51,7 +51,9 @@ def bootstrap_ci(
         resample = data.iloc[idx]
         try:
             replicates.append(statistic_fn(resample))
-        except Exception:
+        except Exception as e:
+            import warnings
+            warnings.warn(f"Bootstrap statistic failed on resample: {e}")
             continue
 
     if not replicates:
@@ -150,7 +152,9 @@ def bootstrap_ci_customer(
     ):
         try:
             replicates.append(statistic_fn(resample))
-        except Exception:
+        except Exception as e:
+            import warnings
+            warnings.warn(f"Bootstrap statistic failed on resample: {e}")
             continue
 
     if not replicates:

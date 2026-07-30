@@ -800,8 +800,45 @@ def _render_price_curve_diagnostics(
 
     st.header("📊 Price Curve Diagnostics")
 
+    # Mode selection
+    multivariate_mode = st.sidebar.checkbox(
+        "Multivariate (Price + Elasticity + Margin)",
+        value=params.get("price_curve_multivariate", False),
+        key="price_curve_multivariate",
+        help="Use price, elasticity, basket penetration, and margin for tier clustering. "
+        "Requires elasticity data and optional cost column.",
+    )
+
     method = params.get("price_curve_method", "kmeans")
     n_tiers = params.get("n_tiers", 3)
+
+    # Get elasticity data if multivariate mode
+    elasticity_df = None
+    cost_col = None
+    if multivariate_mode:
+        st.sidebar.markdown("---")
+        st.sidebar.caption("Multivariate Mode: Active")
+        st.sidebar.caption("Requires elasticity computation and optional cost column.")
+        
+        # Check for cost column
+        cost_cols = [
+            c
+            for c in ["cost", "unit_cost", "margin", "margin_pct", "gross_margin"]
+            if c in transactions_df.columns
+        ]
+        if cost_cols:
+            cost_col = st.sidebar.selectbox(
+                "Cost Column", cost_cols, key="price_curve_cost_col"
+            )
+        else:
+            st.sidebar.info("No cost column found — margin not included in clustering.")
+
+        # Try to get elasticity from params or compute
+        if "elasticity_results" in params:
+            elasticity_df = params["elasticity_results"]
+            st.sidebar.caption(f"Using elasticity data for {len(elasticity_df)} SKUs")
+        else:
+            st.sidebar.warning("Elasticity data not found — run elasticity estimation first.")
 
     # Compute price per unit for each product
     price_data = _compute_price_per_unit(transactions_df, product_lookup)
@@ -810,11 +847,35 @@ def _render_price_curve_diagnostics(
         st.error("Could not compute price per unit data.")
         return
 
-    # Cluster within each category
-    categories = price_data["category"].unique() if "category" in price_data.columns else ["All"]
+    # Route to appropriate function
+    if multivariate_mode:
+        st.info(
+            "🔬 **Multivariate Mode** — Clustering on: Price/Unit, Elasticity, Basket Penetration, Margin"
+        )
+        result_df = diagnose_price_curves_multivariate(
+            transactions_df,
+            n_tiers=n_tiers,
+            method=method,
+            elasticity_df=elasticity_df,
+            cost_col=cost_col,
+        )
+    else:
+        st.info("📊 **Univariate Mode** — Clustering on: Price/Unit only")
+        result_df = diagnose_price_curves_1d(
+            transactions_df,
+            n_tiers=n_tiers,
+            method=method,
+        )
+
+    if result_df.empty:
+        st.warning("Insufficient data for price curve diagnostics.")
+        return
+
+    # Display results per category
+    categories = result_df["category"].unique() if "category" in result_df.columns else ["All"]
 
     for cat in categories:
-        cat_data = price_data[price_data["category"] == cat] if cat != "All" else price_data
+        cat_data = result_df[result_df["category"] == cat] if cat != "All" else result_df
 
         if len(cat_data) < 3:
             continue
@@ -827,7 +888,7 @@ def _render_price_curve_diagnostics(
             x="basket_penetration",
             y="price_per_unit",
             hover_data=["product_name", "pack_size", "avg_price"],
-            color="price_tier" if "price_tier" in cat_data.columns else None,
+            color="tier_label" if "tier_label" in cat_data.columns else None,
             title=f"{cat}: Price per Unit vs Basket Penetration",
         )
         st.plotly_chart(fig, use_container_width=True)
@@ -862,8 +923,7 @@ def _render_price_curve_diagnostics(
 
         # Tier clustering
         if len(cat_data) >= n_tiers:
-            tier_results = _cluster_price_tiers(cat_data, n_tiers, method)
-            _render_tier_analysis(tier_results, cat)
+            _render_tier_analysis(cat_data, cat)
 
 
 def _compute_price_per_unit(transactions_df: pd.DataFrame, product_lookup: dict) -> pd.DataFrame:

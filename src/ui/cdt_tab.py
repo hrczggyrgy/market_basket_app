@@ -26,10 +26,15 @@ from src.analytics.cdt_clustering import (
     get_cluster_assignments,
     perform_hierarchical_clustering,
 )
+from src.analytics.cdt_community import (
+    build_product_graph,
+    detect_communities_label_propagation,
+)
 from src.analytics.cdt_similarity import (
     build_customer_sequences,
     build_similarity_matrix,
 )
+from src.analytics.cdt_validation import run_cdt_validation
 from src.analytics.cdt_tree_builder import (
     build_cdt,
     extract_product_attributes,
@@ -62,6 +67,7 @@ _CDT_TABS = [
     "\U0001f501 Switching Analysis",
     "\U0001f504 Substitution Analysis",
     "\U0001f381 Bundling Opportunities",
+    "\U0001f4ca CDT Benchmark",
     "\U0001f4e4 Export",
 ]
 
@@ -235,12 +241,24 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
 
         with col1:
             st.subheader("Similarity")
-            similarity_method = st.selectbox(
-                "Similarity Method",
-                ["phi", "jaccard"],
+            similarity_mode = st.selectbox(
+                "Mode",
+                ["Fast (single method)", "Ensemble (weighted)"],
                 index=0,
-                help="Phi coefficient ([-1,1]) or Jaccard ([0,1])",
+                help="Fast = single similarity method. "
+                "Ensemble = weighted combination of Phi, Jaccard, PMI, Cosine TF-IDF.",
             )
+            if similarity_mode == "Fast (single method)":
+                similarity_method = st.selectbox(
+                    "Similarity Method",
+                    ["phi", "jaccard"],
+                    index=0,
+                    help="Phi coefficient ([-1,1]) or Jaccard ([0,1])",
+                )
+            else:
+                similarity_method = "ensemble"
+                st.caption("Ensemble: Phi + Jaccard + PMI + Cosine TF-IDF")
+
             min_cooccurrence = st.slider(
                 "Min Co-occurrence",
                 2,
@@ -251,6 +269,12 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
 
         with col2:
             st.subheader("Clustering")
+            use_community_detection = st.checkbox(
+                "Community Detection (Label Prop)",
+                value=False,
+                help="Run label-propagation community detection before clustering. "
+                "Useful for large product sets with natural sub-groups.",
+            )
             linkage_method = st.selectbox(
                 "Linkage Method",
                 ["average", "complete", "single"],
@@ -384,17 +408,35 @@ def _render_cdt_config_panel(transactions_df: pd.DataFrame, product_lookup: dict
             }
             sequences = {c: p for c, p in sequences.items() if p}
 
+        # Community detection pre-clustering (label propagation, fast)
+        community_assignments = None
+        if use_community_detection and len(similarity_matrix) > 5:
+            with st.spinner("Detecting communities via label propagation\u2026"):
+                try:
+                    product_graph = build_product_graph(
+                        similarity_matrix,
+                        min_weight=0.05,
+                        max_degree=50,
+                    )
+                    community_assignments = detect_communities_label_propagation(
+                        product_graph
+                    )
+                    n_comm = len(set(community_assignments.values()))
+                    st.info(f"Detected {n_comm} communities")
+                except Exception as e:
+                    st.warning(f"Community detection skipped: {e}")
+
         status_text.info("\u23f3 **Step 3 / 6** \u2014 Performing hierarchical clustering\u2026")
         progress_bar.progress(40)
         linkage_matrix, ordered_labels = _cached_perform_hierarchical_clustering(
             similarity_matrix,
             linkage_method=linkage_method,
-            distance_method=similarity_method,
+            distance_method="phi",
         )
         optimal_k, silhouette_scores = _cached_find_optimal_clusters(
             linkage_matrix,
             similarity_matrix,
-            distance_method=similarity_method,
+            distance_method="phi",
             min_clusters=min_k,
             max_clusters=min(max_k, len(similarity_matrix) - 1),
         )
@@ -539,6 +581,8 @@ def _render_cdt_results_tabs(
     elif active == 6:
         _tab_bundling(bundling_df, product_lookup)
     elif active == 7:
+        _tab_cdt_benchmark()
+    elif active == 8:
         _tab_export(root, switching_df, substitution_df, bundling_df)
 
 
@@ -803,6 +847,110 @@ def _tab_bundling(bundling_df: pd.DataFrame, product_lookup: dict):
             plot_bgcolor="white",
         )
     st.plotly_chart(fig, use_container_width=True)
+
+
+def _tab_cdt_benchmark():
+    """CDT Benchmark tab comparing legacy vs ensemble similarity methods."""
+    st.subheader("\U0001f4ca CDT Method Benchmark")
+
+    st.markdown(
+        "Compare how well different similarity methods recover known cluster "
+        "structure from **synthetic data with ground-truth labels**."
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        bench_n_products = st.slider("Products", 10, 80, 30, key="cdt_bench_n_prod")
+        bench_n_clusters = st.slider("True Clusters", 2, 6, 3, key="cdt_bench_n_clust")
+    with col2:
+        bench_n_customers = st.slider("Customers", 50, 500, 200, key="cdt_bench_n_cust")
+        bench_noise = st.slider("Noise Level", 0.0, 0.5, 0.2, 0.05, key="cdt_bench_noise")
+
+    if st.button("Run CDT Benchmark", type="primary", key="cdt_bench_run"):
+        with st.spinner("Running CDT benchmark against synthetic ground truth\u2026"):
+            methods = [
+                "legacy_phi",
+                "legacy_jaccard",
+                "ensemble_phi_jaccard_pmi_tfidf",
+            ]
+            results = run_cdt_validation(
+                n_products=bench_n_products,
+                n_true_clusters=bench_n_clusters,
+                n_customers=bench_n_customers,
+                noise_level=bench_noise,
+                methods=methods,
+            )
+
+        if results.empty:
+            st.warning("Benchmark did not produce results.")
+            return
+
+        st.success("Benchmark complete!")
+
+        # ARI / NMI bar chart
+        fig = go.Figure()
+        fig.add_trace(
+            go.Bar(
+                name="Adjusted Rand Index",
+                x=results["method"],
+                y=results["adjusted_rand_index"],
+                marker_color="royalblue",
+            )
+        )
+        fig.add_trace(
+            go.Bar(
+                name="Normalized Mutual Info",
+                x=results["method"],
+                y=results["normalized_mutual_info"],
+                marker_color="orange",
+            )
+        )
+        fig.update_layout(
+            title="Cluster Recovery: ARI vs NMI",
+            yaxis_title="Score",
+            barmode="group",
+            height=400,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Runtime bar chart
+        fig2 = go.Figure()
+        fig2.add_trace(
+            go.Bar(
+                x=results["method"],
+                y=results["runtime_seconds"],
+                marker_color="seagreen",
+            )
+        )
+        fig2.update_layout(
+            title="Runtime Comparison",
+            yaxis_title="Seconds",
+            height=300,
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+
+        # Detail table
+        st.subheader("Detailed Results")
+        display_cols = [
+            "method",
+            "adjusted_rand_index",
+            "normalized_mutual_info",
+            "n_clusters_found",
+            "n_true_clusters",
+            "runtime_seconds",
+        ]
+        styled = results[display_cols].copy()
+        styled.columns = [
+            "Method",
+            "ARI",
+            "NMI",
+            "Clusters Found",
+            "True Clusters",
+            "Runtime (s)",
+        ]
+        st.dataframe(styled, hide_index=True, use_container_width=True)
+
+        render_analytics_export(results, "CDT_Benchmark")
 
 
 def _tab_export(

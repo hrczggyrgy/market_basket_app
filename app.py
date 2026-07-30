@@ -164,6 +164,8 @@ def run_analysis(transactions_df: pd.DataFrame, product_lookup: dict, config: Co
             render_pricing_tab(transactions_df, product_lookup, all_params, mode="promo_uplift")
         elif analysis_mode == "Elasticity Benchmark":
             render_pricing_tab(transactions_df, product_lookup, all_params, mode="benchmark")
+        elif analysis_mode == "CDT Benchmark":
+            render_cdt_tab(transactions_df, product_lookup, all_params)
         else:
             st.warning(f"Unknown analysis mode: {analysis_mode}")
 

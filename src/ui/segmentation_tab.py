@@ -255,21 +255,33 @@ def render_overview(transactions_df: pd.DataFrame):
 
 
 def render_rfm_segmentation(transactions_df: pd.DataFrame, params: dict):
-    """Render RFM segmentation analysis."""
-    st.subheader("RFM-Based Segmentation")
+    """Render RFM / Behavioral segmentation analysis."""
+    st.subheader("Customer Segmentation")
 
     col1, col2 = st.columns(2)
     with col1:
         method = st.radio(
             "Segmentation Method",
-            ["Quantile (Classic RFM)", "K-Means Clustering"],
+            [
+                "Behavioral Clustering (Recommended)",
+                "RFM Quantile (Simple, legacy)",
+                "RFM K-Means (Simple, legacy)",
+            ],
+            index=0,
             key="seg_tab_rfm_method",
+            help="Behavioral = K-Means on 10+ purchase-behavior features. "
+            "RFM Quantile = classic 4x4x4 scoring. "
+            "RFM K-Means = K-Means on Recency/Frequency/Monetary.",
         )
     with col2:
-        if method == "K-Means Clustering":
+        if "K-Means" in method:
             n_segments = st.slider("Number of Segments", 3, 12, 8, key="seg_tab_n_segments")
         else:
             n_segments = 8
+
+    if method == "Behavioral Clustering (Recommended)":
+        render_behavioral_segmentation(transactions_df, params)
+        return
 
     with st.spinner("Computing RFM features..."):
         rfm = _cached_compute_rfm_features(transactions_df)
@@ -279,7 +291,7 @@ def render_rfm_segmentation(transactions_df: pd.DataFrame, params: dict):
     rfm_tabs = [" Segment Distribution", " Revenue Analysis", " 3D Visualization", " Profiles"]
     rfm_selected = persistent_tabs(rfm_tabs, "rfm_view_tabs", default_tab=0)
 
-    if method == "Quantile (Classic RFM)":
+    if method == "RFM Quantile (Simple, legacy)":
         rfm_scored = _cached_rfm_segmentation(rfm, method="quantile", n_segments=8)
 
         if rfm_selected == 0:

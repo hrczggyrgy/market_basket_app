@@ -45,6 +45,7 @@ from src.analytics.demand_transference import (
     node_delist_impact,
 )
 from src.viz.cdt_viz import plot_sunburst, plot_treemap
+from src.viz.cdt_viz import plot_dendrogram as _plot_dendrogram
 from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 
 
@@ -781,9 +782,9 @@ def render_export_buttons(df: pd.DataFrame, product_lookup: dict, prefix: str = 
 # ============================================================================
 
 
-def create_dendrogram_plot(linkage_matrix: np.ndarray, product_lookup: Optional[dict] = None):
-    """Create dendrogram plot using plotly."""
-    if len(linkage_matrix) == 0:
+def create_dendrogram_plot(linkage_matrix: np.ndarray, labels: Optional[list] = None):
+    """Create dendrogram plot using the shared plot_dendrogram implementation."""
+    if linkage_matrix.size == 0 or len(linkage_matrix) == 0:
         fig = go.Figure()
         fig.add_annotation(
             text="No clustering data available",
@@ -795,14 +796,5 @@ def create_dendrogram_plot(linkage_matrix: np.ndarray, product_lookup: Optional[
         )
         return fig
 
-    # Simplified dendrogram - would need proper implementation
-    fig = go.Figure()
-    fig.add_annotation(
-        text="Dendrogram requires linkage matrix",
-        xref="paper",
-        yref="paper",
-        x=0.5,
-        y=0.5,
-        showarrow=False,
-    )
-    return fig
+    labels = labels or [str(i) for i in range(linkage_matrix.shape[0] + 1)]
+    return _plot_dendrogram(linkage_matrix, labels)

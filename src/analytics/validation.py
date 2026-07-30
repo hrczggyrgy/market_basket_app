@@ -211,7 +211,9 @@ def run_validation(
                     "avg_estimated": merged["elasticity_mean"].mean(),
                 }
             )
-    except Exception:
-        pass
+    except Exception as e:
+        # NUTS benchmark failed; log warning and continue
+        import streamlit as st
+        st.warning(f"NUTS benchmark failed: {e}")
 
     return pd.DataFrame(results)

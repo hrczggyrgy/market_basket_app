@@ -34,9 +34,12 @@ def optimize_assortment_heuristic(
     sorted_products = revenue_per_product.sort_values(ascending=False).index.tolist()
     current_solution = sorted_products[:max_skus]
 
-    # Precompute data structures
-    sub_matrix = substitution_matrix.copy()
-    dt_matrix = demand_transference_matrix.copy()
+    # Precompute data structures — ensure all values are numeric
+    sub_matrix = substitution_matrix.copy().astype(float)
+    if demand_transference_matrix is not None:
+        dt_matrix = demand_transference_matrix.copy().astype(float)
+    else:
+        dt_matrix = pd.DataFrame(0.0, index=all_products, columns=all_products)
 
     # Ensure indices align
     common_products = set(current_solution) & set(sub_matrix.index)
@@ -66,7 +69,7 @@ def optimize_assortment_heuristic(
                 transfers = dt_matrix.loc[r]
                 for target, row in transfers.items():
                     if target in solution_set:
-                        recovered += row.get("revenue_at_risk", 0)
+                        recovered += float(row) if not isinstance(row, dict) else row.get("revenue_at_risk", 0)
 
         # Unmet demand (revenue lost - recovered)
         lost = sum(revenue_per_product.get(p, 0) for p in removed)
@@ -245,7 +248,7 @@ def evaluate_solution(
         if r in dt_matrix.index:
             for target, row in dt_matrix.loc[r].items():
                 if target in solution_set:
-                    recovered += row.get("revenue_at_risk", 0)
+                    recovered += float(row) if not isinstance(row, dict) else row.get("revenue_at_risk", 0)
 
     lost = sum(revenue_per_product.get(p, 0) for p in removed)
     covered_revenue = kept_revenue + recovered
@@ -327,7 +330,19 @@ def optimize_assortment_milp(
         # Full MILP would need quadratic terms; we linearize
         if sku in demand_transference_matrix.index:
             # Sum of transfers to all products (upper bound on recovery)
-            max_recovery = demand_transference_matrix.loc[sku]["revenue_at_risk"].sum()
+            row = demand_transference_matrix.loc[sku]
+            if isinstance(row, pd.DataFrame) and "revenue_at_risk" in row.columns:
+                max_recovery = row["revenue_at_risk"].sum()
+            elif isinstance(row, pd.Series):
+                # Cell-as-dict format: each value is a dict with "revenue_at_risk"
+                max_recovery = 0.0
+                for val in row.values:
+                    if isinstance(val, dict):
+                        max_recovery += val.get("revenue_at_risk", 0)
+                    else:
+                        max_recovery += float(val)
+            else:
+                max_recovery = 0.0
             # Conservative: assume 50% recovery if kept
             coeff += 0.5 * max_recovery
 
@@ -343,7 +358,7 @@ def optimize_assortment_milp(
     # Min coverage (linearized)
     # coverage = (sum(revenue_i * x_i) + sum_j DT(i->j) * revenue_i * x_i) / total_demand
     # This is complex; use simpler constraint: revenue_kept >= min_coverage * total_revenue
-    total_rev = sum(revenue_per_product.values())
+    total_rev = float(revenue_per_product.sum())
     min_rev = min_coverage * total_rev
     solver.Add(
         solver.Sum(revenue_per_product.get(all_products[i], 0) * x[i] for i in range(n)) >= min_rev
@@ -405,7 +420,7 @@ def evaluate_assortment(
         if r in demand_transference_matrix.index:
             for target, row in demand_transference_matrix.loc[r].items():
                 if target in selected_set:
-                    amt = row.get("revenue_at_risk", 0)
+                    amt = float(row) if not isinstance(row, dict) else row.get("revenue_at_risk", 0)
                     recovered += amt
                     if r not in recovery_detail:
                         recovery_detail[r] = 0

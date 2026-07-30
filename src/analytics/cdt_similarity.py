@@ -439,7 +439,7 @@ def build_similarity_matrix(
         transactions_df: Transaction DataFrame
         customer_col: Customer identifier column
         product_col: Product identifier column
-        method: 'phi', 'jaccard', 'pmi', 'cosine_tfidf'
+        method: 'phi', 'jaccard', 'pmi', 'cosine_tfidf', or 'ensemble'
         min_cooccurrence: Minimum co-purchase count to compute similarity
         min_product_support: Minimum customers buying a product to include it
 
@@ -447,6 +447,17 @@ def build_similarity_matrix(
         Square DataFrame (products x products) with similarity scores.
         Diagonal = 1.0. Values in [-1, 1] for Phi, [0, 1] for Jaccard/PMI/Cosine.
     """
+    if method == "ensemble":
+        matrices = build_similarity_matrix_ensemble(
+            transactions_df,
+            customer_col,
+            product_col,
+            methods=["phi", "jaccard", "pmi", "cosine_tfidf"],
+            weights=None,
+            min_cooccurrence=min_cooccurrence,
+            min_product_support=min_product_support,
+        )
+        return matrices.get("ensemble", pd.DataFrame())
     if method == "phi":
         return _build_similarity_matrix_vectorized(
             transactions_df, customer_col, product_col, "phi", min_cooccurrence, min_product_support

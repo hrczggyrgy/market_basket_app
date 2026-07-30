@@ -576,3 +576,140 @@ def promotion_timing_analysis(transactions_df: pd.DataFrame, promo_periods: pd.D
     ) * 100
 
     return {"by_day_of_week": dow_merged, "by_month": month_merged}
+
+
+def detect_promotions_adaptive(
+    transactions_df: pd.DataFrame,
+    baseline_window: int = 28,
+    z_score_threshold: float = -2.0,
+    min_duration_days: int = 3,
+    max_duration_days: int = 30,
+    gap_threshold_days: int = 1,
+) -> pd.DataFrame:
+    """Detect promotional periods using per-SKU rolling z-score.
+
+    For each product, computes a rolling mean and std of price over the
+    baseline window. Flags weeks where price z-score < z_score_threshold
+    (i.e., price is unusually low relative to the product's own history).
+
+    Args:
+        transactions_df: Transaction data
+        baseline_window: Rolling window size in days for mean/std estimation
+        z_score_threshold: Z-score threshold (default -2.0)
+        min_duration_days: Minimum days for a promotion
+        max_duration_days: Maximum days for a promotion
+        gap_threshold_days: Max gap between transactions to merge same promo
+
+    Returns:
+        DataFrame with detected promotions (same schema as detect_promotions)
+    """
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["revenue"] = df["price"] * df["quantity"]
+
+    # Daily price per product
+    daily = df.groupby(["stockcode", "date"])["price"].mean().reset_index()
+    daily = daily.sort_values(["stockcode", "date"])
+
+    # Rolling statistics per product
+    daily["rolling_mean"] = daily.groupby("stockcode")["price"].transform(
+        lambda x: x.rolling(window=baseline_window, min_periods=5).mean()
+    )
+    daily["rolling_std"] = daily.groupby("stockcode")["price"].transform(
+        lambda x: x.rolling(window=baseline_window, min_periods=5).std()
+    )
+    daily["z_score"] = (daily["price"] - daily["rolling_mean"]) / daily["rolling_std"].replace(0, 1)
+
+    # Flag promo days
+    daily["is_promo"] = daily["z_score"] < z_score_threshold
+
+    # Merge back
+    df = df.merge(daily[["stockcode", "date", "is_promo", "z_score"]], on=["stockcode", "date"], how="left")
+    df["is_promo"] = df["is_promo"].fillna(False)
+
+    # Baseline price (90th percentile for reporting)
+    baseline_prices = df.groupby("stockcode")["price"].quantile(0.9).to_dict()
+    df["baseline_price"] = df["stockcode"].map(baseline_prices)
+    df["price_drop_pct"] = (df["baseline_price"] - df["price"]) / df["baseline_price"]
+
+    # Group by product and identify contiguous promo periods (same logic as detect_promotions)
+    promotions = []
+
+    for product in df["stockcode"].unique():
+        prod_df = df[df["stockcode"] == product].sort_values("date")
+        prod_df = prod_df[prod_df["is_promo"]]
+
+        if len(prod_df) == 0:
+            continue
+
+        prod_df = prod_df.copy()
+        prod_df["date_diff"] = prod_df["date"].diff().dt.days
+        prod_df["new_period"] = (prod_df["date_diff"] > gap_threshold_days) | (
+            prod_df["date_diff"].isna()
+        )
+        prod_df["promo_group"] = prod_df["new_period"].cumsum()
+
+        for group_id, group in prod_df.groupby("promo_group"):
+            start_date = group["date"].min()
+            end_date = group["date"].max()
+            duration = (end_date - start_date).days + 1
+
+            if min_duration_days <= duration <= max_duration_days:
+                promo_sales = group
+                baseline_sales = df[(df["stockcode"] == product) & (~df["is_promo"])]
+
+                promo_revenue = promo_sales["revenue"].sum()
+                promo_qty = promo_sales["quantity"].sum()
+                promo_orders = promo_sales["transaction_id"].nunique()
+                promo_customers = promo_sales["customer_id"].nunique()
+                avg_promo_price = promo_sales["price"].mean()
+                avg_promo_discount = promo_sales["price_drop_pct"].mean()
+
+                baseline_revenue = baseline_sales["revenue"].sum()
+                baseline_qty = baseline_sales["quantity"].sum()
+                baseline_orders = baseline_sales["transaction_id"].nunique()
+                baseline_customers = baseline_sales["customer_id"].nunique()
+                avg_baseline_price = (
+                    baseline_sales["price"].mean() if len(baseline_sales) > 0 else 0
+                )
+
+                non_promo_days = df[~df["is_promo"]]["date"].nunique()
+                if baseline_qty > 0 and non_promo_days > 0:
+                    qty_lift = (promo_qty / duration) / (baseline_qty / non_promo_days) - 1
+                else:
+                    qty_lift = 0
+
+                if baseline_revenue > 0 and non_promo_days > 0:
+                    revenue_lift = (promo_revenue / duration) / (
+                        baseline_revenue / non_promo_days
+                    ) - 1
+                else:
+                    revenue_lift = 0
+
+                promotions.append({
+                    "stockcode": product,
+                    "product_name": (
+                        promo_sales["product"].iloc[0]
+                        if "product" in promo_sales.columns
+                        else product
+                    ),
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "duration_days": duration,
+                    "avg_discount_pct": avg_promo_discount * 100,
+                    "promo_revenue": promo_revenue,
+                    "baseline_revenue": baseline_revenue,
+                    "promo_qty": promo_qty,
+                    "baseline_qty": baseline_qty,
+                    "promo_orders": promo_orders,
+                    "baseline_orders": baseline_orders,
+                    "promo_customers": promo_customers,
+                    "baseline_customers": baseline_customers,
+                    "qty_lift": qty_lift,
+                    "revenue_lift": revenue_lift,
+                    "avg_promo_price": avg_promo_price,
+                    "avg_baseline_price": avg_baseline_price,
+                    "detection_method": "adaptive_zscore",
+                })
+
+    return pd.DataFrame(promotions)

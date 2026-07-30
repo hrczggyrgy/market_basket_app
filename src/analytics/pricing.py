@@ -605,7 +605,7 @@ def _kvi_heuristic(
 # ============================================================================
 
 
-def diagnose_price_curves(
+def diagnose_price_curves_1d(
     transactions_df: pd.DataFrame,
     category_col: str = "category",
     price_col: str = "price",
@@ -614,8 +614,8 @@ def diagnose_price_curves(
     method: str = "kmeans",
 ) -> pd.DataFrame:
     """
-    Cluster SKUs by (price_per_unit, basket_penetration) within category.
-    Flag violations: larger pack cheaper per unit, premium SKU lower penetration than value.
+    Cluster SKUs by price_per_unit only within category.
+    Simple univariate clustering for basic price tier analysis.
     """
     from src.analytics import compute_basket_penetration
 
@@ -661,13 +661,7 @@ def diagnose_price_curves(
         "pack_size_numeric"
     ].replace(0, np.nan)
 
-    # Basket penetration
-    basket_pen = compute_basket_penetration(transactions_df)[
-        ["stockcode", "basket_penetration", "trip_incidence"]
-    ]
-    product_info = product_info.merge(basket_pen, on="stockcode", how="left")
-
-    # Cluster per category
+    # Cluster per category using only price_per_unit
     all_results = []
 
     for cat in product_info["category"].unique():
@@ -675,7 +669,7 @@ def diagnose_price_curves(
         if len(cat_data) < 2:
             continue
 
-        features = cat_data[["price_per_unit", "basket_penetration"]].fillna(0).values
+        features = cat_data[["price_per_unit"]].fillna(0).values
 
         if method == "kmeans":
             from sklearn.cluster import KMeans
@@ -705,13 +699,184 @@ def diagnose_price_curves(
 
     result_df = pd.concat(all_results, ignore_index=True)
 
-    # Detect violations
+    # Detect violations (monotonicity)
     violations = _detect_price_curve_violations(result_df)
     result_df["has_violation"] = result_df["stockcode"].isin(violations["larger_pack"]) | result_df[
         "stockcode"
     ].isin(violations["smaller_pack"])
 
     return result_df
+
+
+def diagnose_price_curves_multivariate(
+    transactions_df: pd.DataFrame,
+    category_col: str = "category",
+    price_col: str = "price",
+    qty_col: str = "quantity",
+    n_tiers: int = 3,
+    method: str = "kmeans",
+    elasticity_df: Optional[pd.DataFrame] = None,
+    cost_col: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    Cluster SKUs by (price_per_unit, elasticity, basket_penetration, margin) within category.
+    Multivariate clustering for advanced price tier analysis incorporating demand sensitivity and profitability.
+    """
+    from src.analytics import compute_basket_penetration, compute_product_metrics
+
+    # Product median price and pack size
+    product_info = (
+        transactions_df.groupby("stockcode")
+        .agg(
+            product_name=("product", "first"),
+            category=(category_col, "first")
+            if category_col in transactions_df.columns
+            else ("stockcode", "first"),
+            brand=("brand", "first")
+            if "brand" in transactions_df.columns
+            else ("stockcode", "first"),
+            median_price=(price_col, "median"),
+            size=("size", "first") if "size" in transactions_df.columns else ("stockcode", "first"),
+        )
+        .reset_index()
+    )
+
+    # Parse pack size numeric
+    def parse_size(size_str):
+        if pd.isna(size_str):
+            return 1.0
+        size_str = str(size_str).upper()
+        import re
+
+        match = re.search(r"(\d+(?:\.\d+)?)\s*(ML|L|G|KG|PK|PCS)", size_str)
+        if match:
+            val = float(match.group(1))
+            unit = match.group(2)
+            if unit == "ML":
+                return val / 1000
+            elif unit == "G":
+                return val / 1000
+            elif unit in ("PK", "PCS"):
+                return val
+            return val
+        return 1.0
+
+    product_info["pack_size_numeric"] = product_info["size"].apply(parse_size)
+    product_info["price_per_unit"] = product_info["median_price"] / product_info[
+        "pack_size_numeric"
+    ].replace(0, np.nan)
+
+    # Add basket penetration
+    basket_pen = compute_basket_penetration(transactions_df)[
+        ["stockcode", "basket_penetration", "trip_incidence"]
+    ]
+    product_info = product_info.merge(basket_pen, on="stockcode", how="left")
+
+    # Add elasticity if provided
+    if elasticity_df is not None and not elasticity_df.empty:
+        elast_cols = ["stockcode"]
+        if "elasticity" in elasticity_df.columns:
+            elast_cols.append("elasticity")
+        if "r_squared" in elasticity_df.columns:
+            elast_cols.append("r_squared")
+        if "price_cv" in elasticity_df.columns:
+            elast_cols.append("price_cv")
+        product_info = product_info.merge(elasticity_df[elast_cols], on="stockcode", how="left")
+
+    # Add margin if cost column available
+    if cost_col and cost_col in transactions_df.columns:
+        cost_info = (
+            transactions_df.groupby("stockcode")
+            .agg(median_cost=(cost_col, "median"))
+            .reset_index()
+        )
+        product_info = product_info.merge(cost_info, on="stockcode", how="left")
+        product_info["margin_per_unit"] = (
+            product_info["price_per_unit"] - product_info["median_cost"]
+        ) / product_info["price_per_unit"].replace(0, np.nan)
+
+    # Prepare clustering features
+    feature_cols = ["price_per_unit", "basket_penetration"]
+    if "elasticity" in product_info.columns:
+        feature_cols.append("elasticity")
+    if "margin_per_unit" in product_info.columns:
+        feature_cols.append("margin_per_unit")
+
+    # Standardize features
+    from sklearn.preprocessing import StandardScaler
+
+    scaler = StandardScaler()
+
+    all_results = []
+
+    for cat in product_info["category"].unique():
+        cat_data = product_info[product_info["category"] == cat].copy()
+        if len(cat_data) < 2:
+            continue
+
+        X = cat_data[feature_cols].fillna(0).replace([np.inf, -np.inf], 0).values
+        if X.shape[1] == 0:
+            continue
+
+        X_scaled = scaler.fit_transform(X)
+
+        if method == "kmeans":
+            from sklearn.cluster import KMeans
+
+            model = KMeans(n_clusters=min(n_tiers, len(cat_data)), random_state=42, n_init=10)
+        else:
+            from sklearn.mixture import GaussianMixture
+
+            model = GaussianMixture(n_components=min(n_tiers, len(cat_data)), random_state=42)
+
+        cat_data["tier"] = model.fit_predict(X_scaled)
+
+        # Sort tiers by mean price_per_unit
+        tier_order = cat_data.groupby("tier")["price_per_unit"].mean().sort_values().index
+        tier_map = {old: new for new, old in enumerate(tier_order)}
+        cat_data["tier"] = cat_data["tier"].map(tier_map)
+
+        tier_labels = {0: "Value", 1: "Mainstream", 2: "Premium", 3: "Ultra", 4: "Luxury"}
+        cat_data["tier_label"] = (
+            cat_data["tier"].map(tier_labels).fillna("Tier " + cat_data["tier"].astype(str))
+        )
+
+        all_results.append(cat_data)
+
+    if not all_results:
+        return pd.DataFrame()
+
+    result_df = pd.concat(all_results, ignore_index=True)
+
+    # Detect violations (monotonicity)
+    violations = _detect_price_curve_violations(result_df)
+    result_df["has_violation"] = result_df["stockcode"].isin(violations["larger_pack"]) | result_df[
+        "stockcode"
+    ].isin(violations["smaller_pack"])
+
+    return result_df
+
+
+def diagnose_price_curves(
+    transactions_df: pd.DataFrame,
+    category_col: str = "category",
+    price_col: str = "price",
+    qty_col: str = "quantity",
+    n_tiers: int = 3,
+    method: str = "kmeans",
+) -> pd.DataFrame:
+    """
+    Legacy wrapper for backward compatibility.
+    Calls diagnose_price_curves_1d (price-only clustering).
+    """
+    return diagnose_price_curves_1d(
+        transactions_df=transactions_df,
+        category_col=category_col,
+        price_col=price_col,
+        qty_col=qty_col,
+        n_tiers=n_tiers,
+        method=method,
+    )
 
 
 def _detect_price_curve_violations(cat_data: pd.DataFrame) -> pd.DataFrame:

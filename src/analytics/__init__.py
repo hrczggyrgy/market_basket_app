@@ -123,6 +123,13 @@ from .promo_uplift import (
     train_t_learner_uplift,
     train_xgb_uplift,
 )
+from .promotional import (
+    calculate_incremental_revenue,
+    calculate_promotional_lift,
+    detect_promotions,
+    promotion_timing_analysis,
+    halo_effect_analysis,
+)
 from .segmentation import (
     behavioral_segmentation,
     compute_rfm_features,
@@ -146,6 +153,18 @@ from .sufficiency import (
     sufficiency_badge,
 )
 from .validation import generate_synthetic_elasticity_data, run_validation
+from .cdt_validation import (
+    generate_synthetic_cluster_data,
+    run_cdt_validation,
+)
+from .segmentation_validation import (
+    generate_synthetic_customer_segments,
+    run_segmentation_validation,
+)
+from .promotional_validation import (
+    generate_synthetic_promo_data,
+    run_promo_detection_validation,
+)
 
 __all__ = [
     "compute_affinity_matrix",
@@ -184,7 +203,7 @@ __all__ = [
     "detect_promotions",
     "calculate_promotional_lift",
     "calculate_incremental_revenue",
-    "promotion_roi_analysis",
+    "promo_roi_analysis",
     "halo_effect_analysis",
     "promotion_timing_analysis",
     # Basket metrics
@@ -271,14 +290,6 @@ __all__ = [
     "generate_assortment_scenarios",
     "optimize_assortment_heuristic",
     "optimize_assortment_milp",
-    "compute_pca_projection",
-    "compute_umap_projection",
-    "compute_segment_migration",
-    "compute_segment_migration_matrix",
-    "compute_segment_retention",
-    "compute_cluster_stability",
-    "compute_enhanced_behavioral_features",
-    "get_segment_recommendations",
     "generate_synthetic_elasticity_data",
     "run_validation",
 ]

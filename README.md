@@ -514,6 +514,59 @@ print(f"Avg basket size: {summary['avg_basket_size']:.1f}")
 | **CDT** | Customer Decision Tree Science (public docs) |
 | **RFM** | Hughes, "Strategic Database Marketing" (1994) |
 | **BG/NBD CLV** | Fader et al., "Counting Your Customers" (2005) |
+| **Adjusted Rand Index** | Hubert & Arabie, "Comparing Partitions" (1985) |
+| **Normalized Mutual Information** | Strehl & Ghosh, "Cluster Ensembles" (2002) |
+| **XGBoost** | Chen & Guestrin, "XGBoost: A Scalable Tree Boosting System" (2016) |
+| **Changepoint Detection** | Killick et al., "Optimal Detection of Changepoints" (2012) |
+| **SHAP** | Lundberg & Lee, "A Unified Approach to Interpreting Model Predictions" (2017) |
+| **Qini Curve** | Radcliffe & Surry, "Real-World Uplift Modelling" (2011) |
+| **MILP (OR-Tools)** | Perron et al., "OR-Tools User's Manual" (2024) |
+
+---
+
+## Validation & Benchmarks
+
+The project includes synthetic ground-truth validation modules for each major analytics pipeline. Each validation generates data with known parameters, runs the analytical method, and reports recovery metrics.
+
+| Module | Function | Metrics | Purpose |
+|--------|----------|---------|---------|
+| `cdt_validation.py` | `generate_synthetic_cluster_data()` / `run_cdt_validation()` | ARI, NMI, #clusters | Validates hierarchical clustering + tree building against known cluster structure |
+| `segmentation_validation.py` | `generate_synthetic_customer_segments()` / `run_segmentation_validation()` | ARI, NMI, #segments found | Validates RFM quantile, RFM K-Means, Behavioral clustering against true segments |
+| `promotional_validation.py` | `generate_synthetic_promo_data()` / `run_promo_detection_validation()` | Precision, Recall, F1 | Validates adaptive promo detection (rolling z-score) against injected promo periods |
+| `assortment_validation.py` | `generate_synthetic_assortment_instance()` / `run_assortment_validation()` | Objective value, coverage, optimality gap | Validates heuristic vs. local search vs. MILP assortment solvers |
+| `validation.py` | `generate_synthetic_elasticity_data()` / `run_validation()` | RMSE, Bias, 94% HDI Coverage | Validates OLS, Hierarchical EB, XGBoost, NUTS Bayesian elasticity methods |
+
+**Running Benchmarks:**
+```bash
+# CDT validation
+python -c "from src.analytics.cdt_validation import run_cdt_validation; print(run_cdt_validation())"
+
+# Segmentation validation
+python -c "from src.analytics.segmentation_validation import run_segmentation_validation; print(run_segmentation_validation())"
+
+# Promo validation
+python -c "from src.analytics.promotional_validation import run_promo_detection_validation; print(run_promo_detection_validation())"
+
+# Elasticity validation
+python -c "from src.analytics.validation import run_validation; print(run_validation())"
+
+# All validations run automatically in CI (see .github/workflows/ci.yml)
+```
+
+---
+
+## Legacy vs Advanced
+
+| Module | Legacy (Simple) | Advanced (Recommended) | Notes |
+|--------|-----------------|------------------------|-------|
+| **CDT Similarity** | Yule's Q only (`phi` method) | Ensemble (Phi + Jaccard + PMI + TF-IDF) | `cdt_similarity.build_similarity_matrix(method="ensemble")` |
+| **CDT Community** | None | Label Propagation / Louvain / Leiden | `cdt_tab` sidebar: "Community Detection" checkbox |
+| **Customer Segmentation** | RFM Quantile (default) | **Behavioral Clustering** (Recommended) | Sidebar default changed; legacy labeled "(Simple, legacy)" |
+| **Choice Prediction** | Single Decision Tree (CART) | **XGBoost + SHAP** (Recommended) | `tree_tab`: model type radio + SHAP toggle |
+| **Promo Detection** | Fixed threshold (15% drop) | **Adaptive z-score** per SKU | `promotional.detect_promotions_adaptive()` |
+| **Price Tiers** | Price-only K-Means | **Multivariate** (Price + Elasticity + Penetration + Margin) | `pricing_tab` sidebar: multivariate checkbox |
+| **Assortment Optimizer** | Greedy Heuristic | **Local Search + MILP** (Recommended) | `cdt_assortment_tab`: solver dropdown |
+| **Elasticity** | Log-log OLS | **Bayesian Hierarchical (NUTS/ADVI)** / **XGBoost** | `pricing_tab`: method dropdown |
 
 ---
 

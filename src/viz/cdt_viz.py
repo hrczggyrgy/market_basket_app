@@ -44,6 +44,19 @@ def plot_dendrogram(
     """
     Create interactive dendrogram using scipy's dendrogram + Plotly.
     """
+    if linkage_matrix.size == 0 or len(linkage_matrix) == 0:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No clustering data available",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+        )
+        fig.update_layout(height=height, width=width)
+        return fig
+
     dendro = scipy_dendrogram(
         linkage_matrix,
         labels=labels,

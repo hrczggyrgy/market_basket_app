@@ -151,7 +151,9 @@ def compute_cluster_quality_metrics(
             "cluster_size_mean": round(sizes.mean(), 1),
             "cluster_size_std": round(sizes.std(), 1),
         }
-    except Exception:
+    except Exception as e:
+        import warnings
+        warnings.warn(f"Cluster stats computation failed: {e}")
         return {}
 
 

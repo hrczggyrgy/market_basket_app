@@ -1,7 +1,7 @@
 """Decision tree model for product purchase prediction with advanced feature engineering."""
 
 import warnings
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -744,3 +744,174 @@ def get_feature_importance_by_group(
         .sort_values("importance", ascending=False)
         .reset_index(drop=True)
     )
+
+
+def train_xgboost(
+    X: pd.DataFrame,
+    y: pd.Series,
+    n_estimators: int = 200,
+    max_depth: int = 6,
+    learning_rate: float = 0.05,
+    scale_pos_weight: Optional[float] = None,
+    random_state: int = 42,
+    return_shap: bool = False,
+) -> Tuple[object, Dict]:
+    """Train XGBoost classifier for purchase prediction.
+
+    Args:
+        X: Feature DataFrame
+        y: Target Series
+        return_shap: If True, compute and include SHAP values in metrics
+
+    Returns:
+        (model, metrics_dict) where metrics includes accuracy, F1, precision,
+        recall, ROC-AUC, and optionally SHAP values
+    """
+    try:
+        import xgboost as xgb
+    except ImportError:
+        return None, {"error": "xgboost not installed"}
+
+    if len(y.unique()) < 2:
+        return None, {"error": "Only one class present in target"}
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=random_state, stratify=y
+    )
+
+    if scale_pos_weight is None:
+        pos_ratio = y_train.mean()
+        scale_pos_weight = (1 - pos_ratio) / max(pos_ratio, 0.01)
+
+    model = xgb.XGBClassifier(
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+        learning_rate=learning_rate,
+        scale_pos_weight=scale_pos_weight,
+        random_state=random_state,
+        eval_metric="logloss",
+        use_label_encoder=False,
+    )
+
+    model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
+
+    y_pred = model.predict(X_test)
+    y_prob = model.predict_proba(X_test)[:, 1]
+
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        y_test, y_pred, average="binary", zero_division=0
+    )
+
+    metrics = {
+        "accuracy": accuracy_score(y_test, y_pred),
+        "train_accuracy": model.score(X_train, y_train),
+        "test_accuracy": model.score(X_test, y_test),
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "roc_auc": roc_auc_score(y_test, y_prob) if len(y_test.unique()) > 1 else 0.5,
+        "n_features": X.shape[1],
+        "n_samples": X.shape[0],
+        "positive_class_rate": y.mean(),
+        "feature_importances": dict(zip(X.columns, model.feature_importances_)),
+        "classification_report": classification_report(y_test, y_pred, output_dict=True),
+        "confusion_matrix": confusion_matrix(y_test, y_pred).tolist(),
+    }
+
+    if return_shap:
+        try:
+            import shap
+
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(X_test)
+            # Aggregate SHAP values per feature
+            shap_importance = np.abs(shap_values).mean(axis=0)
+            metrics["shap_values"] = shap_values.tolist() if len(shap_values.shape) == 2 else []
+            metrics["shap_feature_importance"] = {
+                X.columns[i]: float(shap_importance[i])
+                for i in range(min(len(X.columns), len(shap_importance)))
+            }
+            metrics["shap_explainer"] = explainer
+            metrics["shap_test_data"] = X_test
+        except Exception as exc:
+            metrics["shap_error"] = str(exc)
+
+    return model, metrics
+
+
+def compare_models(
+    X: pd.DataFrame,
+    y: pd.Series,
+    tree_params: Optional[Dict] = None,
+    xgb_params: Optional[Dict] = None,
+) -> pd.DataFrame:
+    """Compare decision tree vs XGBoost on the same train/test split.
+
+    Returns DataFrame with columns: model, accuracy, precision, recall, f1, roc_auc
+    """
+    from sklearn.metrics import precision_recall_fscore_support
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    results = []
+
+    # Decision tree
+    try:
+        from sklearn.tree import DecisionTreeClassifier
+
+        tp = tree_params or {}
+        dt = DecisionTreeClassifier(
+            max_depth=tp.get("max_depth", 5),
+            min_samples_leaf=tp.get("min_samples_leaf", 10),
+            class_weight="balanced",
+            random_state=42,
+        )
+        dt.fit(X_train, y_train)
+        dt_pred = dt.predict(X_test)
+        dt_prob = dt.predict_proba(X_test)[:, 1]
+        p, r, f, _ = precision_recall_fscore_support(y_test, dt_pred, average="binary", zero_division=0)
+        results.append({
+            "model": "Decision Tree (legacy)",
+            "accuracy": accuracy_score(y_test, dt_pred),
+            "precision": p,
+            "recall": r,
+            "f1": f,
+            "roc_auc": roc_auc_score(y_test, dt_prob) if len(y_test.unique()) > 1 else 0.5,
+        })
+    except Exception as exc:
+        results.append({"model": "Decision Tree (legacy)", "error": str(exc)})
+
+    # XGBoost
+    try:
+        import xgboost as xgb
+
+        xp = xgb_params or {}
+        pos_ratio = y_train.mean()
+        sw = (1 - pos_ratio) / max(pos_ratio, 0.01)
+        xgb_model = xgb.XGBClassifier(
+            n_estimators=xp.get("n_estimators", 200),
+            max_depth=xp.get("max_depth", 6),
+            learning_rate=xp.get("learning_rate", 0.05),
+            scale_pos_weight=sw,
+            random_state=42,
+            eval_metric="logloss",
+            use_label_encoder=False,
+        )
+        xgb_model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
+        xgb_pred = xgb_model.predict(X_test)
+        xgb_prob = xgb_model.predict_proba(X_test)[:, 1]
+        p, r, f, _ = precision_recall_fscore_support(y_test, xgb_pred, average="binary", zero_division=0)
+        results.append({
+            "model": "XGBoost (Recommended)",
+            "accuracy": accuracy_score(y_test, xgb_pred),
+            "precision": p,
+            "recall": r,
+            "f1": f,
+            "roc_auc": roc_auc_score(y_test, xgb_prob) if len(y_test.unique()) > 1 else 0.5,
+        })
+    except Exception as exc:
+        results.append({"model": "XGBoost (Recommended)", "error": str(exc)})
+
+    return pd.DataFrame(results)
