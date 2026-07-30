@@ -38,19 +38,20 @@ def render_pricing_tab(
     product_lookup: dict,
     params: dict,
     mode: str = "elasticity",
+    pipeline: dict = None,
 ):
     """Main entry point for Pricing & Promotions tab with sub-modes."""
 
     if mode == "elasticity":
-        _render_elasticity_analysis(transactions_df, product_lookup, params)
+        _render_elasticity_analysis(transactions_df, product_lookup, params, pipeline)
     elif mode == "kvi":
-        _render_kvi_identification(transactions_df, product_lookup, params)
+        _render_kvi_identification(transactions_df, product_lookup, params, pipeline)
     elif mode == "price_curves":
-        _render_price_curve_diagnostics(transactions_df, product_lookup, params)
+        _render_price_curve_diagnostics(transactions_df, product_lookup, params, pipeline)
     elif mode == "promo_uplift":
-        _render_promo_uplift_modeling(transactions_df, product_lookup, params)
+        _render_promo_uplift_modeling(transactions_df, product_lookup, params, pipeline)
     elif mode == "benchmark":
-        _render_elasticity_benchmark(params)
+        _render_elasticity_benchmark(params, pipeline)
     else:
         st.warning(f"Unknown pricing mode: {mode}")
 
@@ -60,7 +61,7 @@ def render_pricing_tab(
 # ============================================================================
 
 
-def _render_elasticity_analysis(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
+def _render_elasticity_analysis(transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None):
     """Render price elasticity estimation using log-log regression."""
 
     st.header("📈 Price Elasticity Analysis")
@@ -84,6 +85,11 @@ def _render_elasticity_analysis(transactions_df: pd.DataFrame, product_lookup: d
     method = params.get("elasticity_method", "loglog_ols")
     min_periods = params.get("min_periods", 10)
     min_price_variation = params.get("min_price_variation", 0.05)
+
+    # Check pipeline for cached elasticity results
+    cached_elasticity = pipeline.get("elasticity_results") if pipeline else None
+    if cached_elasticity is not None and not cached_elasticity.empty:
+        st.info("Using cached elasticity results from pipeline")
 
     # Product selector
     products = transactions_df["stockcode"].unique()
@@ -730,7 +736,7 @@ def _render_elasticity_benchmark(params: dict):
 # ============================================================================
 
 
-def _render_kvi_identification(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
+def _render_kvi_identification(transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None):
     """Render Key Value Item (KVI) identification and scoring."""
 
     st.header("🏷️ KVI (Key Value Item) Identification")
@@ -916,7 +922,7 @@ def _render_kvi_feature_importance(kvi_features: pd.DataFrame):
 
 
 def _render_price_curve_diagnostics(
-    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None
 ):
     """Render price curve diagnostics — pack-size monotonicity, tier clustering."""
 
@@ -1205,7 +1211,7 @@ def _render_tier_analysis(tier_results: pd.DataFrame, category: str):
 
 
 def _render_promo_uplift_modeling(
-    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None
 ):
     """Render promo uplift modeling using T-learner / S-learner."""
 

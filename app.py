@@ -30,6 +30,14 @@ from src.ui.switching_tab import render_switching_tab
 from src.ui.tree_tab import render_tree_tab
 from src.ui.cdt_assortment_tab import render_cdt_assortment_tab
 from src.ui.pricing_tab import render_pricing_tab
+from src.utils.pipeline import (
+    clear_pipeline,
+    get_pipeline,
+    get_pipeline_summary,
+    init_pipeline,
+    invalidate_downstream,
+    set_pipeline,
+)
 from src.viz.heatmap import create_heatmap, create_scatter_heatmap
 from src.viz.network import create_network_graph
 
@@ -55,6 +63,9 @@ st.set_page_config(
 
 
 def main():
+    # Initialize pipeline
+    init_pipeline()
+    
     # Header
     st.title("Market Basket Analysis")
     st.caption(
@@ -83,11 +94,12 @@ def main():
                 )
 
         if transactions_df is not None and not transactions_df.empty:
-            # Store in session state for dynamic UI elements (e.g., delist products multiselect)
-            st.session_state["loaded_df"] = transactions_df
+            # Store in pipeline
+            set_pipeline("transactions_df", transactions_df)
+            set_pipeline("product_lookup", get_product_lookup(transactions_df))
             
-            # Create product lookup
-            product_lookup = get_product_lookup(transactions_df)
+            # Also keep in session_state for backward compatibility
+            st.session_state["loaded_df"] = transactions_df
 
             # Show data summary
             with st.expander(" Data Summary", expanded=False):
@@ -102,9 +114,17 @@ def main():
                 with col4:
                     st.metric("Revenue", f"${summary['total_revenue']:,.2f}")
 
+            # Pipeline status indicator
+            with st.expander(" Pipeline Status", expanded=False):
+                pipeline = get_pipeline()
+                summary = get_pipeline_summary()
+                for k, v in summary.items():
+                    if v != "empty":
+                        st.text(f"  {k}: {v}")
+
             # Run analysis when button clicked
             if config["run_analysis"]:
-                run_analysis(transactions_df, product_lookup, config)
+                run_analysis(config)
             else:
                 st.info(" Configure parameters in sidebar and click **Run Analysis** to start")
 
@@ -113,8 +133,8 @@ def main():
         st.code(traceback.format_exc())
 
 
-def run_analysis(transactions_df: pd.DataFrame, product_lookup: dict, config: Config):
-    """Run the selected analysis."""
+def run_analysis(config: Config):
+    """Run the selected analysis using pipeline data."""
 
     analysis_mode = config["analysis_mode"]
     params = config["analysis_params"]
@@ -130,45 +150,54 @@ def run_analysis(transactions_df: pd.DataFrame, product_lookup: dict, config: Co
     # Merge params
     all_params = {**fp_params, **params}
 
+    # Get data from pipeline
+    pipeline = get_pipeline()
+    transactions_df = pipeline.get("transactions_df")
+    product_lookup = pipeline.get("product_lookup")
+
+    if transactions_df is None:
+        st.error("No transaction data loaded. Please upload data or use sample data.")
+        return
+
     try:
         if analysis_mode == "Association Rules":
-            render_rules_analysis(transactions_df, product_lookup, all_params)
+            render_rules_analysis(transactions_df, product_lookup, all_params, pipeline)
         elif analysis_mode == "Co-purchase":
-            render_copurchase_tab(transactions_df, product_lookup, all_params)
+            render_copurchase_tab(transactions_df, product_lookup, all_params, pipeline)
         elif analysis_mode == "Add-on":
-            render_addon_tab(transactions_df, product_lookup, all_params)
+            render_addon_tab(transactions_df, product_lookup, all_params, pipeline)
         elif analysis_mode == "Switching":
-            render_switching_tab(transactions_df, product_lookup, all_params)
+            render_switching_tab(transactions_df, product_lookup, all_params, pipeline)
         elif analysis_mode == "Choice Prediction Model":
-            render_tree_tab(transactions_df, product_lookup, all_params)
+            render_tree_tab(transactions_df, product_lookup, all_params, pipeline)
         elif analysis_mode == "Decision Tree & Patterns":
-            render_cdt_tab(transactions_df, product_lookup, all_params)
+            render_cdt_tab(transactions_df, product_lookup, all_params, pipeline)
         elif analysis_mode == "Customer Segmentation":
-            render_segmentation_tab(transactions_df, product_lookup, all_params)
+            render_segmentation_tab(transactions_df, product_lookup, all_params, pipeline)
         elif analysis_mode == "Product Performance":
-            render_product_performance_tab(transactions_df, product_lookup, all_params)
+            render_product_performance_tab(transactions_df, product_lookup, all_params, pipeline)
         elif analysis_mode == "Cohort Analysis":
-            render_cohort_tab(transactions_df, product_lookup, all_params)
+            render_cohort_tab(transactions_df, product_lookup, all_params, pipeline)
         elif analysis_mode == "Promotional Analytics":
-            render_promotional_tab(transactions_df, product_lookup, all_params)
+            render_promotional_tab(transactions_df, product_lookup, all_params, pipeline)
         elif analysis_mode == "CDT Builder":
-            render_cdt_assortment_tab(transactions_df, product_lookup, all_params, mode="cdt")
+            render_cdt_assortment_tab(transactions_df, product_lookup, all_params, pipeline, mode="cdt")
         elif analysis_mode == "Demand Transference":
-            render_cdt_assortment_tab(transactions_df, product_lookup, all_params, mode="transference")
+            render_cdt_assortment_tab(transactions_df, product_lookup, all_params, pipeline, mode="transference")
         elif analysis_mode == "Assortment Optimizer":
-            render_cdt_assortment_tab(transactions_df, product_lookup, all_params, mode="assortment")
+            render_cdt_assortment_tab(transactions_df, product_lookup, all_params, pipeline, mode="assortment")
         elif analysis_mode == "Elasticity Analysis":
-            render_pricing_tab(transactions_df, product_lookup, all_params, mode="elasticity")
+            render_pricing_tab(transactions_df, product_lookup, all_params, pipeline, mode="elasticity")
         elif analysis_mode == "KVI Identification":
-            render_pricing_tab(transactions_df, product_lookup, all_params, mode="kvi")
+            render_pricing_tab(transactions_df, product_lookup, all_params, pipeline, mode="kvi")
         elif analysis_mode == "Price Curve Diagnostics":
-            render_pricing_tab(transactions_df, product_lookup, all_params, mode="price_curves")
+            render_pricing_tab(transactions_df, product_lookup, all_params, pipeline, mode="price_curves")
         elif analysis_mode == "Promo Uplift Modeling":
-            render_pricing_tab(transactions_df, product_lookup, all_params, mode="promo_uplift")
+            render_pricing_tab(transactions_df, product_lookup, all_params, pipeline, mode="promo_uplift")
         elif analysis_mode == "Elasticity Benchmark":
-            render_pricing_tab(transactions_df, product_lookup, all_params, mode="benchmark")
+            render_pricing_tab(transactions_df, product_lookup, all_params, pipeline, mode="benchmark")
         elif analysis_mode == "CDT Benchmark":
-            render_cdt_tab(transactions_df, product_lookup, all_params)
+            render_cdt_tab(transactions_df, product_lookup, all_params, pipeline)
         else:
             st.warning(f"Unknown analysis mode: {analysis_mode}")
 
@@ -177,18 +206,20 @@ def run_analysis(transactions_df: pd.DataFrame, product_lookup: dict, config: Co
         st.code(traceback.format_exc())
 
 
-def render_rules_analysis(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
+def render_rules_analysis(transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict):
     """Render association rules analysis (default mode with all visualizations)."""
 
     # Create basket matrix
     with st.spinner("Creating basket matrix..."):
         basket = create_basket_matrix(transactions_df)
+        set_pipeline("basket_matrix", basket)
 
     # Run FP-Growth
     with st.spinner(f"Running FP-Growth (min_support={params['min_support']:.3f})..."):
         freq_items = _cached_run_fpgrowth(
             basket, min_support=params["min_support"], max_len=params["max_itemset_len"]
         )
+        set_pipeline("frequent_itemsets", freq_items)
 
     if freq_items.empty:
         st.warning("No frequent itemsets found. Try lowering min_support.")
@@ -201,6 +232,7 @@ def render_rules_analysis(transactions_df: pd.DataFrame, product_lookup: dict, p
         rules = _cached_generate_rules(
             freq_items, metric="confidence", min_threshold=params["min_confidence"]
         )
+        set_pipeline("rules", rules)
 
     if rules.empty:
         st.warning("No association rules found. Try lowering min_confidence.")
@@ -216,6 +248,7 @@ def render_rules_analysis(transactions_df: pd.DataFrame, product_lookup: dict, p
         min_lift=params["min_lift"],
         max_lift=params.get("max_lift", 100.0),
     )
+    set_pipeline("filtered_rules", filtered_rules)
 
     st.info(f"{len(filtered_rules)} rules after filtering (lift \u2265 {params['min_lift']})")
 

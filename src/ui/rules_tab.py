@@ -18,6 +18,7 @@ def render_rules_tab(
     product_lookup: dict,
     params: dict,
     transactions_df: pd.DataFrame | None = None,
+    pipeline: dict | None = None,
 ):
     """Render association rules analysis tab with persistent sub-tabs."""
     st.header("📋 Association Rules")

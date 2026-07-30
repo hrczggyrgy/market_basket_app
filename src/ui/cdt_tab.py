@@ -196,7 +196,7 @@ def _cached_get_top_switching_paths(switching_matrix, top_n):
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
-def render_cdt_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
+def render_cdt_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None):
     """Render Customer Decision Tree & Patterns tab."""
     st.header(" Customer Decision Tree & Patterns (CDT)")
 
@@ -216,6 +216,7 @@ def render_cdt_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: 
     # Invalidate cached CDT results if the data has changed
     _invalidate_cdt_cache_if_data_changed(transactions_df)
 
+    # Check pipeline for pre-computed results
     has_results = "cdt_root" in st.session_state
 
     if has_results:
