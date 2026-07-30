@@ -12,13 +12,17 @@ from scipy import stats
 from sklearn.preprocessing import StandardScaler
 
 from src.analytics import (
+    build_uplift_dataset,
     compute_basket_penetration,
     compute_basket_value_uplift,
     compute_product_metrics,
     diagnose_price_curves_1d,
     diagnose_price_curves_multivariate,
     estimate_bayesian_hierarchical_elasticity,
+    evaluate_uplift_model,
     run_validation,
+    train_s_learner_uplift,
+    train_t_learner_uplift,
 )
 from src.analytics.sufficiency import (
     assess_data_sufficiency,
@@ -80,7 +84,6 @@ def _render_elasticity_analysis(transactions_df: pd.DataFrame, product_lookup: d
     method = params.get("elasticity_method", "loglog_ols")
     min_periods = params.get("min_periods", 10)
     min_price_variation = params.get("min_price_variation", 0.05)
-    show_shap = params.get("show_shap", False)
 
     # Product selector
     products = transactions_df["stockcode"].unique()
@@ -744,11 +747,6 @@ def _compute_kvi_xgb(
     )
     model.fit(X, y)
 
-    # Get feature importance
-    importance = pd.DataFrame(
-        {"feature": feature_cols, "importance": model.feature_importances_}
-    ).sort_values("importance", ascending=False)
-
     # KVI score = predicted value
     kvi_features["kvi_score"] = model.predict(X)
 
@@ -821,7 +819,7 @@ def _render_price_curve_diagnostics(
         st.sidebar.markdown("---")
         st.sidebar.caption("Multivariate Mode: Active")
         st.sidebar.caption("Requires elasticity computation and optional cost column.")
-        
+
         # Check for cost column
         cost_cols = [
             c
@@ -1149,6 +1147,8 @@ def _render_promo_uplift_modeling(
     with col3:
         st.metric("Uplift @ Top 10%", f"{uplift_results.get('uplift_at_10', 0):.4f}")
 
+    st.caption("ℹ️ Qini and AUUC are not normalized — compare relative model performance on THIS dataset, not absolute values across different datasets or reports.")
+
     # Qini curve
     if "qini_curve" in uplift_results:
         _render_qini_curve(uplift_results["qini_curve"])
@@ -1208,21 +1208,103 @@ def _train_uplift_model(
     max_depth: int,
     propensity_strat: bool,
 ) -> Optional[Dict]:
-    """Train T-learner or S-learner uplift model."""
+    """Train T-learner or S-learner uplift model using real promo_uplift functions."""
+    try:
+        # Build uplift dataset
+        X, treatment, y = build_uplift_dataset(transactions_df, promo_df)
 
-    return {
-        "qini": 0.15,
-        "auuc": 0.12,
-        "uplift_at_10": 0.25,
-        "qini_curve": np.array([0, 0.05, 0.1, 0.15, 0.18, 0.2, 0.21, 0.22, 0.22, 0.23]),
-        "segment_uplift": pd.DataFrame(
-            {
-                "segment": ["High Value", "Regular", "Occasional", "New"],
-                "uplift": [0.3, 0.15, 0.05, 0.02],
-                "size": [100, 500, 1000, 200],
-            }
-        ),
-    }
+        if len(X) == 0 or treatment.sum() == 0 or (treatment == 0).sum() == 0:
+            return None
+
+        # Train model based on method
+        if method == "t_learner":
+            model_treated, model_control, uplift = train_t_learner_uplift(
+                X, treatment, y,
+                base_learner="xgb",
+                n_estimators=n_estimators,
+                max_depth=max_depth,
+            )
+        elif method == "s_learner":
+            model, uplift = train_s_learner_uplift(
+                X, treatment, y,
+                base_learner="xgb",
+                n_estimators=n_estimators,
+                max_depth=max_depth,
+            )
+        else:
+            raise ValueError(f"Unknown uplift method: {method}")
+
+        # Evaluate model
+        eval_results = evaluate_uplift_model(X, treatment, y, uplift)
+
+        # Prepare segment uplift if segment assignments exist
+        segment_uplift = None
+        segment_assignments = st.session_state.get("segment_assignments")
+
+        if segment_assignments is not None and not segment_assignments.empty:
+            # Check staleness: verify customer_id overlap
+            current_customers = set(transactions_df["customer_id"].unique())
+            segment_customers = set(segment_assignments["customer_id"].unique())
+
+            if current_customers & segment_customers:
+                # Reconstruct weekly data with customer_id to align with uplift predictions
+                # This mirrors build_uplift_dataset but keeps customer_id
+                weekly_with_cust = transactions_df.copy()
+                weekly_with_cust["date"] = pd.to_datetime(weekly_with_cust["date"])
+                weekly_with_cust["week"] = weekly_with_cust["date"].dt.to_period("W")
+
+                weekly_agg = (
+                    weekly_with_cust.groupby(["customer_id", "stockcode", "week"])
+                    .agg(total_qty=("quantity", "sum"))
+                    .reset_index()
+                )
+
+                # Merge promo flags
+                promo_df_copy = promo_df.copy()
+                promo_df_copy["date"] = pd.to_datetime(promo_df_copy["date"])
+                promo_df_copy["week"] = promo_df_copy["date"].dt.to_period("W")
+                promo_weekly = promo_df_copy.groupby(["stockcode", "week"])["is_promo"].any().reset_index()
+
+                weekly_agg = weekly_agg.merge(promo_weekly, on=["stockcode", "week"], how="left")
+                weekly_agg["treatment"] = weekly_agg["is_promo"].fillna(False).astype(int)
+
+                # Target: quantity in next week
+                weekly_agg = weekly_agg.sort_values(["customer_id", "stockcode", "week"])
+                weekly_agg["next_week_qty"] = weekly_agg.groupby(["customer_id", "stockcode"])["total_qty"].shift(-1)
+                weekly_agg = weekly_agg.dropna(subset=["next_week_qty"])
+
+                # The weekly_agg rows should correspond to the rows in X from build_uplift_dataset
+                # (same filtering logic). Align by index/position.
+                if len(weekly_agg) == len(uplift):
+                    weekly_agg["uplift"] = uplift.values
+                    weekly_agg["treatment"] = treatment.values
+
+                    # Merge segment assignments
+                    merged = weekly_agg.merge(
+                        segment_assignments[["customer_id", "segment"]],
+                        on="customer_id",
+                        how="left"
+                    )
+
+                    # Compute mean uplift per segment (only for treated)
+                    treated_merged = merged[merged["treatment"] == 1]
+                    if not treated_merged.empty:
+                        segment_uplift = treated_merged.groupby("segment").agg(
+                            uplift=("uplift", "mean"),
+                            size=("customer_id", "count")
+                        ).reset_index()
+                        segment_uplift = segment_uplift[segment_uplift["segment"].notna()]
+
+        return {
+            "qini": eval_results.get("qini_coefficient", 0),
+            "auuc": eval_results.get("auuc", 0),
+            "uplift_at_10": eval_results.get("uplift_at_top_k", 0),
+            "qini_curve": np.array(eval_results.get("qini_curve_x", [])),
+            "segment_uplift": segment_uplift,
+        }
+    except Exception as e:
+        st.error(f"Uplift model training failed: {e}")
+        return None
 
 
 def _render_qini_curve(qini_curve: np.ndarray):
@@ -1248,8 +1330,18 @@ def _render_qini_curve(qini_curve: np.ndarray):
     st.plotly_chart(fig, use_container_width=True)
 
 
-def _render_uplift_by_segment(segment_uplift: pd.DataFrame):
+def _render_uplift_by_segment(segment_uplift: Optional[pd.DataFrame]):
     """Render uplift by customer segment."""
+    if segment_uplift is None or segment_uplift.empty:
+        st.info(
+            "📍 Segment-level uplift requires Customer Segmentation to run first. "
+            "Go to **Sidebar → Analysis Category → Customer Segmentation → Run Analysis**, "
+            "then return to this tab."
+        )
+        return
+
+    st.caption("🟢 Live model output — segments from Customer Segmentation tab, uplift from T-learner/S-learner on your uploaded data.")
+
     fig = px.bar(
         segment_uplift,
         x="segment",

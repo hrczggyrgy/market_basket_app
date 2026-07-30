@@ -305,6 +305,9 @@ def render_rfm_segmentation(transactions_df: pd.DataFrame, params: dict):
 
         render_analytics_export(rfm_scored, "RFM_Segments")
 
+        # Store segment assignments in session_state for cross-tab usage
+        st.session_state["segment_assignments"] = rfm_scored[["customer_id", "segment"]].copy()
+
     else:
         rfm_clustered = _cached_rfm_segmentation(rfm, method="kmeans", n_segments=n_segments)
 
@@ -318,6 +321,9 @@ def render_rfm_segmentation(transactions_df: pd.DataFrame, params: dict):
             _render_kmeans_segment_details(rfm_clustered)
 
         render_analytics_export(rfm_clustered, f"RFM_KMeans_Segments_{n_segments}")
+
+        # Store segment assignments in session_state for cross-tab usage
+        st.session_state["segment_assignments"] = rfm_clustered[["customer_id", "segment"]].copy()
 
 
 def _render_rfm_segment_distribution(rfm_scored: pd.DataFrame):
@@ -640,6 +646,9 @@ def render_behavioral_segmentation(transactions_df: pd.DataFrame, params: dict):
 
     render_analytics_export(behavioral, "Behavioral_Segments")
 
+    # Store segment assignments in session_state for cross-tab usage
+    st.session_state["segment_assignments"] = behavioral[["customer_id", "segment"]].copy()
+
 
 def _render_behavioral_profiles(profiles: pd.DataFrame):
     st.subheader("Behavioral Segment Profiles")
@@ -770,6 +779,10 @@ def render_value_segmentation(transactions_df: pd.DataFrame, params: dict):
         _render_value_clv_accuracy(value_segments)
 
     render_analytics_export(value_segments, "Value_Segments")
+
+    # Store segment assignments in session_state for cross-tab usage
+    # value_segment column is the segment column for value-based
+    st.session_state["segment_assignments"] = value_segments[["customer_id", "value_segment"]].rename(columns={"value_segment": "segment"}).copy()
 
 
 def _render_value_distribution(value_segments: pd.DataFrame):
