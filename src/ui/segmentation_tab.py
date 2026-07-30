@@ -39,8 +39,10 @@ from src.analytics.segmentation_enhanced import (
     compute_umap_projection,
     get_segment_recommendations,
 )
-from src.ui.export import render_analytics_export
-from src.ui.tabs import persistent_tabs
+from src.analytics.sufficiency import (
+    assess_data_sufficiency,
+    format_sufficiency_summary,
+)
 from src.ui.cdt_tab import (
     _cached_build_customer_sequences,
     _cached_build_similarity_matrix,
@@ -48,6 +50,8 @@ from src.ui.cdt_tab import (
     _cached_get_cluster_assignments,
     _cached_perform_hierarchical_clustering,
 )
+from src.ui.export import render_analytics_export
+from src.ui.tabs import persistent_tabs
 from src.viz.cdt_viz import (
     plot_behavioral_heatmap,
     plot_dendrogram,
@@ -56,10 +60,6 @@ from src.viz.cdt_viz import (
     plot_sunburst,
     plot_switching_network,
     plot_treemap,
-)
-from src.analytics.sufficiency import (
-    assess_data_sufficiency,
-    format_sufficiency_summary,
 )
 
 

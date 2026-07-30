@@ -18,6 +18,11 @@ from .basket_metrics import (
     compute_copurchase_index,
     compute_shopper_loyalty_metrics,
 )
+from .bootstrap import (
+    bootstrap_ci,
+    bootstrap_ci_customer,
+    bootstrap_transaction_samples,
+)
 from .cdt_attributes import (
     FUNCTIONAL_FIT_ATTRIBUTES,
     build_transaction_derived_attributes,
@@ -78,6 +83,10 @@ from .cdt_tree_builder import (
     tree_to_dataframe,
     tree_to_json,
 )
+from .cdt_validation import (
+    generate_synthetic_cluster_data,
+    run_cdt_validation,
+)
 from .cohort import (
     cohort_comparison_summary,
     compute_cohort_sizes,
@@ -127,8 +136,12 @@ from .promotional import (
     calculate_incremental_revenue,
     calculate_promotional_lift,
     detect_promotions,
-    promotion_timing_analysis,
     halo_effect_analysis,
+    promotion_timing_analysis,
+)
+from .promotional_validation import (
+    generate_synthetic_promo_data,
+    run_promo_detection_validation,
 )
 from .segmentation import (
     behavioral_segmentation,
@@ -137,34 +150,21 @@ from .segmentation import (
     rfm_segmentation,
     value_based_segmentation,
 )
-from .switching import (
-    compute_switching_matrix,
-    get_customer_loyalty_metrics,
-    get_switching_heatmap_data,
-)
-from .bootstrap import (
-    bootstrap_ci,
-    bootstrap_ci_customer,
-    bootstrap_transaction_samples,
+from .segmentation_validation import (
+    generate_synthetic_customer_segments,
+    run_segmentation_validation,
 )
 from .sufficiency import (
     assess_data_sufficiency,
     format_sufficiency_summary,
     sufficiency_badge,
 )
+from .switching import (
+    compute_switching_matrix,
+    get_customer_loyalty_metrics,
+    get_switching_heatmap_data,
+)
 from .validation import generate_synthetic_elasticity_data, run_validation
-from .cdt_validation import (
-    generate_synthetic_cluster_data,
-    run_cdt_validation,
-)
-from .segmentation_validation import (
-    generate_synthetic_customer_segments,
-    run_segmentation_validation,
-)
-from .promotional_validation import (
-    generate_synthetic_promo_data,
-    run_promo_detection_validation,
-)
 
 __all__ = [
     "compute_affinity_matrix",
@@ -290,6 +290,13 @@ __all__ = [
     "generate_assortment_scenarios",
     "optimize_assortment_heuristic",
     "optimize_assortment_milp",
+    # Validation
     "generate_synthetic_elasticity_data",
     "run_validation",
+    "generate_synthetic_cluster_data",
+    "run_cdt_validation",
+    "generate_synthetic_promo_data",
+    "run_promo_detection_validation",
+    "generate_synthetic_customer_segments",
+    "run_segmentation_validation",
 ]

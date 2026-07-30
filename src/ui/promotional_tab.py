@@ -6,9 +6,9 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.analytics.promotional import detect_promotions
+from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
-from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 
 
 def render_promotional_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):

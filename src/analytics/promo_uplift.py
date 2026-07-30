@@ -144,16 +144,7 @@ def build_uplift_dataset(
     weekly = weekly.dropna(subset=["next_week_qty"])
 
     # Features
-    feature_cols = [
-        "total_qty",
-        "total_rev",
-        "avg_price",
-        "n_txns",
-        # Lag features
-        "total_qty_lag1",
-        "avg_price_lag1",
-        # Customer aggregates
-    ]
+    # Note: Features are built dynamically below based on available columns
 
     # Add customer-level features
     cust_features = (

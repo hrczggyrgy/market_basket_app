@@ -5,14 +5,12 @@ recovery accuracy across all four methods.
 """
 
 import warnings
-from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 
 from .pricing import (
     estimate_bayesian_hierarchical_elasticity,
-    estimate_elasticity_xgb,
     estimate_hierarchical_elasticity,
     estimate_loglog_elasticity,
 )

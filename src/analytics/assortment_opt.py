@@ -47,7 +47,6 @@ def optimize_assortment_heuristic(
         # Filter to common products
         current_solution = [p for p in current_solution if p in common_products]
 
-    total_revenue = revenue_per_product.sum()
     total_demand = revenue_per_product.sum()  # proxy for total demand
 
     def evaluate(solution: List[str]) -> Tuple[float, Dict]:
@@ -111,7 +110,6 @@ def optimize_assortment_heuristic(
     current_obj, current_metrics = evaluate(current_solution)
     best_solution = current_solution[:]
     best_obj = current_obj
-    best_metrics = current_metrics
 
     temp = temperature
 
@@ -156,7 +154,6 @@ def optimize_assortment_heuristic(
             if new_obj > best_obj:
                 best_solution = new_solution[:]
                 best_obj = new_obj
-                best_metrics = new_metrics
 
         temp *= cooling_rate
 

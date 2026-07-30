@@ -10,6 +10,15 @@ CACHE_DIR = Path(__file__).resolve().parent.parent.parent / "data" / ".cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _get_pymc_version() -> str:
+    """Get PyMC version string for cache invalidation."""
+    try:
+        import pymc
+        return pymc.__version__
+    except ImportError:
+        return "no_pymc"
+
+
 def _data_hash(transactions_df) -> str:
     """Deterministic hash of transaction data for cache key."""
     key_df = transactions_df[["date", "transaction_id", "stockcode", "price", "quantity"]].copy()
@@ -27,10 +36,16 @@ def _model_config_hash(model_config: dict) -> str:
 def trace_cache_key(transactions_df, model_config: dict | None = None) -> str:
     """Return a deterministic cache key for a PyMC trace.
 
-    Combines the data fingerprint with an optional model-config hash so that
-    changing either invalidates the cache automatically.
+    Combines the data fingerprint, model-config hash, and PyMC version so that
+    changing any of these invalidates the cache automatically.
+
+    NOTE: This cache key includes surface-level model configuration parameters
+    but NOT the full model graph structure (priors, likelihood). If you modify
+    the model structure in pricing.py (e.g., change prior distributions), you
+    must manually clear the cache or increment a model_version parameter in
+    model_config to force invalidation.
     """
-    parts = [_data_hash(transactions_df)]
+    parts = [_data_hash(transactions_df), _get_pymc_version()]
     if model_config:
         parts.append(_model_config_hash(model_config))
     return "_".join(parts)

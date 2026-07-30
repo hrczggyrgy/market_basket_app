@@ -9,8 +9,8 @@ from src.analytics.cohort import (
     cohort_comparison_summary,
     compute_cohorts,
 )
-from src.ui.export import render_analytics_export
 from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
+from src.ui.export import render_analytics_export
 
 
 @st.cache_data

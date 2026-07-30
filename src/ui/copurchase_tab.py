@@ -10,9 +10,9 @@ from src.analytics.copurchase import (
     get_product_affinity_profile,
     get_top_affinity_pairs,
 )
+from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
-from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 
 
 @st.cache_data

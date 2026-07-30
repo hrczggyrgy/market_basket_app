@@ -15,6 +15,8 @@ from src.analytics import (
     compute_basket_penetration,
     compute_basket_value_uplift,
     compute_product_metrics,
+    diagnose_price_curves_1d,
+    diagnose_price_curves_multivariate,
     estimate_bayesian_hierarchical_elasticity,
     run_validation,
 )

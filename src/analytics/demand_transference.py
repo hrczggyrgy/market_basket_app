@@ -173,8 +173,6 @@ def node_delist_impact(
     df = transactions_df.copy()
     df["revenue"] = df["price"] * df["quantity"]
     product_revenue = df.groupby(product_col)["revenue"].sum()
-
-    product_to_node = pd.Series(cluster_assignments)
     nodes = sorted(set(cluster_assignments.values()))
 
     rows = []

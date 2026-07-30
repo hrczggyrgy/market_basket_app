@@ -249,8 +249,6 @@ def estimate_bayesian_hierarchical_elasticity(
     sku_cat = agg_df.groupby("stockcode")["category"].first()
     sku_cat_idx = np.array([cat_to_idx[c] for c in sku_cat])
 
-    n_cats = len(categories)
-    n_skus = len(stockcodes)
     n_obs = len(agg_df)
 
     # --- 2. Build PyMC model ---
@@ -260,9 +258,8 @@ def estimate_bayesian_hierarchical_elasticity(
         "observation": range(n_obs),
     }
 
-    with pm.Model(coords=coords) as model:
+    with pm.Model(coords=coords):
         log_price_data = pm.Data("log_price_data", agg_df["log_price"].values)
-        cat_idx_data = pm.Data("cat_idx_data", cat_idx)
         sku_idx_data = pm.Data("sku_idx_data", sku_idx)
 
         # Tier 1 — global
@@ -307,7 +304,6 @@ def estimate_bayesian_hierarchical_elasticity(
     alpha_post = trace.posterior["alpha_sku"] if hasattr(trace, "posterior") else trace["alpha_sku"]
     beta_post = trace.posterior["beta_sku"] if hasattr(trace, "posterior") else trace["beta_sku"]
 
-    alpha_mean = alpha_post.mean(dim=("chain", "draw")).values if hasattr(alpha_post, "mean") else alpha_post.mean(axis=0)
     beta_mean = beta_post.mean(dim=("chain", "draw")).values if hasattr(beta_post, "mean") else beta_post.mean(axis=0)
     beta_sd = beta_post.std(dim=("chain", "draw")).values if hasattr(beta_post, "std") else beta_post.std(axis=0)
 
@@ -565,12 +561,8 @@ def _kvi_heuristic(
         kvi_features["margin"] = kvi_features["total_revenue"] * (
             1 - kvi_features[cost_col] / kvi_features["avg_price"].replace(0, np.nan)
         ).clip(0, 1)
-        target = "margin"
     elif margin_pct:
         kvi_features["margin"] = kvi_features["total_revenue"] * margin_pct
-        target = "margin"
-    else:
-        target = "total_revenue"
 
     # Features
     feature_cols = [

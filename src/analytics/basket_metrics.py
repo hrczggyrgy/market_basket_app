@@ -204,7 +204,13 @@ def compute_basket_value_uplift(
     )
 
     rows = []
-    all_baskets = basket_value.index
+    top_products = (
+        df.groupby(product_col)["_basket"]
+        .nunique()
+        .sort_values(ascending=False)
+        .head(top_n)
+        .index.tolist()
+    )
     for prod in top_products:
         baskets_with = basket_value[
             basket_products.index[basket_products.apply(lambda s: prod in s)]

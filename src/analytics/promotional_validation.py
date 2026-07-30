@@ -32,7 +32,6 @@ def generate_synthetic_promo_data(
     """
     rng = np.random.default_rng(random_seed)
     dates = pd.date_range("2024-01-01", periods=n_weeks, freq="W")
-    date_strs = [str(d.date()).replace("-", "") for d in dates]
 
     rows = []
     true_promo_weeks: Dict[str, List[int]] = {}

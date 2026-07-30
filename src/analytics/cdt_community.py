@@ -9,15 +9,11 @@ Dependency notes:
 """
 
 import warnings
-
-import warnings
 from typing import Dict, List, Optional, Tuple
 
 import networkx as nx
 import numpy as np
 import pandas as pd
-
-warnings.filterwarnings("ignore", category=UserWarning)
 
 
 def build_product_graph(
@@ -104,7 +100,7 @@ def detect_communities_louvain(
     Raises:
         ImportError: if python-louvain is not installed
     """
-    import community as community_louvain  # noqa: F811
+    import community as community_louvain
 
     # Louvain expects dict of node->community
     partition = community_louvain.best_partition(
@@ -207,7 +203,8 @@ def detect_communities(
             return detect_communities_louvain(graph, resolution, seed)
         except ImportError:
             warnings.warn(
-                "python-louvain not installed; falling back to label_propagation"
+                "python-louvain not installed; falling back to label_propagation",
+                stacklevel=2,
             )
             return detect_communities_label_propagation(graph, seed)
     elif method == "leiden":
@@ -215,7 +212,8 @@ def detect_communities(
             return detect_communities_leiden(graph, resolution, seed)
         except ImportError:
             warnings.warn(
-                "igraph/leidenalg not installed; falling back to label_propagation"
+                "igraph/leidenalg not installed; falling back to label_propagation",
+                stacklevel=2,
             )
             return detect_communities_label_propagation(graph, seed)
     elif method == "label_propagation":
@@ -322,14 +320,9 @@ def merge_community_dendrograms(
     Returns:
         (global_linkage_matrix, global_ordered_labels)
     """
-    from scipy.cluster.hierarchy import linkage as scipy_linkage  # noqa: F811
-    from scipy.spatial.distance import squareform  # noqa: F811
-
-    comm_ids = sorted(community_dendrograms.keys())
-
     # Collect all labels in order
     all_labels = []
-    for comm_id in comm_ids:
+    for comm_id in sorted(community_dendrograms.keys()):
         _link_mat, labels = community_dendrograms[comm_id]
         all_labels.extend(labels)
 
@@ -341,7 +334,7 @@ def merge_community_dendrograms(
     offset = 0
     max_internal_dist = 0.0
 
-    for comm_id in comm_ids:
+    for comm_id in sorted(community_dendrograms.keys()):
         link_mat, labels = community_dendrograms[comm_id]
         n_items = len(labels)
 

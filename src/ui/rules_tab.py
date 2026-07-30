@@ -5,12 +5,12 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 from src.rules.generator import filter_rules, format_rules_for_display
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
 from src.viz.heatmap import create_heatmap, create_scatter_heatmap
 from src.viz.network import create_network_graph
-from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 
 
 def render_rules_tab(

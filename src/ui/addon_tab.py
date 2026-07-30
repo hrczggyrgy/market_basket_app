@@ -6,8 +6,8 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.analytics.addon import get_addon_recommendations, get_anchor_addon_matrix
-from src.ui.export import render_analytics_export
 from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
+from src.ui.export import render_analytics_export
 
 
 def render_addon_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):

@@ -44,9 +44,9 @@ from src.analytics.demand_transference import (
     delist_impact_analysis,
     node_delist_impact,
 )
-from src.viz.cdt_viz import plot_sunburst, plot_treemap
-from src.viz.cdt_viz import plot_dendrogram as _plot_dendrogram
 from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
+from src.viz.cdt_viz import plot_dendrogram as _plot_dendrogram
+from src.viz.cdt_viz import plot_sunburst, plot_treemap
 
 
 def render_cdt_assortment_tab(

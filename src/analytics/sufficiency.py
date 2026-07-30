@@ -7,7 +7,6 @@ columns are present and whether there is enough data for robust inference.
 
 from typing import Dict, List, Optional
 
-import numpy as np
 import pandas as pd
 
 

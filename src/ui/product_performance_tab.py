@@ -18,9 +18,9 @@ from src.analytics.product_performance import (
     compute_time_to_second_purchase,
     product_lifecycle_stage,
 )
+from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
-from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 
 
 def render_product_performance_tab(

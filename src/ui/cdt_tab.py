@@ -34,12 +34,16 @@ from src.analytics.cdt_similarity import (
     build_customer_sequences,
     build_similarity_matrix,
 )
-from src.analytics.cdt_validation import run_cdt_validation
 from src.analytics.cdt_tree_builder import (
     build_cdt,
     extract_product_attributes,
     tree_to_dataframe,
     tree_to_json,
+)
+from src.analytics.cdt_validation import run_cdt_validation
+from src.analytics.sufficiency import (
+    assess_data_sufficiency,
+    format_sufficiency_summary,
 )
 from src.ui.export import render_analytics_export
 from src.viz.cdt_viz import (
@@ -50,10 +54,6 @@ from src.viz.cdt_viz import (
     plot_sunburst,
     plot_switching_network,
     plot_treemap,
-)
-from src.analytics.sufficiency import (
-    assess_data_sufficiency,
-    format_sufficiency_summary,
 )
 
 # ---------------------------------------------------------------------------

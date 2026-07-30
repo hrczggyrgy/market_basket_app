@@ -34,7 +34,7 @@ def persistent_tabs(
     # Track which tab is active using a radio button (hidden)
     # The radio button maintains state across reruns
     selected = st.radio(
-        "",
+        "Tab selection",
         options=range(len(labels)),
         index=st.session_state[state_key],
         format_func=lambda i: labels[i],

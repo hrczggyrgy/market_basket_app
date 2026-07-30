@@ -4,7 +4,7 @@ Provides reusable helpers to compute percentile bootstrap confidence
 intervals for any statistic derived from transaction data.
 """
 
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
