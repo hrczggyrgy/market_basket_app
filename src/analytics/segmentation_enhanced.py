@@ -1384,7 +1384,6 @@ def compute_enhanced_behavioral_features(
     # Fill NaNs
     features = features.fillna(
         {
-            "tt2p_days": features["median_interpurchase_days"],
             "switching_entropy": 0,
             "switch_count": 0,
             "switch_rate": 0,
