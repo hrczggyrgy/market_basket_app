@@ -2,7 +2,13 @@
 
 Builds product similarity graph and detects communities using
 Louvain, Leiden, or Label Propagation algorithms.
+
+Dependency notes:
+- python-louvain is optional; if missing, Louvain falls back to label_propagation.
+- igraph + leidenalg are optional; if missing, Leiden falls back to label_propagation.
 """
+
+import warnings
 
 import warnings
 from typing import Dict, List, Optional, Tuple
@@ -94,11 +100,11 @@ def detect_communities_louvain(
 
     Returns:
         Dict mapping node -> community_id
+
+    Raises:
+        ImportError: if python-louvain is not installed
     """
-    try:
-        import community as community_louvain
-    except ImportError:
-        raise ImportError("python-louvain required: pip install python-louvain")
+    import community as community_louvain  # noqa: F811
 
     # Louvain expects dict of node->community
     partition = community_louvain.best_partition(
@@ -124,12 +130,12 @@ def detect_communities_leiden(
 
     Returns:
         Dict mapping node -> community_id
+
+    Raises:
+        ImportError: if igraph or leidenalg is not installed
     """
-    try:
-        import igraph as ig
-        import leidenalg
-    except ImportError:
-        raise ImportError("igraph and leidenalg required: pip install igraph leidenalg")
+    import igraph as ig
+    import leidenalg
 
     # Convert NetworkX to igraph
     edges = list(graph.edges())
@@ -197,9 +203,21 @@ def detect_communities(
         Dict mapping node -> community_id
     """
     if method == "louvain":
-        return detect_communities_louvain(graph, resolution, seed)
+        try:
+            return detect_communities_louvain(graph, resolution, seed)
+        except ImportError:
+            warnings.warn(
+                "python-louvain not installed; falling back to label_propagation"
+            )
+            return detect_communities_label_propagation(graph, seed)
     elif method == "leiden":
-        return detect_communities_leiden(graph, resolution, seed)
+        try:
+            return detect_communities_leiden(graph, resolution, seed)
+        except ImportError:
+            warnings.warn(
+                "igraph/leidenalg not installed; falling back to label_propagation"
+            )
+            return detect_communities_label_propagation(graph, seed)
     elif method == "label_propagation":
         return detect_communities_label_propagation(graph, seed)
     else:
@@ -210,9 +228,11 @@ def compute_community_modularity(
     graph: nx.Graph,
     partition: Dict[str, int],
 ) -> float:
-    """Compute modularity of a partition."""
-    import community as community_louvain
-
+    """Compute modularity of a partition (requires python-louvain)."""
+    try:
+        import community as community_louvain
+    except ImportError:
+        raise ImportError("python-louvain required to compute modularity")
     return community_louvain.modularity(partition, graph, weight="weight")
 
 
