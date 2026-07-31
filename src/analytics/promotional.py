@@ -1,6 +1,6 @@
 """Promotional Lift Analysis - Measure impact of promotions on sales and customer behavior."""
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -712,8 +712,239 @@ def detect_promotions_adaptive(
                         "revenue_lift": revenue_lift,
                         "avg_promo_price": avg_promo_price,
                         "avg_baseline_price": avg_baseline_price,
-                        "detection_method": "adaptive_zscore",
-                    }
-                )
+"detection_method": "adaptive_zscore",
+                }
+            )
 
     return pd.DataFrame(promotions)
+
+
+# ============================================================================
+# PROMO BASELINE & INCREMENTALITY (Phase 2)
+# ============================================================================
+
+
+def compute_promo_baseline_stl(
+    transactions_df: pd.DataFrame,
+    promo_periods: pd.DataFrame,
+    seasonal_period: int = 52,  # weekly seasonality
+) -> pd.DataFrame:
+    """Compute baseline sales using STL decomposition (trend + seasonal).
+
+    Replaces simple price-comparison baseline with proper time-series decomposition.
+    Returns DataFrame with baseline, actual, incremental per product-week.
+    """
+    try:
+        from statsmodels.tsa.seasonal import STL
+    except ImportError:
+        # Fallback to simple moving average baseline
+        return _compute_promo_baseline_fallback(transactions_df, promo_periods)
+
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["revenue"] = df["price"] * df["quantity"]
+    df["week"] = df["date"].dt.to_period("W")
+
+    # Weekly aggregation per product
+    weekly = df.groupby(["stockcode", "week"]).agg(
+        actual_units=("quantity", "sum"),
+        actual_revenue=("revenue", "sum"),
+        avg_price=("price", "mean"),
+    ).reset_index()
+
+    # Promo flag per product-week
+    promo_weeks = promo_periods.copy()
+    promo_weeks["date"] = pd.to_datetime(promo_weeks["date"])
+    promo_weeks["week"] = promo_weeks["date"].dt.to_period("W")
+    promo_weekly = promo_weeks.groupby(["stockcode", "week"])["is_promo"].any().reset_index()
+
+    weekly = weekly.merge(promo_weekly, on=["stockcode", "week"], how="left")
+    weekly["is_promo"] = weekly["is_promo"].fillna(False)
+
+    results = []
+    for sku, sku_data in weekly.groupby("stockcode"):
+        sku_data = sku_data.sort_values("week").reset_index(drop=True)
+
+        if len(sku_data) < seasonal_period * 2:
+            # Not enough data for STL, use simple baseline
+            baseline_units = sku_data["actual_units"].rolling(4, min_periods=1).mean().shift(1)
+            baseline_revenue = sku_data["actual_revenue"].rolling(4, min_periods=1).mean().shift(1)
+        else:
+            # STL decomposition on units
+            units_series = sku_data["actual_units"].values
+            try:
+                stl = STL(units_series, seasonal=seasonal_period, period=seasonal_period, robust=True)
+                res = stl.fit()
+                # Baseline = trend + seasonal (no residual/remainder)
+                baseline_units = res.trend + res.seasonal
+                baseline_units = np.maximum(baseline_units, 0)  # No negative baseline
+
+                # For revenue, use same approach or ratio
+                revenue_series = sku_data["actual_revenue"].values
+                stl_rev = STL(revenue_series, seasonal=seasonal_period, period=seasonal_period, robust=True)
+                res_rev = stl_rev.fit()
+                baseline_revenue = res_rev.trend + res_rev.seasonal
+                baseline_revenue = np.maximum(baseline_revenue, 0)
+            except Exception:
+                baseline_units = sku_data["actual_units"].rolling(4, min_periods=1).mean().shift(1).fillna(0)
+                baseline_revenue = sku_data["actual_revenue"].rolling(4, min_periods=1).mean().shift(1).fillna(0)
+
+        sku_data["baseline_units"] = baseline_units
+        sku_data["baseline_revenue"] = baseline_revenue
+        sku_data["incremental_units"] = sku_data["actual_units"] - sku_data["baseline_units"]
+        sku_data["incremental_revenue"] = sku_data["actual_revenue"] - sku_data["baseline_revenue"]
+        sku_data["incrementality_pct"] = np.where(
+            sku_data["actual_revenue"] > 0,
+            sku_data["incremental_revenue"] / sku_data["actual_revenue"] * 100,
+            0,
+        )
+
+        results.append(sku_data)
+
+    return pd.concat(results, ignore_index=True)
+
+
+def _compute_promo_baseline_fallback(
+    transactions_df: pd.DataFrame,
+    promo_periods: pd.DataFrame,
+) -> pd.DataFrame:
+    """Fallback baseline: 4-week moving average excluding promo weeks."""
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["revenue"] = df["price"] * df["quantity"]
+    df["week"] = df["date"].dt.to_period("W")
+
+    weekly = df.groupby(["stockcode", "week"]).agg(
+        actual_units=("quantity", "sum"),
+        actual_revenue=("revenue", "sum"),
+    ).reset_index()
+
+    promo_weeks = promo_periods.copy()
+    promo_weeks["date"] = pd.to_datetime(promo_weeks["date"])
+    promo_weeks["week"] = promo_weeks["date"].dt.to_period("W")
+    promo_weekly = promo_weeks.groupby(["stockcode", "week"])["is_promo"].any().reset_index()
+
+    weekly = weekly.merge(promo_weekly, on=["stockcode", "week"], how="left")
+    weekly["is_promo"] = weekly["is_promo"].fillna(False)
+
+    # For non-promo weeks, use as baseline; for promo weeks, use rolling avg of prior non-promo
+    results = []
+    for sku, sku_data in weekly.groupby("stockcode"):
+        sku_data = sku_data.sort_values("week").reset_index(drop=True)
+        baseline_units = []
+        baseline_revenue = []
+
+        for i, row in sku_data.iterrows():
+            if row["is_promo"]:
+                # Look back at prior non-promo weeks
+                prior_non_promo = sku_data[(sku_data.index < i) & (~sku_data["is_promo"])]
+                if len(prior_non_promo) >= 2:
+                    baseline_units.append(prior_non_promo["actual_units"].tail(4).mean())
+                    baseline_revenue.append(prior_non_promo["actual_revenue"].tail(4).mean())
+                else:
+                    baseline_units.append(sku_data["actual_units"].mean())
+                    baseline_revenue.append(sku_data["actual_revenue"].mean())
+            else:
+                baseline_units.append(row["actual_units"])
+                baseline_revenue.append(row["actual_revenue"])
+
+        sku_data["baseline_units"] = baseline_units
+        sku_data["baseline_revenue"] = baseline_revenue
+        sku_data["incremental_units"] = sku_data["actual_units"] - sku_data["baseline_units"]
+        sku_data["incremental_revenue"] = sku_data["actual_revenue"] - sku_data["baseline_revenue"]
+        sku_data["incrementality_pct"] = np.where(
+            sku_data["actual_revenue"] > 0,
+            sku_data["incremental_revenue"] / sku_data["actual_revenue"] * 100,
+            0,
+        )
+
+        results.append(sku_data)
+
+    return pd.concat(results, ignore_index=True)
+
+
+def compute_incrementality_waterfall(
+    baseline_df: pd.DataFrame,
+    halo_revenue: Optional[pd.DataFrame] = None,
+    cannibalization_revenue: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
+    """Compute True Incrementality Waterfall components.
+
+    Waterfall: Baseline → +Incremental → +Halo → -Cannibalization = Net Incremental
+    """
+    # Aggregate by product
+    agg = baseline_df.groupby("stockcode").agg(
+        baseline_revenue=("baseline_revenue", "sum"),
+        actual_revenue=("actual_revenue", "sum"),
+        incremental_revenue=("incremental_revenue", "sum"),
+        incremental_units=("incremental_units", "sum"),
+        avg_incrementality_pct=("incrementality_pct", "mean"),
+    ).reset_index()
+
+    # Add halo revenue if provided
+    if halo_revenue is not None and not halo_revenue.empty:
+        agg = agg.merge(
+            halo_revenue.groupby("promo_product")["halo_revenue"].sum().reset_index()
+            .rename(columns={"promo_product": "stockcode", "halo_revenue": "halo_revenue"}),
+            on="stockcode", how="left"
+        )
+    else:
+        agg["halo_revenue"] = 0
+
+    # Add cannibalization if provided
+    if cannibalization_revenue is not None and not cannibalization_revenue.empty:
+        agg = agg.merge(
+            cannibalization_revenue.groupby("from_product")["cannibalization_revenue"].sum().reset_index()
+            .rename(columns={"from_product": "stockcode"}),
+            on="stockcode", how="left"
+        )
+    else:
+        agg["cannibalization_revenue"] = 0
+
+    agg["halo_revenue"] = agg["halo_revenue"].fillna(0)
+    agg["cannibalization_revenue"] = agg["cannibalization_revenue"].fillna(0)
+
+    agg["net_incremental_revenue"] = (
+        agg["incremental_revenue"] + agg["halo_revenue"] - agg["cannibalization_revenue"]
+    )
+    agg["roi"] = np.where(
+        agg["baseline_revenue"] > 0,
+        agg["net_incremental_revenue"] / agg["baseline_revenue"],
+        0,
+    )
+
+    return agg
+
+
+def compute_promo_calendar_heatmap(
+    transactions_df: pd.DataFrame,
+    promo_periods: pd.DataFrame,
+    top_n_products: int = 30,
+) -> pd.DataFrame:
+    """Generate promo calendar heatmap matrix: weeks x products."""
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["week"] = df["date"].dt.to_period("W")
+
+    # Get top products by revenue
+    top_products = (
+        df.groupby("stockcode")["price"].count()
+        .sort_values(ascending=False)
+        .head(top_n_products)
+        .index.tolist()
+    )
+
+    # All weeks in data
+    all_weeks = sorted(df["week"].unique())
+
+    # Promo weeks per product
+    promo_weeks = promo_periods.copy()
+    promo_weeks["date"] = pd.to_datetime(promo_weeks["date"])
+    promo_weeks["week"] = promo_weeks["date"].dt.to_period("W")
+    promo_matrix = promo_weeks[promo_weeks["stockcode"].isin(top_products)]
+    promo_matrix = promo_matrix.groupby(["stockcode", "week"])["is_promo"].any().unstack(fill_value=False)
+
+    # Reindex to all weeks
+    promo_matrix = promo_matrix.reindex(columns=all_weeks, fill_value=False)
+
+    return promo_matrix

@@ -1875,3 +1875,181 @@ def get_segment_recommendations(segment_name: str) -> Dict[str, List[str]]:
             "avoid": ["Over-personalization", "Aggressive tactics"],
         },
     )
+
+
+# ============================================================================
+# OCCASION SEGMENTATION (Phase 2)
+# ============================================================================
+
+
+def compute_occasion_segments(
+    transactions_df: pd.DataFrame,
+    n_clusters: int = 4,
+) -> pd.DataFrame:
+    """Compute occasion-based customer segments using KMeans on 5 behavioral features.
+
+    Features:
+    1. median_basket_value - typical spend per trip
+    2. ipt_cv - inter-purchase time CV (regularity)
+    3. modal_day_of_week - most common shopping day
+    4. solo_trip_rate - % of trips with 1 SKU
+    5. avg_basket_depth - avg unique SKUs per trip
+    6. dominant_category_share - share of spend in top category
+
+    Segments: Stock-up / Top-up / Impulse / Occasional
+    """
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["revenue"] = df["price"] * df["quantity"]
+    df["_basket"] = df["customer_id"].astype(str) + "_" + df["date"].dt.strftime("%Y%m%d")
+
+    # Basket-level metrics per customer
+    basket_stats = df.groupby("_basket").agg(
+        basket_value=("revenue", "sum"),
+        basket_depth=("stockcode", "nunique"),
+        solo=("stockcode", lambda x: 1 if len(x) == 1 else 0),
+    ).reset_index()
+
+    # Merge back to get customer_id
+    basket_to_cust = df[["_basket", "customer_id", "date"]].drop_duplicates()
+    basket_stats = basket_stats.merge(basket_to_cust, on="_basket")
+
+    # Customer-level aggregations
+    customer_features = basket_stats.groupby("customer_id").agg(
+        median_basket_value=("basket_value", "median"),
+        avg_basket_depth=("basket_depth", "mean"),
+        solo_trip_rate=("solo", "mean"),
+        n_baskets=("_basket", "count"),
+    ).reset_index()
+
+    # IPT-CV
+    from src.analytics.basket_metrics import compute_ipt_cv
+    ipt = compute_ipt_cv(transactions_df)
+    customer_features = customer_features.merge(ipt[["customer_id", "ipt_cv"]], on="customer_id", how="left")
+
+    # Modal day of week
+    dow = df.groupby("customer_id")["date"].apply(
+        lambda x: x.dt.dayofweek.mode().iloc[0] if not x.empty else -1
+    ).reset_index(name="modal_day_of_week")
+    customer_features = customer_features.merge(dow, on="customer_id", how="left")
+
+    # Dominant category share
+    if "category" in df.columns:
+        cat_spend = df.groupby(["customer_id", "category"])["revenue"].sum().reset_index()
+        cat_spend["cat_share"] = cat_spend.groupby("customer_id")["revenue"].transform(
+            lambda x: x / x.sum()
+        )
+        dominant_cat = cat_spend.loc[cat_spend.groupby("customer_id")["cat_share"].idxmax()]
+        dominant_cat = dominant_cat[["customer_id", "category", "cat_share"]].rename(
+            columns={"category": "dominant_category", "cat_share": "dominant_category_share"}
+        )
+        customer_features = customer_features.merge(dominant_cat, on="customer_id", how="left")
+    else:
+        customer_features["dominant_category"] = "Unknown"
+        customer_features["dominant_category_share"] = 1.0
+
+    # Fill NaN
+    customer_features = customer_features.fillna({
+        "ipt_cv": customer_features["ipt_cv"].median() if "ipt_cv" in customer_features.columns else 0.5,
+        "modal_day_of_week": -1,
+        "dominant_category_share": 1.0,
+    })
+
+    # Features for clustering
+    feature_cols = [
+        "median_basket_value", "ipt_cv", "modal_day_of_week",
+        "solo_trip_rate", "avg_basket_depth", "dominant_category_share",
+    ]
+
+    # Normalize modal_day_of_week to 0-1
+    customer_features["modal_day_of_week_norm"] = customer_features["modal_day_of_week"] / 6.0
+
+    X = customer_features[feature_cols].copy()
+    X["modal_day_of_week"] = X["modal_day_of_week_norm"]
+
+    # Scale
+    scaler = RobustScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    # KMeans clustering
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    customer_features["occasion_cluster"] = kmeans.fit_predict(X_scaled)
+
+    # Label clusters based on centroids
+    centroids = pd.DataFrame(
+        scaler.inverse_transform(kmeans.cluster_centers_),
+        columns=feature_cols,
+    )
+
+    # Determine labels based on feature profiles
+    labels = {}
+    for cluster_id in range(n_clusters):
+        centroid = centroids.iloc[cluster_id]
+        # High basket value + low solo rate + high depth = Stock-up
+        # Low basket value + high solo rate = Impulse
+        # High IPT-CV + low frequency = Occasional
+        # Medium everything = Top-up
+
+        if centroid["median_basket_value"] > centroids["median_basket_value"].median() \
+           and centroid["solo_trip_rate"] < centroids["solo_trip_rate"].median() \
+           and centroid["avg_basket_depth"] > centroids["avg_basket_depth"].median():
+            labels[cluster_id] = "Stock-up"
+        elif centroid["solo_trip_rate"] > centroids["solo_trip_rate"].median() \
+             and centroid["median_basket_value"] < centroids["median_basket_value"].median():
+            labels[cluster_id] = "Impulse"
+        elif centroid["ipt_cv"] > centroids["ipt_cv"].median():
+            labels[cluster_id] = "Occasional"
+        else:
+            labels[cluster_id] = "Top-up"
+
+    customer_features["occasion_segment"] = customer_features["occasion_cluster"].map(labels)
+
+    return customer_features
+
+
+def compute_occasion_segment_profiles(
+    transactions_df: pd.DataFrame,
+    occasion_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Get detailed profiles for each occasion segment."""
+    df = transactions_df.merge(
+        occasion_df[["customer_id", "occasion_segment"]], on="customer_id", how="left"
+    )
+    df["revenue"] = df["price"] * df["quantity"]
+
+    profiles = (
+        df.groupby("occasion_segment")
+        .agg(
+            n_customers=("customer_id", "nunique"),
+            total_revenue=("revenue", "sum"),
+            avg_basket_value=("revenue", "mean"),
+            avg_basket_depth=("stockcode", lambda x: df.loc[x.index, "stockcode"].nunique() / df.loc[x.index, "customer_id"].nunique()),
+            median_basket_value=("revenue", "median"),
+            avg_ipt_cv=("ipt_cv", "mean") if "ipt_cv" in df.columns else ("revenue", lambda x: np.nan),
+            solo_trip_rate=("stockcode", lambda x: 1.0),  # placeholder
+            modal_day_of_week=("date", lambda x: x.dt.dayofweek.mode().iloc[0] if not x.empty else -1),
+            dominant_category=(
+                "category",
+                lambda x: x.mode().iloc[0] if "category" in df.columns and not x.mode().empty else "N/A"
+            ),
+        )
+        .reset_index()
+    )
+
+    # Compute solo_trip_rate properly
+    basket_stats = df.groupby(["customer_id", "date"]).agg(
+        basket_depth=("stockcode", "nunique"),
+    ).reset_index()
+    basket_stats["solo"] = (basket_stats["basket_depth"] == 1).astype(int)
+    solo_rate = basket_stats.groupby("customer_id")["solo"].mean().reset_index(name="solo_trip_rate")
+    solo_rate = solo_rate.merge(occasion_df[["customer_id", "occasion_segment"]], on="customer_id")
+
+    profiles = profiles.merge(
+        solo_rate.groupby("occasion_segment")["solo_trip_rate"].mean().reset_index(),
+        on="occasion_segment"
+    )
+
+    profiles["revenue_share"] = profiles["total_revenue"] / profiles["total_revenue"].sum()
+    profiles["customer_share"] = profiles["n_customers"] / profiles["n_customers"].sum()
+
+    return profiles

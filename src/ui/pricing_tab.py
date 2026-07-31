@@ -16,6 +16,8 @@ from src.analytics import (
     compute_basket_penetration,
     compute_basket_value_uplift,
     compute_product_metrics,
+    compute_kvi_composite_df,
+    compute_price_ladder_df,
     diagnose_price_curves_1d,
     diagnose_price_curves_multivariate,
     estimate_bayesian_hierarchical_elasticity,
@@ -46,6 +48,10 @@ def render_pricing_tab(
         _render_elasticity_analysis(transactions_df, product_lookup, params, pipeline)
     elif mode == "kvi":
         _render_kvi_identification(transactions_df, product_lookup, params, pipeline)
+    elif mode == "kvi_composite":
+        _render_kvi_composite(transactions_df, product_lookup, params, pipeline)
+    elif mode == "price_ladder":
+        _render_price_ladder(transactions_df, product_lookup, params, pipeline)
     elif mode == "price_curves":
         _render_price_curve_diagnostics(transactions_df, product_lookup, params, pipeline)
     elif mode == "promo_uplift":
@@ -932,6 +938,313 @@ def _render_kvi_feature_importance(kvi_features: pd.DataFrame):
     """Render KVI feature importance."""
     st.info("Feature importance computed from XGBoost model used for KVI scoring.")
     # Would show SHAP values or feature importance from the model
+
+
+# ============================================================================
+# KVI COMPOSITE (Phase 2 - NielsenIQ 4-signal framework)
+# ============================================================================
+
+
+def _render_kvi_composite(
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None
+):
+    """Render KVI Composite using 4-signal NielsenIQ framework."""
+    st.header("🏷️ KVI Composite Score (NielsenIQ 4-Signal Framework)")
+    st.caption(
+        "Signals: Elasticity | Penetration | Frequency | Price Recall Proxy  |  "
+        "Quadrants: True KVI / Promo Lever / Price Anchor / Margin Recovery"
+    )
+
+    # Check for elasticity data
+    elasticity_df = params.get("elasticity_results")
+
+    @st.cache_data
+    def get_kvi_composite_cached(df, elast_df):
+        return compute_kvi_composite_df(df, elast_df)
+
+    with st.spinner("Computing KVI composite scores..."):
+        kvi_df = get_kvi_composite_cached(transactions_df, elasticity_df)
+
+    if kvi_df.empty:
+        st.warning("No KVI data available")
+        return
+
+    st.success(f"Scored {len(kvi_df)} SKUs")
+
+    # Top-level metrics
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total SKUs Scored", len(kvi_df))
+    with col2:
+        st.metric("Tier 1 (Top) SKUs", f"{(kvi_df['kvi_tier'] == 'Tier 1 (Top)').sum()}")
+    with col3:
+        st.metric("True KVI Quadrant", f"{(kvi_df['kvi_quadrant'] == 'True KVI').sum()}")
+    with col4:
+        st.metric("Mean KVI Score", f"{kvi_df['kvi_score'].mean():.3f}")
+
+    # Sub-tabs
+    kvi_tabs = [" KVI Quadrant", " Price Ladder", " Tier Table", " Signal Breakdown"]
+    selected = persistent_tabs(kvi_tabs, "kvi_composite_tabs", default_tab=0)
+
+    if selected == 0:
+        _render_kvi_quadrant_chart(kvi_df, product_lookup)
+    elif selected == 1:
+        _render_price_ladder_chart(transactions_df, product_lookup, params)
+    elif selected == 2:
+        _render_kvi_tier_table(kvi_df, product_lookup)
+    elif selected == 3:
+        _render_kvi_signal_breakdown(kvi_df, product_lookup)
+
+    render_analytics_export(kvi_df, "KVI_Composite")
+
+
+def _render_kvi_quadrant_chart(kvi_df: pd.DataFrame, product_lookup: dict):
+    """Render KVI Quadrant: Elasticity vs Price Recall Proxy."""
+    st.subheader("KVI Quadrant Chart")
+    st.caption(
+        "X = |Elasticity| (Price Sensitivity)  |  "
+        "Y = Price Recall Proxy (Frequency × Price Stability)  |  "
+        "Size = Revenue  |  Color = KVI Quadrant"
+    )
+
+    # Quadrant colors
+    quad_colors = {
+        "True KVI": "#2E7D32",        # Green - Protect
+        "Promo Lever": "#FF8F00",      # Amber - Promote
+        "Price Anchor": "#1565C0",     # Blue - Fair Price
+        "Margin Recovery": "#C62828",  # Red - Recover Margin
+    }
+
+    fig = px.scatter(
+        kvi_df,
+        x="abs_elasticity",
+        y="price_recall_proxy",
+        size="total_revenue",
+        color="kvi_quadrant",
+        color_discrete_map=quad_colors,
+        hover_data=["product_name", "category", "kvi_score", "recommended_price_action", "avg_price"],
+        title="KVI Quadrant: Elasticity vs Price Recall",
+        labels={
+            "abs_elasticity": "|Elasticity| (Price Sensitivity)",
+            "price_recall_proxy": "Price Recall Proxy",
+            "kvi_quadrant": "KVI Quadrant",
+            "total_revenue": "Revenue",
+        },
+        size_max=50,
+    )
+
+    # Quadrant lines at medians
+    x_med = kvi_df["abs_elasticity"].median()
+    y_med = kvi_df["price_recall_proxy"].median()
+    fig.add_vline(x=x_med, line_dash="dash", line_color="gray", line_width=1)
+    fig.add_hline(y=y_med, line_dash="dash", line_color="gray", line_width=1)
+
+    # Quadrant labels
+    x_max = kvi_df["abs_elasticity"].max() * 1.1
+    y_max = kvi_df["price_recall_proxy"].max() * 1.1
+    x_min = kvi_df["abs_elasticity"].min() * 0.9
+    y_min = kvi_df["price_recall_proxy"].min() * 0.9
+
+    fig.add_annotation(x=x_max*0.7, y=y_max*0.9, text="<b>True KVI</b>", showarrow=False, font=dict(color="#2E7D32", size=14))
+    fig.add_annotation(x=x_max*0.7, y=y_min*1.1, text="<b>Promo Lever</b>", showarrow=False, font=dict(color="#FF8F00", size=14))
+    fig.add_annotation(x=x_min*1.3, y=y_max*0.9, text="<b>Price Anchor</b>", showarrow=False, font=dict(color="#1565C0", size=14))
+    fig.add_annotation(x=x_min*1.3, y=y_min*1.1, text="<b>Margin Recovery</b>", showarrow=False, font=dict(color="#C62828", size=14))
+
+    fig.update_layout(height=600)
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Quadrant summary
+    quad_summary = kvi_df.groupby("kvi_quadrant").agg(
+        SKUs=("stockcode", "count"),
+        Total_Revenue=("total_revenue", "sum"),
+        Avg_KVI_Score=("kvi_score", "mean"),
+        Avg_Elasticity=("abs_elasticity", "mean"),
+        Avg_Recall=("price_recall_proxy", "mean"),
+    ).reset_index()
+
+    st.dataframe(
+        quad_summary.style.format({
+            "Total_Revenue": "${:,.0f}",
+            "Avg_KVI_Score": "{:.3f}",
+            "Avg_Elasticity": "{:.3f}",
+            "Avg_Recall": "{:.3f}",
+        }).background_gradient(cmap="RdYlGn", subset=["Total_Revenue", "Avg_KVI_Score"]),
+        use_container_width=True,
+    )
+
+
+def _render_price_ladder_chart(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
+    """Render Price Ladder Chart with tier bands and violations."""
+    st.subheader("Price Ladder Chart")
+    st.caption(
+        "Horizontal dots = SKU ASP position. Shaded bands = price tiers (KMeans). "
+        "Red dots = SKUs violating tier placement."
+    )
+
+    n_tiers = params.get("n_tiers", 3)
+
+    @st.cache_data
+    def get_ladder_cached(df, tiers):
+        return compute_price_ladder_df(df, n_tiers=tiers)
+
+    with st.spinner("Computing price ladder..."):
+        ladder_df = get_ladder_cached(transactions_df, n_tiers)
+
+    if ladder_df.empty:
+        st.warning("No price ladder data available")
+        return
+
+    ladder_df["product_name"] = ladder_df["stockcode"].map(product_lookup)
+
+    # Tier colors
+    tier_colors = {
+        0: "rgba(46, 125, 50, 0.15)",    # Value - green tint
+        1: "rgba(21, 101, 192, 0.15)",   # Mainstream - blue tint
+        2: "rgba(255, 143, 0, 0.15)",    # Premium - amber tint
+        3: "rgba(198, 40, 40, 0.15)",    # Ultra - red tint
+        4: "rgba(103, 58, 183, 0.15)",   # Luxury - purple tint
+    }
+
+    fig = go.Figure()
+
+    # Tier bands
+    for tier in sorted(ladder_df["price_tier"].dropna().unique()):
+        tier_data = ladder_df[ladder_df["price_tier"] == tier]
+        tier_min = tier_data["tier_min"].iloc[0]
+        tier_max = tier_data["tier_max"].iloc[0]
+        fig.add_shape(
+            type="rect",
+            x0=tier_min, x1=tier_max,
+            y0=-0.5, y1=len(ladder_df) - 0.5,
+            fillcolor=tier_colors.get(int(tier), "rgba(128, 128, 128, 0.1)"),
+            line=dict(width=0),
+            layer="below",
+        )
+        # Tier label
+        fig.add_annotation(
+            x=(tier_min + tier_max) / 2,
+            y=len(ladder_df) + 1,
+            text=tier_data["tier_label"].iloc[0],
+            showarrow=False,
+            font=dict(size=12, color="gray"),
+            xanchor="center",
+        )
+
+    # SKU dots
+    compliant = ladder_df[~ladder_df["violation"]]
+    violations = ladder_df[ladder_df["violation"]]
+
+    if not compliant.empty:
+        fig.add_trace(go.Scatter(
+            x=compliant["asp"],
+            y=compliant["product_name"],
+            mode="markers",
+            marker=dict(color="#2E7D32", size=10, symbol="circle"),
+            name="Compliant",
+            hovertemplate="<b>%{y}</b><br>ASP: $%{x:.2f}<extra></extra>",
+        ))
+
+    if not violations.empty:
+        fig.add_trace(go.Scatter(
+            x=violations["asp"],
+            y=violations["product_name"],
+            mode="markers",
+            marker=dict(color="#C62828", size=12, symbol="x"),
+            name="Tier Violation",
+            hovertemplate="<b>%{y}</b><br>ASP: $%{x:.2f}<br>VIOLATION<extra></extra>",
+        ))
+
+    fig.update_layout(
+        title="Price Ladder: ASP by SKU with Tier Bands",
+        xaxis_title="Average Selling Price ($)",
+        yaxis_title="SKU",
+        height=max(500, len(ladder_df) * 20),
+        showlegend=True,
+        yaxis=dict(autorange="reversed"),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Violations table
+    if not violations.empty:
+        st.warning(f"⚠️ {len(violations)} SKUs with tier violations")
+        st.dataframe(
+            violations[["product_name", "stockcode", "asp", "tier_label", "tier_min", "tier_max"]].style.format({
+                "asp": "${:.2f}",
+                "tier_min": "${:.2f}",
+                "tier_max": "${:.2f}",
+            }),
+            use_container_width=True,
+        )
+
+
+def _render_kvi_tier_table(kvi_df: pd.DataFrame, product_lookup: dict):
+    """Render KVI Tier table with action recommendations."""
+    st.subheader("KVI Tiers & Recommended Actions")
+
+    tier_order = ["Tier 1 (Top)", "Tier 2", "Tier 3", "Tier 4 (Background)"]
+    kvi_df["kvi_tier"] = pd.Categorical(kvi_df["kvi_tier"], categories=tier_order, ordered=True)
+    kvi_df = kvi_df.sort_values("kvi_tier")
+
+    display_cols = [
+        "product_name", "stockcode", "category", "kvi_tier",
+        "kvi_score", "kvi_quadrant", "recommended_price_action",
+        "total_revenue", "basket_penetration", "abs_elasticity", "price_recall_proxy",
+    ]
+    display_cols = [c for c in display_cols if c in kvi_df.columns]
+
+    st.dataframe(
+        kvi_df[display_cols].style.format({
+            "total_revenue": "${:,.0f}",
+            "basket_penetration": "{:.1%}",
+            "abs_elasticity": "{:.3f}",
+            "price_recall_proxy": "{:.3f}",
+            "kvi_score": "{:.3f}",
+        }).background_gradient(cmap="RdYlGn", subset=["kvi_score", "total_revenue"]),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+def _render_kvi_signal_breakdown(kvi_df: pd.DataFrame, product_lookup: dict):
+    """Render signal breakdown heatmap."""
+    st.subheader("KVI Signal Breakdown")
+    st.caption("Each signal normalized 0-1. KVI Score = equal-weighted average of 4 signals.")
+
+    signal_cols = ["elasticity_signal", "penetration_signal", "frequency_signal", "recall_signal"]
+    available = [c for c in signal_cols if c in kvi_df.columns]
+
+    if not available:
+        st.info("Signal breakdown not available")
+        return
+
+    # Heatmap
+    fig = go.Figure(go.Heatmap(
+        z=kvi_df[available].values.T,
+        x=kvi_df["product_name"].tolist(),
+        y=available,
+        colorscale="RdYlGn",
+        text=kvi_df[available].round(3).values.T,
+        texttemplate="%{text}",
+        colorbar=dict(title="Signal Strength"),
+    ))
+    fig.update_layout(
+        height=300,
+        xaxis_tickangle=45,
+        title="Signal Strength by SKU (Green=High, Red=Low)",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# ============================================================================
+# PRICE LADDER (Standalone mode)
+# ============================================================================
+
+
+def _render_price_ladder(
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None
+):
+    """Render standalone Price Ladder mode."""
+    _render_price_ladder_chart(transactions_df, product_lookup, params)
 
 
 # ============================================================================

@@ -5,6 +5,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+from src.analytics.demand_transference import (
+    compute_demand_transference_matrix,
+)
+from src.analytics.bootstrap import bootstrap_ci_customer
 from src.analytics.sufficiency import (
     assess_data_sufficiency,
     format_sufficiency_summary,
@@ -151,6 +155,7 @@ def render_switching_tab(
         " Asymmetry View",
         " Markov Chain",
         " Sankey Flow",
+        " Demand Transfer Sankey",
         " Customer Loyalty",
     ]
     selected = persistent_tabs(tab_labels, "switching_view_tabs", default_tab=0)
@@ -166,6 +171,8 @@ def render_switching_tab(
     elif selected == 4:
         _render_sankey_tab(switch_matrix, product_lookup)
     elif selected == 5:
+        _render_demand_transfer_sankey_tab(transactions_df, product_lookup, params)
+    elif selected == 6:
         _render_loyalty_tab(loyalty)
 
 
@@ -438,6 +445,199 @@ def _render_sankey_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No switching data for Sankey diagram")
+
+
+def _render_demand_transfer_sankey_tab(
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
+):
+    """Render Demand Transfer Sankey with Bootstrap CI confidence bands."""
+    st.subheader("Demand Transfer Sankey (with Bootstrap CI)")
+    st.caption(
+        "Flow = demand transfer volume (units). "
+        "Color = CI width: Green (narrow CI = confident) → Red (wide CI = uncertain). "
+        "Hover for 95% CI: '95% CI: 32–48 units transferred'."
+    )
+
+    n_resamples = st.slider(
+        "Bootstrap Resamples",
+        50,
+        500,
+        params.get("bootstrap_resamples", 100),
+        key="dt_sankey_bootstrap_n",
+        help="More resamples = more accurate CI but slower",
+    )
+
+    # Compute switching matrix
+    window_days = params.get("window_days", 90)
+    min_transactions = params.get("min_transactions", 3)
+
+    @st.cache_data
+    def get_switching_cached(df, win, min_t):
+        return compute_switching_matrix(df, window_days=win, min_transactions=min_t)
+
+    with st.spinner("Computing switching matrix..."):
+        switch_matrix = get_switching_cached(transactions_df, window_days, min_transactions)
+
+    if switch_matrix.empty:
+        st.warning("No switching data available")
+        return
+
+    # Compute demand transference matrix
+    @st.cache_data
+    def get_dt_cached(df, sw):
+        return compute_demand_transference_matrix(df, sw)
+
+    with st.spinner("Computing demand transference..."):
+        dt_matrix = get_dt_cached(transactions_df, switch_matrix)
+
+    if dt_matrix.empty:
+        st.warning("No demand transference data available")
+        return
+
+    # Top transfers
+    top_n = params.get("top_n_products", 30)
+    top_transfers = dt_matrix.nlargest(top_n, "demand_transference")
+
+    # Get all unique products in top transfers
+    all_products = list(
+        set(top_transfers["from_product"].tolist() + top_transfers["to_product"].tolist())
+    )
+    product_to_idx = {p: i for i, p in enumerate(all_products)}
+
+    sources = top_transfers["from_product"].map(product_to_idx).tolist()
+    targets = top_transfers["to_product"].map(product_to_idx).tolist()
+    values = top_transfers["demand_transference"].tolist()
+
+    # Labels
+    def _label(p):
+        name = product_lookup.get(p, p) if product_lookup else p
+        return name[:32] + "…" if len(name) > 32 else name
+
+    labels = [_label(p) for p in all_products]
+
+    # Compute Bootstrap CI for each transfer
+    st.info("Computing bootstrap confidence intervals...")
+
+    @st.cache_data
+    def compute_transfer_ci_cached(df, from_p, to_p, n_resamp):
+        def _transfer_stat(d):
+            sw = compute_switching_matrix(d, window_days=window_days, min_transactions=min_transactions)
+            dt = compute_demand_transference_matrix(d, sw)
+            row = dt[(dt["from_product"] == from_p) & (dt["to_product"] == to_p)]
+            return float(row["demand_transference"].iloc[0]) if not row.empty else 0.0
+
+        return bootstrap_ci_customer(df, _transfer_stat, n_resamples=n_resamp, random_seed=42)
+
+    ci_results = {}
+    progress = st.progress(0)
+    for i, row in top_transfers.iterrows():
+        from_p = row["from_product"]
+        to_p = row["to_product"]
+        ci = compute_transfer_ci_cached(transactions_df, from_p, to_p, n_resamples)
+        ci_results[(from_p, to_p)] = ci
+        progress.progress((i + 1) / len(top_transfers))
+
+    # CI width for color coding
+    ci_widths = []
+    ci_strings = []
+    for i, row in top_transfers.iterrows():
+        ci = ci_results.get((row["from_product"], row["to_product"]), {})
+        lower = ci.get("lower", 0)
+        upper = ci.get("upper", 0)
+        width = upper - lower
+        ci_widths.append(width)
+        ci_strings.append(f"95% CI: [{lower:.1f}, {upper:.1f}] units")
+
+    # Normalize CI widths for color (narrow = green, wide = red)
+    max_width = max(ci_widths) if ci_widths else 1
+    min_width = min(ci_widths) if ci_widths else 0
+
+    def ci_to_color(width):
+        if max_width == min_width:
+            return "rgba(100, 100, 100, 0.5)"
+        norm = (width - min_width) / (max_width - min_width)
+        # Green (low CI) to Red (high CI)
+        r = int(255 * norm)
+        g = int(255 * (1 - norm))
+        return f"rgba({r}, {g}, 0, 0.6)"
+
+    link_colors = [ci_to_color(w) for w in ci_widths]
+
+    # Node colors based on total outflow
+    max_val = max(values) if values else 1
+    node_outgoing = {
+        p: top_transfers.loc[top_transfers["from_product"] == p, "demand_transference"].sum()
+        for p in all_products
+    }
+    node_colors = [
+        f"rgba(70, 130, 180, {min(0.4 + node_outgoing.get(p, 0) / max_val * 0.6, 1.0):.2f})"
+        for p in all_products
+    ]
+
+    # Sankey with CI-colored links
+    fig = go.Figure(
+        data=[
+            go.Sankey(
+                arrangement="perpendicular",
+                node=dict(
+                    pad=20,
+                    thickness=20,
+                    line=dict(color="black", width=0.5),
+                    label=labels,
+                    color=node_colors,
+                    hovertemplate="%{label}<extra></extra>",
+                ),
+                link=dict(
+                    source=sources,
+                    target=targets,
+                    value=values,
+                    color=link_colors,
+                    hovertemplate=(
+                        "%{source.label} \u2192 %{target.label}: "
+                        "%{value:.1f} units transferred<br>"
+                        "%{customdata}<extra></extra>"
+                    ),
+                    customdata=ci_strings,
+                ),
+            )
+        ]
+    )
+
+    fig.update_layout(
+        title_text="Demand Transfer Flow with Bootstrap 95% CI",
+        font=dict(size=14, color="#111111", family="Arial, sans-serif"),
+        height=700,
+        margin=dict(l=200, r=180, t=50, b=50),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # CI Legend
+    st.markdown("""
+    **Link Color Legend:**
+    - 🟢 **Green** = Narrow CI (high confidence in transfer estimate)
+    - 🟡 **Yellow** = Moderate CI width
+    - 🔴 **Red** = Wide CI (low confidence, estimate uncertain)
+    """)
+
+    # CI details table
+    st.subheader("Transfer Details with Confidence Intervals")
+    detail_df = top_transfers[["from_product", "to_product", "switch_rate", "revenue_share_from", "demand_transference", "revenue_at_risk"]].copy()
+    detail_df["From"] = detail_df["from_product"].map(product_lookup)
+    detail_df["To"] = detail_df["to_product"].map(product_lookup)
+    detail_df["CI"] = [ci_strings[i] for i in range(len(detail_df))]
+    detail_df["CI_Width"] = ci_widths
+
+    st.dataframe(
+        detail_df[["From", "To", "switch_rate", "revenue_share_from", "demand_transference", "revenue_at_risk", "CI", "CI_Width"]].style.format({
+            "switch_rate": "{:.1%}",
+            "revenue_share_from": "{:.3%}",
+            "demand_transference": "{:.4f}",
+            "revenue_at_risk": "${:,.0f}",
+            "CI_Width": "{:.2f}",
+        }).background_gradient(cmap="RdYlGn_r", subset=["CI_Width"]),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
 def _render_loyalty_tab(loyalty: pd.DataFrame):

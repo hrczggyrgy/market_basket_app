@@ -1942,3 +1942,188 @@ def compute_segment_wasserstein_matrix(
                 matrix.loc[seg_b, seg_a] = dist
 
     return matrix
+
+
+# ============================================================================
+# KVI COMPOSITE SCORE (Phase 2 extension)
+# ============================================================================
+
+
+def compute_kvi_composite_df(
+    transactions_df: pd.DataFrame,
+    elasticity_df: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
+    """Compute KVI Composite Score using NielsenIQ 4-signal framework.
+
+    Four signals (weighted equally by default):
+    1. Elasticity Signal: |elasticity| - higher = more price sensitive = more KVI
+    2. Penetration Signal: basket_penetration - higher = more shoppers notice price = more KVI
+    3. Frequency Signal: purchase_frequency - higher = more repeat exposure = more KVI
+    4. Price Recall Proxy: frequency_rank * (1 - price_cv_rank)
+       High frequency + stable price = strong price memory = KVI
+
+    Returns DataFrame with: stockcode, kvi_score, kvi_quadrant, kvi_tier, recommended_price_action
+    """
+    from src.analytics import (
+        compute_basket_penetration,
+        compute_product_metrics,
+    )
+
+    # Base product metrics
+    product_metrics = compute_product_metrics(transactions_df)
+
+    # Basket penetration
+    basket_pen = compute_basket_penetration(transactions_df)
+    product_metrics = product_metrics.merge(
+        basket_pen[["stockcode", "basket_penetration", "trip_incidence"]],
+        on="stockcode", how="left"
+    )
+
+    # Purchase frequency (transactions per unique customer)
+    product_metrics["purchase_frequency"] = (
+        product_metrics["total_transactions"] / product_metrics["total_customers"].replace(0, np.nan)
+    )
+
+    # Price CV (already in product_metrics as price_cv)
+    if "price_cv" not in product_metrics.columns:
+        product_metrics["price_cv"] = product_metrics["price_std"] / product_metrics["avg_price"].replace(0, np.nan)
+
+    # Elasticity signal
+    if elasticity_df is not None and not elasticity_df.empty:
+        elast = elasticity_df[["stockcode", "elasticity"]].copy()
+        elast["abs_elasticity"] = elast["elasticity"].abs()
+        product_metrics = product_metrics.merge(elast, on="stockcode", how="left")
+    else:
+        product_metrics["abs_elasticity"] = 0
+
+    # Normalize signals 0-1 (min-max)
+    signals = {
+        "elasticity_signal": "abs_elasticity",
+        "penetration_signal": "basket_penetration",
+        "frequency_signal": "purchase_frequency",
+        "price_cv_signal": "price_cv",  # lower is better for recall
+    }
+
+    for sig_name, col in signals.items():
+        vals = product_metrics[col].fillna(0)
+        mn, mx = vals.min(), vals.max()
+        if mx > mn:
+            if sig_name == "price_cv_signal":
+                # Invert: low price_cv = high recall
+                product_metrics[sig_name] = 1 - (vals - mn) / (mx - mn)
+            else:
+                product_metrics[sig_name] = (vals - mn) / (mx - mn)
+        else:
+            product_metrics[sig_name] = 0.5
+
+    # Price Recall Proxy = frequency_rank * (1 - price_cv_rank)
+    freq_rank = product_metrics["purchase_frequency"].rank(pct=True)
+    price_cv_rank = product_metrics["price_cv"].rank(pct=True)
+    product_metrics["price_recall_proxy"] = freq_rank * (1 - price_cv_rank)
+    # Normalize
+    mn, mx = product_metrics["price_recall_proxy"].min(), product_metrics["price_recall_proxy"].max()
+    if mx > mn:
+        product_metrics["recall_signal"] = (product_metrics["price_recall_proxy"] - mn) / (mx - mn)
+    else:
+        product_metrics["recall_signal"] = 0.5
+
+    # KVI Composite Score (equal weights)
+    product_metrics["kvi_score"] = (
+        0.25 * product_metrics["elasticity_signal"] +
+        0.25 * product_metrics["penetration_signal"] +
+        0.25 * product_metrics["frequency_signal"] +
+        0.25 * product_metrics["recall_signal"]
+    )
+
+    # KVI Quadrant: High/Low Elasticity x High/Low Recall
+    elast_median = product_metrics["abs_elasticity"].median()
+    recall_median = product_metrics["price_recall_proxy"].median()
+
+    def assign_quadrant(row):
+        high_elast = row["abs_elasticity"] >= elast_median
+        high_recall = row["price_recall_proxy"] >= recall_median
+        if high_elast and high_recall:
+            return "True KVI"
+        elif high_elast and not high_recall:
+            return "Promo Lever"
+        elif not high_elast and high_recall:
+            return "Price Anchor"
+        else:
+            return "Margin Recovery"
+
+    product_metrics["kvi_quadrant"] = product_metrics.apply(assign_quadrant, axis=1)
+
+    # KVI Tier (quartiles of kvi_score)
+    product_metrics["kvi_tier"] = pd.qcut(
+        product_metrics["kvi_score"],
+        q=4,
+        labels=["Tier 1 (Top)", "Tier 2", "Tier 3", "Tier 4 (Background)"],
+        duplicates="drop",
+    )
+
+    # Recommended price action
+    def recommend_action(row):
+        quad = row["kvi_quadrant"]
+        if quad == "True KVI":
+            return "Protect"
+        elif quad == "Promo Lever":
+            return "Promote"
+        elif quad == "Price Anchor":
+            return "Fair Price"
+        else:
+            return "Recover Margin"
+
+    product_metrics["recommended_price_action"] = product_metrics.apply(recommend_action, axis=1)
+
+    # Return key columns
+    return product_metrics[[
+        "stockcode", "product_name" if "product_name" in product_metrics.columns else "stockcode",
+        "category" if "category" in product_metrics.columns else "stockcode",
+        "total_revenue", "avg_price", "basket_penetration",
+        "purchase_frequency", "abs_elasticity", "price_recall_proxy",
+        "kvi_score", "kvi_quadrant", "kvi_tier", "recommended_price_action",
+    ]].copy()
+
+
+def compute_price_ladder_df(
+    transactions_df: pd.DataFrame,
+    n_tiers: int = 3,
+) -> pd.DataFrame:
+    """Compute price ladder data: ASP per SKU with tier assignments and violations."""
+    from src.analytics import compute_product_metrics
+    from sklearn.cluster import KMeans
+
+    product_metrics = compute_product_metrics(transactions_df)
+
+    # ASP per product (median price)
+    product_metrics["asp"] = product_metrics["median_price"]
+
+    # KMeans on ASP for tier clustering
+    asp_values = product_metrics[["asp"]].dropna()
+    if len(asp_values) < n_tiers:
+        product_metrics["price_tier"] = 0
+        product_metrics["tier_label"] = "Single Tier"
+        return product_metrics
+
+    kmeans = KMeans(n_clusters=n_tiers, random_state=42, n_init=10)
+    product_metrics.loc[asp_values.index, "price_tier"] = kmeans.fit_predict(asp_values)
+
+    # Sort tiers by mean ASP
+    tier_order = product_metrics.groupby("price_tier")["asp"].mean().sort_values().index
+    tier_map = {old: new for new, old in enumerate(tier_order)}
+    product_metrics["price_tier"] = product_metrics["price_tier"].map(tier_map)
+
+    tier_labels = {0: "Value", 1: "Mainstream", 2: "Premium", 3: "Ultra", 4: "Luxury"}
+    product_metrics["tier_label"] = product_metrics["price_tier"].map(tier_labels).fillna("Tier " + product_metrics["price_tier"].astype(str))
+
+    # Tier boundaries
+    tier_bounds = product_metrics.groupby("price_tier")["asp"].agg(["min", "max"]).rename(columns={"min": "tier_min", "max": "tier_max"})
+    product_metrics = product_metrics.merge(tier_bounds, on="price_tier", how="left")
+
+    # Violation: SKU's ASP outside its tier boundaries (shouldn't happen with KMeans but check)
+    product_metrics["violation"] = (
+        (product_metrics["asp"] < product_metrics["tier_min"]) |
+        (product_metrics["asp"] > product_metrics["tier_max"])
+    )
+
+    return product_metrics

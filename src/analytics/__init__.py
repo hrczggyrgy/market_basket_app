@@ -87,6 +87,16 @@ from .cdt_validation import (
     generate_synthetic_cluster_data,
     run_cdt_validation,
 )
+from .category_overview import (
+    compute_category_scorecard,
+    infer_categories_nlp,
+    get_category_medians,
+)
+from .clv_customer import (
+    compute_clv_customer_df,
+    compute_clv_segment_profiles,
+    get_rfm_heatmap_data,
+)
 from .cohort import (
     cohort_comparison_summary,
     compute_cohort_sizes,
@@ -106,7 +116,9 @@ from .demand_transference import (
     node_delist_impact,
 )
 from .pricing import (
+    compute_kvi_composite_df,
     compute_kvi_score,
+    compute_price_ladder_df,
     diagnose_price_curves,
     diagnose_price_curves_1d,
     diagnose_price_curves_multivariate,
@@ -137,6 +149,9 @@ from .promo_uplift import (
 from .promotional import (
     calculate_incremental_revenue,
     calculate_promotional_lift,
+    compute_incrementality_waterfall,
+    compute_promo_baseline_stl,
+    compute_promo_calendar_heatmap,
     detect_promotions,
     halo_effect_analysis,
     promotion_timing_analysis,
@@ -151,6 +166,18 @@ from .segmentation import (
     get_segment_profiles,
     rfm_segmentation,
     value_based_segmentation,
+)
+from .segmentation_enhanced import (
+    compute_cluster_stability,
+    compute_enhanced_behavioral_features,
+    compute_occasion_segments,
+    compute_occasion_segment_profiles,
+    compute_pca_projection,
+    compute_segment_migration,
+    compute_segment_migration_matrix,
+    compute_segment_retention,
+    compute_umap_projection,
+    get_segment_recommendations,
 )
 from .segmentation_validation import (
     generate_synthetic_customer_segments,
@@ -205,9 +232,20 @@ __all__ = [
     "detect_promotions",
     "calculate_promotional_lift",
     "calculate_incremental_revenue",
+    "compute_promo_baseline_stl",
+    "compute_promo_calendar_heatmap",
+    "compute_incrementality_waterfall",
     "promo_roi_analysis",
     "halo_effect_analysis",
     "promotion_timing_analysis",
+    # Category Overview
+    "compute_category_scorecard",
+    "infer_categories_nlp",
+    "get_category_medians",
+    # CLV Customer
+    "compute_clv_customer_df",
+    "compute_clv_segment_profiles",
+    "get_rfm_heatmap_data",
     # Basket metrics
     "compute_basket_penetration",
     "compute_basket_value_uplift",
@@ -285,10 +323,15 @@ __all__ = [
     "estimate_hierarchical_elasticity",
     "estimate_bayesian_hierarchical_elasticity",
     "estimate_elasticity_xgb",
+    "compute_kvi_composite_df",
     "compute_kvi_score",
+    "compute_price_ladder_df",
     "diagnose_price_curves",
     "diagnose_price_curves_1d",
     "diagnose_price_curves_multivariate",
+    # Occasion Segmentation
+    "compute_occasion_segments",
+    "compute_occasion_segment_profiles",
     # Assortment
     "evaluate_assortment",
     "generate_assortment_scenarios",

@@ -207,6 +207,7 @@ def render_sidebar() -> Config:
         "Analysis Category",
         [
             "Association Rules",
+            "Category & CLV Analytics",  # NEW: Category Overview + CLV
             "CDT & Assortment",  # NEW primary
             "Pricing & Promotions",  # NEW primary
             "Customer Segmentation",
@@ -231,6 +232,16 @@ def render_sidebar() -> Config:
             index=0,
             key="sidebar_analysis_mode_assoc",
         )
+    elif analysis_category == "Category & CLV Analytics":
+        analysis_mode = st.sidebar.radio(
+            "Category & CLV Mode",
+            [
+                "Category Overview",  # NLP-inferred category scorecard
+                "CLV Analytics",  # BG/NBD customer lifetime value
+            ],
+            index=0,
+            key="sidebar_analysis_mode_cat_clv",
+        )
     elif analysis_category == "CDT & Assortment":
         analysis_mode = st.sidebar.radio(
             "CDT & Assortment Mode",
@@ -248,7 +259,9 @@ def render_sidebar() -> Config:
             "Pricing & Promotions Mode",
             [
                 "Elasticity Analysis",  # price elasticity estimation
-                "KVI Identification",  # key value item scoring
+                "KVI Identification",  # key value item scoring (XGB)
+                "KVI Composite",  # NielsenIQ 4-signal framework
+                "Price Ladder",  # ASP tier chart with violations
                 "Price Curve Diagnostics",  # tier clustering & violations
                 "Promo Uplift Modeling",  # causal uplift estimation
                 "Elasticity Benchmark",  # synthetic-data validation
@@ -295,6 +308,26 @@ def render_sidebar() -> Config:
         )
         analysis_params["min_transactions"] = st.sidebar.slider(
             "Min Customer Transactions", 2, 10, 3, key="switching_min_trans"
+        )
+
+    elif analysis_mode == "Category Overview":
+        analysis_params["n_categories"] = st.sidebar.slider(
+            "Number of Inferred Categories", 4, 15, 8, key="cat_overview_n_clusters"
+        )
+        analysis_params["prior_weeks"] = st.sidebar.slider(
+            "PoP Prior Window (weeks)", 2, 8, 4, key="cat_overview_prior_weeks"
+        )
+
+    elif analysis_mode == "CLV Analytics":
+        analysis_params["prediction_horizon_days"] = st.sidebar.slider(
+            "Prediction Horizon (days)", 30, 365, 90, key="clv_horizon_days"
+        )
+        analysis_params["clv_freq"] = st.sidebar.selectbox(
+            "Time Frequency",
+            ["D", "W"],
+            format_func=lambda x: "Daily" if x == "D" else "Weekly",
+            index=0,
+            key="clv_freq",
         )
 
     elif analysis_mode == "CDT Builder":
@@ -450,6 +483,15 @@ def render_sidebar() -> Config:
         analysis_params["top_k_kvi"] = st.sidebar.slider("Top K KVI", 10, 100, 20, key="kvi_top_k")
         analysis_params["margin_weighted"] = st.sidebar.checkbox(
             "Margin-Weighted (if cost available)", value=False, key="kvi_margin_weighted"
+        )
+
+    elif analysis_mode == "KVI Composite":
+        st.sidebar.info("Uses NielsenIQ 4-signal framework: Elasticity, Penetration, Frequency, Price Recall")
+        analysis_params["kvi_composite_run"] = True
+
+    elif analysis_mode == "Price Ladder":
+        analysis_params["n_tiers"] = st.sidebar.slider(
+            "Number of Price Tiers", 2, 5, 3, key="price_ladder_tiers"
         )
 
     elif analysis_mode == "Price Curve Diagnostics":

@@ -18,7 +18,9 @@ from src.data.generator import generate_transactions
 from src.data.loader import get_data_summary, load_transactions
 from src.rules.generator import filter_rules, generate_rules
 from src.ui.addon_tab import render_addon_tab
+from src.ui.category_overview_tab import render_category_overview_tab
 from src.ui.cdt_unified_tab import render_cdt_tab
+from src.ui.clv_tab import render_clv_tab
 from src.ui.cohort_tab import render_cohort_tab
 from src.ui.copurchase_tab import render_copurchase_tab
 from src.ui.export import render_export_buttons
@@ -170,6 +172,10 @@ def run_analysis(config: Config):
             render_cohort_tab(transactions_df, product_lookup, all_params, pipeline)
         elif analysis_mode == "Promotional Analytics":
             render_promotional_tab(transactions_df, product_lookup, all_params, pipeline)
+        elif analysis_mode == "Category Overview":
+            render_category_overview_tab(transactions_df, product_lookup, all_params, pipeline)
+        elif analysis_mode == "CLV Analytics":
+            render_clv_tab(transactions_df, product_lookup, all_params, pipeline)
         elif analysis_mode == "CDT Builder":
             render_cdt_tab(transactions_df, product_lookup, all_params, pipeline, mode="cdt")
         elif analysis_mode == "Demand Transference":

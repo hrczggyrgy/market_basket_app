@@ -5,7 +5,12 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.analytics.promotional import detect_promotions
+from src.analytics.promotional import (
+    compute_incrementality_waterfall,
+    compute_promo_baseline_stl,
+    compute_promo_calendar_heatmap,
+    detect_promotions,
+)
 from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
@@ -92,6 +97,9 @@ def render_promotional_tab(
         " Halo Effect",
         " Timing Analysis",
         " Period Comparison",
+        " Promo Baseline (STL)",
+        " Incrementality Waterfall",
+        " Promo Calendar",
     ]
     selected = persistent_tabs(promo_tabs, "promo_main_tabs", default_tab=0)
 
@@ -107,6 +115,12 @@ def render_promotional_tab(
         render_timing_analysis_tab(transactions_df, product_lookup, promo_periods, params)
     elif selected == 5:
         render_period_comparison_tab(transactions_df, promo_periods, params)
+    elif selected == 6:
+        render_promo_baseline_tab(transactions_df, product_lookup, promo_periods, params)
+    elif selected == 7:
+        render_incrementality_waterfall_tab(transactions_df, product_lookup, promo_periods, params)
+    elif selected == 8:
+        render_promo_calendar_tab(transactions_df, product_lookup, promo_periods, params)
 
 
 def render_promotional_lift_tab(
@@ -649,3 +663,306 @@ def render_period_comparison_tab(
                     labels={"month_name": "Month", "Revenue": "Revenue ($)"},
                 )
                 st.plotly_chart(fig, width="stretch")
+
+
+def render_promo_baseline_tab(
+    transactions_df: pd.DataFrame,
+    product_lookup: dict,
+    promo_periods: pd.DataFrame,
+    params: dict,
+):
+    """Render Promo Baseline using STL decomposition."""
+    st.subheader("Promo Baseline (STL Decomposition)")
+    st.caption(
+        "Baseline = Trend + Seasonal (STL). Incremental = Actual - Baseline. "
+        "Replaces simple price-comparison with proper time-series decomposition."
+    )
+
+    @st.cache_data
+    def get_baseline_cached(df, promo):
+        return compute_promo_baseline_stl(df, promo)
+
+    with st.spinner("Computing STL baseline..."):
+        baseline_df = get_baseline_cached(transactions_df, promo_periods)
+
+    if baseline_df.empty:
+        st.warning("No baseline data available")
+        return
+
+    st.success(f"Baseline computed for {baseline_df['stockcode'].nunique()} products")
+
+    # Product selector
+    products = baseline_df["stockcode"].unique()
+    selected_product = st.selectbox(
+        "Select Product",
+        products,
+        format_func=lambda x: product_lookup.get(x, x),
+        key="promo_baseline_product",
+    )
+
+    if not selected_product:
+        st.info("Select a product to view baseline")
+        return
+
+    prod_data = baseline_df[baseline_df["stockcode"] == selected_product].copy()
+    prod_data["week_str"] = prod_data["week"].astype(str)
+
+    # Actual vs Baseline chart
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=prod_data["week_str"],
+        y=prod_data["actual_revenue"],
+        mode="lines+markers",
+        name="Actual Revenue",
+        line=dict(color="#1565C0", width=2),
+    ))
+    fig.add_trace(go.Scatter(
+        x=prod_data["week_str"],
+        y=prod_data["baseline_revenue"],
+        mode="lines+markers",
+        name="Baseline (Trend+Seasonal)",
+        line=dict(color="#C62828", width=2, dash="dash"),
+    ))
+
+    # Highlight promo weeks
+    promo_weeks = prod_data[prod_data["is_promo"]]
+    if not promo_weeks.empty:
+        fig.add_trace(go.Scatter(
+            x=promo_weeks["week_str"],
+            y=promo_weeks["actual_revenue"],
+            mode="markers",
+            marker=dict(color="#FF8F00", size=10, symbol="star"),
+            name="Promo Week",
+        ))
+
+    fig.update_layout(
+        title=f"Actual vs Baseline Revenue: {product_lookup.get(selected_product, selected_product)}",
+        xaxis_title="Week",
+        yaxis_title="Revenue ($)",
+        height=500,
+        xaxis_tickangle=45,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Incremental chart
+    fig2 = go.Figure()
+    fig2.add_trace(go.Bar(
+        x=prod_data["week_str"],
+        y=prod_data["incremental_revenue"],
+        name="Incremental Revenue",
+        marker_color=np.where(prod_data["incremental_revenue"] >= 0, "#2E7D32", "#C62828"),
+    ))
+    fig2.update_layout(
+        title="Incremental Revenue by Week",
+        xaxis_title="Week",
+        yaxis_title="Incremental Revenue ($)",
+        height=350,
+        xaxis_tickangle=45,
+    )
+    st.plotly_chart(fig2, use_container_width=True)
+
+    # Summary metrics
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Baseline", f"${prod_data['baseline_revenue'].sum():,.0f}")
+    with col2:
+        st.metric("Total Actual", f"${prod_data['actual_revenue'].sum():,.0f}")
+    with col3:
+        st.metric("Total Incremental", f"${prod_data['incremental_revenue'].sum():,.0f}")
+    with col4:
+        st.metric("Avg Incrementality", f"{prod_data['incrementality_pct'].mean():.1f}%")
+
+    # Full table
+    with st.expander("View All Products Baseline Summary"):
+        agg = baseline_df.groupby("stockcode").agg(
+            baseline_revenue=("baseline_revenue", "sum"),
+            actual_revenue=("actual_revenue", "sum"),
+            incremental_revenue=("incremental_revenue", "sum"),
+            avg_incrementality_pct=("incrementality_pct", "mean"),
+        ).reset_index()
+        agg["product_name"] = agg["stockcode"].map(product_lookup)
+        st.dataframe(
+            agg.style.format({
+                "baseline_revenue": "${:,.0f}",
+                "actual_revenue": "${:,.0f}",
+                "incremental_revenue": "${:,.0f}",
+                "avg_incrementality_pct": "{:.1f}%",
+            }).background_gradient(cmap="RdYlGn", subset=["incremental_revenue", "avg_incrementality_pct"]),
+            use_container_width=True,
+        )
+
+
+def render_incrementality_waterfall_tab(
+    transactions_df: pd.DataFrame,
+    product_lookup: dict,
+    promo_periods: pd.DataFrame,
+    params: dict,
+):
+    """Render True Incrementality Waterfall."""
+    st.subheader("True Incrementality Waterfall")
+    st.caption(
+        "Waterfall: Baseline → +Incremental → +Halo → -Cannibalization = Net Incremental. "
+        "Baseline from STL decomposition. Halo from basket uplift. Cannibalization from demand transference."
+    )
+
+    @st.cache_data
+    def get_baseline_cached(df, promo):
+        return compute_promo_baseline_stl(df, promo)
+
+    with st.spinner("Computing waterfall components..."):
+        baseline_df = get_baseline_cached(transactions_df, promo_periods)
+
+        # Halo effect
+        from src.analytics.promotional import halo_effect_analysis
+        halo = halo_effect_analysis(transactions_df, promo_periods, window_days=7)
+
+        # Cannibalization from demand transference
+        from src.analytics.demand_transference import compute_demand_transference_matrix
+        from src.analytics.switching import compute_switching_matrix
+        switching = compute_switching_matrix(transactions_df)
+        dt_matrix = compute_demand_transference_matrix(transactions_df, switching)
+
+    if baseline_df.empty:
+        st.warning("No baseline data available")
+        return
+
+    waterfall = compute_incrementality_waterfall(baseline_df, halo, dt_matrix)
+
+    if waterfall.empty:
+        st.warning("No waterfall data available")
+        return
+
+    waterfall["product_name"] = waterfall["stockcode"].map(product_lookup)
+
+    # Waterfall chart (aggregate)
+    st.subheader("Aggregate Waterfall")
+    agg_baseline = waterfall["baseline_revenue"].sum()
+    agg_incremental = waterfall["incremental_revenue"].sum()
+    agg_halo = waterfall["halo_revenue"].sum()
+    agg_cannib = waterfall["cannibalization_revenue"].sum()
+    agg_net = waterfall["net_incremental_revenue"].sum()
+
+    fig = go.Figure(go.Waterfall(
+        name="Revenue",
+        orientation="v",
+        measure=["absolute", "relative", "relative", "relative", "total"],
+        x=["Baseline", "+Incremental", "+Halo", "-Cannibalization", "Net Incremental"],
+        y=[agg_baseline, agg_incremental, agg_halo, -agg_cannib, agg_net],
+        text=[f"${v:,.0f}" for v in [agg_baseline, agg_incremental, agg_halo, -agg_cannib, agg_net]],
+        textposition="outside",
+        connector=dict(line=dict(color="rgb(63, 63, 63)")),
+        increasing=dict(marker=dict(color="#2E7D32")),
+        decreasing=dict(marker=dict(color="#C62828")),
+        totals=dict(marker=dict(color="#1565C0")),
+    ))
+    fig.update_layout(
+        title="True Incrementality Waterfall (Aggregate)",
+        yaxis_title="Revenue ($)",
+        height=450,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Per-product waterfall table
+    st.subheader("Per-Product Waterfall")
+    display_cols = [
+        "product_name", "stockcode",
+        "baseline_revenue", "incremental_revenue", "halo_revenue",
+        "cannibalization_revenue", "net_incremental_revenue", "roi",
+    ]
+    display_cols = [c for c in display_cols if c in waterfall.columns]
+
+    st.dataframe(
+        waterfall[display_cols].style.format({
+            "baseline_revenue": "${:,.0f}",
+            "incremental_revenue": "${:,.0f}",
+            "halo_revenue": "${:,.0f}",
+            "cannibalization_revenue": "${:,.0f}",
+            "net_incremental_revenue": "${:,.0f}",
+            "roi": "{:.1%}",
+        }).background_gradient(cmap="RdYlGn", subset=["net_incremental_revenue", "roi"]),
+        use_container_width=True,
+    )
+
+    render_analytics_export(waterfall, "Incrementality_Waterfall")
+
+
+def render_promo_calendar_tab(
+    transactions_df: pd.DataFrame,
+    product_lookup: dict,
+    promo_periods: pd.DataFrame,
+    params: dict,
+):
+    """Render Promo Calendar Heatmap."""
+    st.subheader("Promo Calendar Heatmap")
+    st.caption(
+        "Weeks (X) × Products (Y). Cell = Promo active (detected via price drop). "
+        "Shows forward-buy risk (consecutive promo weeks) and promo fatigue."
+    )
+
+    top_n = st.slider("Top N Products", 10, 100, 30, key="promo_cal_top_n")
+
+    @st.cache_data
+    def get_calendar_cached(df, promo, n):
+        return compute_promo_calendar_heatmap(df, promo, top_n_products=n)
+
+    with st.spinner("Generating promo calendar..."):
+        cal_matrix = get_calendar_cached(transactions_df, promo_periods, top_n)
+
+    if cal_matrix.empty:
+        st.warning("No promo calendar data available")
+        return
+
+    # Convert boolean to int for heatmap
+    cal_display = cal_matrix.astype(int)
+    cal_display.index = [product_lookup.get(x, x)[:30] for x in cal_display.index]
+    cal_display.columns = [str(c) for c in cal_display.columns]
+
+    fig = go.Figure(go.Heatmap(
+        z=cal_display.values,
+        x=cal_display.columns,
+        y=cal_display.index,
+        colorscale=[[0, "white"], [1, "#E63946"]],
+        showscale=False,
+        hovertemplate="Product: %{y}<br>Week: %{x}<br>Promo: %{z}<extra></extra>",
+    ))
+    fig.update_layout(
+        title=f"Promo Calendar: Top {top_n} Products",
+        xaxis_title="Week",
+        yaxis_title="Product",
+        height=max(400, len(cal_display) * 25),
+        yaxis=dict(autorange="reversed"),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Consecutive promo weeks detection
+    st.subheader("Promo Fatigue Risk: Consecutive Weeks")
+    consecutive = []
+    for product in cal_matrix.index:
+        promo_weeks = cal_matrix.loc[product]
+        promo_indices = promo_weeks[promo_weeks].index.tolist()
+        if len(promo_indices) > 1:
+            # Check for consecutive
+            consecutive_streak = 1
+            max_streak = 1
+            for i in range(1, len(promo_indices)):
+                if (promo_indices[i] - promo_indices[i-1]).n == 1:
+                    consecutive_streak += 1
+                    max_streak = max(max_streak, consecutive_streak)
+                else:
+                    consecutive_streak = 1
+            if max_streak > 1:
+                consecutive.append({
+                    "product": product_lookup.get(product, product),
+                    "max_consecutive_weeks": max_streak,
+                    "total_promo_weeks": len(promo_indices),
+                })
+
+    if consecutive:
+        consec_df = pd.DataFrame(consecutive).sort_values("max_consecutive_weeks", ascending=False)
+        st.dataframe(
+            consec_df.style.background_gradient(cmap="Reds", subset=["max_consecutive_weeks"]),
+            use_container_width=True,
+        )
+        st.warning("⚠️ Products with consecutive promo weeks risk forward-buy and margin erosion")
+    else:
+        st.success("✅ No consecutive promo weeks detected")

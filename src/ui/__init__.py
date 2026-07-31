@@ -1,6 +1,8 @@
 """UI module initialization."""
 
 from .addon_tab import render_addon_tab
+from .category_overview_tab import render_category_overview_tab
+from .clv_tab import render_clv_tab
 from .cohort_tab import render_cohort_tab
 from .copurchase_tab import render_copurchase_tab
 from .export import render_analytics_export, render_export_buttons
@@ -25,6 +27,8 @@ __all__ = [
     "render_product_performance_tab",
     "render_cohort_tab",
     "render_promotional_tab",
+    "render_category_overview_tab",
+    "render_clv_tab",
     "render_export_buttons",
     "render_analytics_export",
     "persistent_tabs",

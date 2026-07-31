@@ -744,3 +744,91 @@ def compute_product_dashboard_metrics(
         metrics["product_name"] = metrics["stockcode"].map(product_lookup)
 
     return metrics
+
+
+def compute_sku_rationalization_df(
+    transactions_df: pd.DataFrame,
+    product_lookup: Optional[Dict[str, str]] = None,
+) -> pd.DataFrame:
+    """Compute SKU rationalization dataframe - primary assortment decision table.
+
+    One row per SKU with ABC/XYZ classification, switching metrics, and recommended action.
+    """
+    from src.analytics.product_performance import (
+        abc_analysis,
+        xyz_analysis,
+        compute_product_dashboard_metrics,
+    )
+    from src.analytics.demand_transference import compute_demand_transference_matrix
+    from src.analytics.switching import compute_switching_matrix
+
+    # Get base metrics
+    metrics = compute_product_dashboard_metrics(transactions_df)
+    if product_lookup:
+        metrics["product_name"] = metrics["stockcode"].map(product_lookup)
+
+    # ABC Analysis
+    metrics = abc_analysis(metrics)
+
+    # XYZ Analysis
+    xyz = xyz_analysis(transactions_df)
+    metrics = metrics.merge(xyz[["stockcode", "xyz_class", "cv"]], on="stockcode", how="left")
+
+    # Demand transference (substitutability)
+    switching_df = compute_switching_matrix(transactions_df)
+    dt_matrix = compute_demand_transference_matrix(transactions_df, switching_df)
+    # Substitutability score = sum of demand transference TO this product
+    sub_score = dt_matrix.groupby("to_product")["demand_transference"].sum().rename("substitutability_score")
+    metrics = metrics.merge(sub_score, left_on="stockcode", right_index=True, how="left")
+    metrics["substitutability_score"] = metrics["substitutability_score"].fillna(0)
+
+    # Revenue cumulative share
+    metrics = metrics.sort_values("total_revenue", ascending=False).reset_index(drop=True)
+    metrics["revenue_cumsum"] = metrics["total_revenue"].cumsum()
+    metrics["revenue_cumshare_pct"] = metrics["revenue_cumsum"] / metrics["total_revenue"].sum() * 100
+
+    # Trend index (last 4 weeks vs prior 4 weeks)
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["revenue"] = df["price"] * df["quantity"]
+    max_date = df["date"].max()
+    recent_4w = df[df["date"] >= max_date - pd.Timedelta(weeks=4)]
+    prior_4w = df[(df["date"] >= max_date - pd.Timedelta(weeks=8)) & (df["date"] < max_date - pd.Timedelta(weeks=4))]
+    recent_rev = recent_4w.groupby("stockcode")["revenue"].sum()
+    prior_rev = prior_4w.groupby("stockcode")["revenue"].sum()
+    metrics["trend_index"] = metrics["stockcode"].map(
+        lambda s: recent_rev.get(s, 0) / prior_rev.get(s, 1) if prior_rev.get(s, 0) > 0 else 1.0
+    )
+
+    # Recommended action rule engine
+    metrics["recommended_action"] = metrics.apply(_classify_sku_action, axis=1)
+    metrics["action_color"] = metrics["recommended_action"].map({
+        "🔴 Delist Candidate": "#C62828",
+        "🟢 Core — Protect": "#2E7D32",
+        "🟡 Watch — Declining": "#FF8F00",
+        "🟠 Review — Volatile/Low": "#E65100",
+        "⚪ Monitor": "#757575",
+    }).fillna("#757575")
+
+    return metrics
+
+
+def _classify_sku_action(row) -> str:
+    """Rule engine for SKU rationalization action."""
+    abc = row.get("abc_class", "C")
+    repeat_rate = row.get("repeat_rate", 0)
+    sub_score = row.get("substitutability_score", 0)
+    basket_uplift = row.get("basket_value_uplift_pct", 0)
+    trend = row.get("trend_index", 1.0)
+    xyz = row.get("xyz_class", "Z")
+
+    if abc == "C" and repeat_rate < 0.10 and sub_score > 0.6:
+        return "🔴 Delist Candidate"
+    elif abc == "A" and basket_uplift > 0:
+        return "🟢 Core — Protect"
+    elif trend < 0.8 and abc == "B":
+        return "🟡 Watch — Declining"
+    elif xyz == "Z" and abc == "C":
+        return "🟠 Review — Volatile/Low"
+    else:
+        return "⚪ Monitor"

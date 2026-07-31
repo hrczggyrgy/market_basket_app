@@ -8,6 +8,8 @@ import pandas as pd
 
 from src.analytics.cdt_behavioral import (
     build_behavioral_matrices,
+)
+from src.analytics.copurchase import (
     compute_affinity_matrix,
 )
 from src.application.pipeline import PipelineStage, get_pipeline_store

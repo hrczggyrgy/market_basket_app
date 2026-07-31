@@ -33,6 +33,8 @@ from src.analytics.segmentation import (
 from src.analytics.segmentation_enhanced import (
     compute_cluster_stability,
     compute_enhanced_behavioral_features,
+    compute_occasion_segments,
+    compute_occasion_segment_profiles,
     compute_pca_projection,
     compute_segment_migration,
     compute_segment_migration_matrix,
@@ -194,6 +196,7 @@ def render_segmentation_tab(
         " Migration",
         " Retention",
         " Segment Cards",
+        " Occasion Segments",
     ]
     selected = persistent_tabs(tab_labels, "segmentation_main_tabs", default_tab=0)
 
@@ -217,6 +220,8 @@ def render_segmentation_tab(
         render_retention(transactions_df, pipeline)
     elif selected == 9:
         render_segment_cards(transactions_df, pipeline)
+    elif selected == 10:
+        render_occasion_segments(transactions_df, params, pipeline)
 
 
 def render_overview(transactions_df: pd.DataFrame):
@@ -3567,3 +3572,328 @@ def _render_cdt_results_tabs(
                 top_bundles = get_top_bundling_pairs(bundling_df, top_n=100)
                 csv = top_bundles.to_csv(index=False)
                 st.download_button("Bundling Pairs", csv, "cdt_bundling.csv", "text/csv")
+
+
+def render_occasion_segments(
+    transactions_df: pd.DataFrame, params: dict, pipeline: dict = None
+):
+    """Render Occasion Segments tab with radar chart."""
+    st.header(" Occasion Segments")
+    st.caption(
+        "KMeans on 5 behavioral features: Basket Value, IPT-CV, Modal Day, Solo Trip Rate, Basket Depth. "
+        "Segments: Stock-up / Top-up / Impulse / Occasional"
+    )
+
+    if transactions_df.empty:
+        st.warning("No transaction data available")
+        return
+
+    n_clusters = st.slider(
+        "Number of Occasion Segments",
+        3,
+        6,
+        4,
+        key="occasion_seg_n_clusters",
+    )
+
+    @st.cache_data
+    def get_occasion_cached(df, n_clust):
+        return compute_occasion_segments(df, n_clusters=n_clust)
+
+    with st.spinner("Computing occasion segments..."):
+        occasion_df = get_occasion_cached(transactions_df, n_clusters)
+
+    if occasion_df.empty:
+        st.warning("No occasion segments available")
+        return
+
+    st.success(f"Segmented {len(occasion_df):,} customers into {n_clusters} occasions")
+
+    # Segment profiles
+    @st.cache_data
+    def get_profiles_cached(df, occ_df):
+        return compute_occasion_segment_profiles(df, occ_df)
+
+    with st.spinner("Computing segment profiles..."):
+        profiles = get_profiles_cached(transactions_df, occasion_df)
+
+    # Sub-tabs
+    occ_tabs = [" Radar Chart", " Segment Profiles", " Segment Details", " Customer List"]
+    occ_selected = persistent_tabs(occ_tabs, "occasion_seg_tabs", default_tab=0)
+
+    if occ_selected == 0:
+        _render_occasion_radar(profiles)
+    elif occ_selected == 1:
+        _render_occasion_profiles(profiles, occasion_df)
+    elif occ_selected == 2:
+        _render_occasion_details(transactions_df, occasion_df, profiles)
+    elif occ_selected == 3:
+        _render_occasion_customer_list(occasion_df)
+
+
+def _render_occasion_radar(profiles: pd.DataFrame):
+    """Render radar chart for occasion segments."""
+    st.subheader("Occasion Segment Radar Chart")
+    st.caption(
+        "Each axis = normalized behavioral feature (0-1). "
+        "Shape reveals segment personality: Stock-up (high value, depth) vs Impulse (solo, low value) etc."
+    )
+
+    # Features for radar
+    radar_features = [
+        "median_basket_value",
+        "avg_basket_depth",
+        "solo_trip_rate",
+        "ipt_cv",
+        "dominant_category_share",
+    ]
+    radar_labels = {
+        "median_basket_value": "Basket Value",
+        "avg_basket_depth": "Basket Depth",
+        "solo_trip_rate": "Solo Trip Rate",
+        "ipt_cv": "IPT-CV (Regularity)",
+        "dominant_category_share": "Category Concentration",
+    }
+
+    # Check available features
+    available = [f for f in radar_features if f in profiles.columns]
+    if not available:
+        st.warning("Required features not available for radar chart")
+        return
+
+    # Normalize 0-1
+    radar_data = profiles.set_index("occasion_segment")[available].copy()
+    for feat in available:
+        mn, mx = radar_data[feat].min(), radar_data[feat].max()
+        if mx > mn:
+            radar_data[feat] = (radar_data[feat] - mn) / (mx - mn)
+        else:
+            radar_data[feat] = 0.5
+
+    # Invert IPT-CV (lower = more regular = better)
+    if "ipt_cv" in radar_data.columns:
+        radar_data["ipt_cv"] = 1 - radar_data["ipt_cv"]
+
+    fig = go.Figure()
+    segment_colors = {
+        "Stock-up": "#2E7D32",
+        "Top-up": "#1565C0",
+        "Impulse": "#FF8F00",
+        "Occasional": "#C62828",
+    }
+
+    for segment in radar_data.index:
+        fig.add_trace(go.Scatterpolar(
+            r=radar_data.loc[segment].values,
+            theta=[radar_labels.get(f, f) for f in available],
+            fill="toself",
+            name=segment,
+            line=dict(color=segment_colors.get(segment, "#757575"), width=2),
+            fillcolor=segment_colors.get(segment, "#757575"),
+            opacity=0.3,
+        ))
+
+    fig.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
+        showlegend=True,
+        title="Occasion Segment Behavioral Profiles (Normalized 0-1)",
+        height=550,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Interpretation guide
+    with st.expander(" How to Read the Radar Chart"):
+        st.markdown("""
+        **Segment Shapes:**
+        - **Stock-up** (Green): High basket value, high depth, low solo rate → Large planned trips
+        - **Top-up** (Blue): Medium across all → Regular replenishment trips
+        - **Impulse** (Amber): Low basket value, high solo rate → Quick grab-and-go
+        - **Occasional** (Red): High IPT-CV (irregular), low frequency → Event-driven
+
+        **Axes:**
+        - **Basket Value**: Median spend per trip (higher = bigger trips)
+        - **Basket Depth**: Unique SKUs per trip (higher = more variety)
+        - **Solo Trip Rate**: % of 1-item trips (higher = focused trips)
+        - **IPT-CV (inverted)**: Regularity of visits (higher = more consistent)
+        - **Category Concentration**: Share of spend in top category (higher = focused)
+        """)
+
+
+def _render_occasion_profiles(profiles: pd.DataFrame, occasion_df: pd.DataFrame):
+    """Render segment profile table."""
+    st.subheader("Occasion Segment Profiles")
+
+    display_cols = [
+        "occasion_segment",
+        "n_customers",
+        "customer_share",
+        "total_revenue",
+        "revenue_share",
+        "avg_basket_value",
+        "median_basket_value",
+        "avg_basket_depth",
+        "solo_trip_rate",
+        "avg_ipt_cv",
+        "modal_day_of_week",
+        "dominant_category",
+    ]
+    display_cols = [c for c in display_cols if c in profiles.columns]
+
+    st.dataframe(
+        profiles[display_cols].style.format({
+            "n_customers": "{:,}",
+            "customer_share": "{:.1%}",
+            "total_revenue": "${:,.0f}",
+            "revenue_share": "{:.1%}",
+            "avg_basket_value": "${:.2f}",
+            "median_basket_value": "${:.2f}",
+            "avg_basket_depth": "{:.1f}",
+            "solo_trip_rate": "{:.1%}",
+            "avg_ipt_cv": "{:.2f}",
+        }).background_gradient(cmap="RdYlGn", subset=["total_revenue", "revenue_share", "n_customers"]),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    # Segment size pie
+    col1, col2 = st.columns(2)
+    with col1:
+        fig = px.pie(
+            profiles,
+            values="n_customers",
+            names="occasion_segment",
+            title="Customer Distribution by Occasion",
+            color="occasion_segment",
+            color_discrete_map={
+                "Stock-up": "#2E7D32",
+                "Top-up": "#1565C0",
+                "Impulse": "#FF8F00",
+                "Occasional": "#C62828",
+            },
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        fig = px.pie(
+            profiles,
+            values="total_revenue",
+            names="occasion_segment",
+            title="Revenue Distribution by Occasion",
+            color="occasion_segment",
+            color_discrete_map={
+                "Stock-up": "#2E7D32",
+                "Top-up": "#1565C0",
+                "Impulse": "#FF8F00",
+                "Occasional": "#C62828",
+            },
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_occasion_details(transactions_df: pd.DataFrame, occasion_df: pd.DataFrame, profiles: pd.DataFrame):
+    """Render detailed analysis per occasion segment."""
+    st.subheader("Segment Deep-Dive")
+
+    selected_segment = st.selectbox(
+        "Select Occasion Segment",
+        profiles["occasion_segment"].tolist(),
+        key="occasion_seg_detail_select",
+    )
+
+    if not selected_segment:
+        return
+
+    # Filter customers in this segment
+    segment_customers = occasion_df[occasion_df["occasion_segment"] == selected_segment]["customer_id"].tolist()
+    segment_txns = transactions_df[transactions_df["customer_id"].isin(segment_customers)].copy()
+    segment_txns["revenue"] = segment_txns["price"] * segment_txns["quantity"]
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Customers", len(segment_customers))
+    with col2:
+        st.metric("Total Revenue", f"${segment_txns['revenue'].sum():,.0f}")
+    with col3:
+        st.metric("Avg Basket Value", f"${segment_txns.groupby(['customer_id', 'date'])['revenue'].sum().mean():.2f}")
+    with col4:
+        n_baskets = segment_txns.groupby(['customer_id', 'date']).ngroups
+        st.metric("Total Baskets", f"{n_baskets:,}")
+
+    # Category mix
+    if "category" in segment_txns.columns:
+        st.subheader("Category Mix")
+        cat_mix = segment_txns.groupby("category").agg(
+            revenue=("revenue", "sum"),
+            customers=("customer_id", "nunique"),
+        ).reset_index().sort_values("revenue", ascending=False)
+
+        fig = px.bar(
+            cat_mix.head(10),
+            x="revenue",
+            y="category",
+            orientation="h",
+            title=f"Top Categories for {selected_segment}",
+            color="revenue",
+            color_continuous_scale="Blues",
+        )
+        fig.update_layout(yaxis={"categoryorder": "total ascending"})
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Day of week pattern
+    st.subheader("Day of Week Pattern")
+    dow = segment_txns.groupby(segment_txns["date"].dt.dayofweek).agg(
+        revenue=("revenue", "sum"),
+        baskets=("customer_id", lambda x: x.nunique()),
+    ).reset_index()
+    dow["day_name"] = dow["date"].map({
+        0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"
+    })
+
+    fig = px.bar(
+        dow,
+        x="day_name",
+        y="revenue",
+        title=f"Revenue by Day of Week: {selected_segment}",
+        color="revenue",
+        color_continuous_scale="Blues",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_occasion_customer_list(occasion_df: pd.DataFrame):
+    """Render customer list with occasion segment."""
+    st.subheader("Customer Occasion Assignments")
+
+    # Filters
+    col1, col2 = st.columns(2)
+    with col1:
+        seg_filter = st.multiselect(
+            "Filter by Segment",
+            occasion_df["occasion_segment"].unique().tolist(),
+            default=occasion_df["occasion_segment"].unique().tolist(),
+            key="occasion_cust_filter",
+        )
+    with col2:
+        search = st.text_input("Search Customer ID", key="occasion_cust_search")
+
+    filtered = occasion_df[occasion_df["occasion_segment"].isin(seg_filter)]
+    if search:
+        filtered = filtered[filtered["customer_id"].str.contains(search, case=False)]
+
+    display_cols = ["customer_id", "occasion_segment", "occasion_cluster",
+                    "median_basket_value", "avg_basket_depth", "solo_trip_rate",
+                    "ipt_cv", "modal_day_of_week", "dominant_category"]
+    display_cols = [c for c in display_cols if c in filtered.columns]
+
+    st.dataframe(
+        filtered[display_cols].style.format({
+            "median_basket_value": "${:.2f}",
+            "avg_basket_depth": "{:.1f}",
+            "solo_trip_rate": "{:.1%}",
+            "ipt_cv": "{:.2f}",
+        }),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.caption(f"Showing {len(filtered):,} of {len(occasion_df):,} customers")
