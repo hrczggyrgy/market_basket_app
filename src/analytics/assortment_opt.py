@@ -153,7 +153,6 @@ def optimize_assortment_heuristic(
         if new_obj > current_obj or np.random.random() < np.exp((new_obj - current_obj) / temp):
             current_solution = new_solution
             current_obj = new_obj
-            current_metrics = new_metrics
 
             if new_obj > best_obj:
                 best_solution = new_solution[:]

@@ -33,7 +33,7 @@ def _make_similarity_matrix(products, seed=42):
 
 class TestMutualInformation:
     def test_perfect_split(self):
-        products = ["A", "B", "C", "D"]
+        _products = ["A", "B", "C", "D"]
         cluster_assignments = {"A": 0, "B": 0, "C": 1, "D": 1}
         attr_values = {"A": "X", "B": "X", "C": "Y", "D": "Y"}
         mi = compute_mutual_information(cluster_assignments, attr_values)
@@ -339,7 +339,21 @@ class TestTreeUtilities:
         root.children = [c1, c2]
         df = tree_to_dataframe(root)
         assert len(df) == 3
-        expected_cols = {"node_id", "parent_id", "depth", "name", "n_products", "is_leaf", "similarity_within", "attribute", "attribute_value", "split_criterion", "split_score", "products", "cluster_id"}
+        expected_cols = {
+            "node_id",
+            "parent_id",
+            "depth",
+            "name",
+            "n_products",
+            "is_leaf",
+            "similarity_within",
+            "attribute",
+            "attribute_value",
+            "split_criterion",
+            "split_score",
+            "products",
+            "cluster_id",
+        }
         assert expected_cols.issubset(set(df.columns))
 
     def test_tree_to_json(self):
@@ -349,21 +363,25 @@ class TestTreeUtilities:
         assert "n0" in js
 
     def test_extract_product_attributes(self):
-        df = pd.DataFrame({
-            "stockcode": ["A", "B", "C"],
-            "category": ["Cat1", "Cat2", "Cat1"],
-            "brand": ["B1", "B2", "B1"],
-        })
+        df = pd.DataFrame(
+            {
+                "stockcode": ["A", "B", "C"],
+                "category": ["Cat1", "Cat2", "Cat1"],
+                "brand": ["B1", "B2", "B1"],
+            }
+        )
         attrs = extract_product_attributes(df, attribute_cols=["category", "brand"])
         assert isinstance(attrs, pd.DataFrame)
         assert list(attrs.index) == ["A", "B", "C"]
         assert list(attrs.columns) == ["category", "brand"]
 
     def test_extract_product_attributes_no_attrs(self):
-        df = pd.DataFrame({
-            "stockcode": ["A", "B"],
-            "category": ["Cat1", "Cat2"],
-        })
+        df = pd.DataFrame(
+            {
+                "stockcode": ["A", "B"],
+                "category": ["Cat1", "Cat2"],
+            }
+        )
         attrs = extract_product_attributes(df, attribute_cols=[])
         assert attrs.empty
 

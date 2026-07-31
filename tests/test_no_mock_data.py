@@ -1,8 +1,9 @@
 """Tests to ensure no hardcoded mock segment uplift data exists in UI code."""
 
 import re
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 class TestNoMockSegmentUpliftData:
@@ -18,7 +19,7 @@ class TestNoMockSegmentUpliftData:
         """Fail if the exact mock label list appears anywhere in UI code."""
         # This exact combination should never appear in production code
         forbidden_labels = ["High Value", "Regular", "Occasional", "New"]
-        
+
         for file_path in ui_files:
             content = file_path.read_text()
             # Check if ALL four labels appear in the same file (co-occurrence)
@@ -26,7 +27,9 @@ class TestNoMockSegmentUpliftData:
             if len(found_labels) == 4:
                 # They all appear - check if they're in a list/dict together
                 # Use regex to detect the specific pattern of a segment list
-                pattern = r'["\']High Value["\'].*["\']Regular["\'].*["\']Occasional["\'].*["\']New["\']'
+                pattern = (
+                    r'["\']High Value["\'].*["\']Regular["\'].*["\']Occasional["\'].*["\']New["\']'
+                )
                 if re.search(pattern, content, re.DOTALL):
                     pytest.fail(
                         f"Fabricated segment labels found in {file_path.name}: "
@@ -41,9 +44,9 @@ class TestNoMockSegmentUpliftData:
                 content = file_path.read_text()
                 # Find the _render_uplift_by_segment function
                 func_match = re.search(
-                    r'def _render_uplift_by_segment\(.*?\):(.*?)(?:\ndef |\nclass |\Z)',
+                    r"def _render_uplift_by_segment\(.*?\):(.*?)(?:\ndef |\nclass |\Z)",
                     content,
-                    re.DOTALL
+                    re.DOTALL,
                 )
                 if func_match:
                     func_body = func_match.group(1)
@@ -56,7 +59,7 @@ class TestNoMockSegmentUpliftData:
                             f"in {file_path.name}. Real uplift must come from model output."
                         )
                     # Also check for the old mock assignment pattern
-                    mock_pattern = r'segment_uplift\s*=\s*pd\.DataFrame'
+                    mock_pattern = r"segment_uplift\s*=\s*pd\.DataFrame"
                     if re.search(mock_pattern, func_body):
                         pytest.fail(
                             f"Direct DataFrame assignment to segment_uplift found in "
@@ -70,9 +73,9 @@ class TestNoMockSegmentUpliftData:
             if file_path.name == "pricing_tab.py":
                 content = file_path.read_text()
                 func_match = re.search(
-                    r'def _train_uplift_model\(.*?\):(.*?)(?:\ndef |\nclass |\Z)',
+                    r"def _train_uplift_model\(.*?\):(.*?)(?:\ndef |\nclass |\Z)",
                     content,
-                    re.DOTALL
+                    re.DOTALL,
                 )
                 if func_match:
                     func_body = func_match.group(1)
@@ -103,8 +106,7 @@ class TestNoMockSegmentUpliftData:
                     "_train_uplift_model must call build_uplift_dataset"
                 )
                 # Must call train_t_learner_uplift or train_s_learner_uplift
-                assert ("train_t_learner_uplift" in content 
-                        or "train_s_learner_uplift" in content), (
+                assert "train_t_learner_uplift" in content or "train_s_learner_uplift" in content, (
                     "_train_uplift_model must call real uplift training functions"
                 )
                 # Must call evaluate_uplift_model
@@ -124,13 +126,13 @@ class TestSegmentUpliftEndToEnd:
         """
         This test documents the expected behavior:
         When segmentation runs, the segment labels in session_state['segment_assignments']
-        must come from segmentation.py's output (rfm_segmentation, behavioral_segmentation, 
+        must come from segmentation.py's output (rfm_segmentation, behavioral_segmentation,
         or value_based_segmentation), not from a fixed list.
-        
+
         Actual end-to-end test would require running Streamlit app which is complex.
         This test serves as documentation of the contract.
         """
-        # The contract: segment_assignments["segment"].unique() 
+        # The contract: segment_assignments["segment"].unique()
         # must match one of the segmentation methods' output labels
         # Not a hardcoded list like ["High Value", "Regular", "Occasional", "New"]
         pass

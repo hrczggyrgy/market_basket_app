@@ -417,8 +417,8 @@ def compute_category_leakage_rate(
         Dict: {category: leakage_rate}
     """
     dt = switching_df.copy()
-    dt["from_category"] = dt["from_product"].map({p: c for p, c in cluster_assignments.items()})
-    dt["to_category"] = dt["to_product"].map({p: c for p, c in cluster_assignments.items()})
+    dt["from_category"] = dt["from_product"].map(dict(cluster_assignments.items()))
+    dt["to_category"] = dt["to_product"].map(dict(cluster_assignments.items()))
 
     # Leakage = switching rate flowing to different category
     leakage = dt[dt["from_category"] != dt["to_category"]]
@@ -560,8 +560,8 @@ def compute_recovery_hhi(
     Returns DataFrame with HHI per delisted product.
     """
     dt = demand_transference_df.copy()
-    dt["from_category"] = dt["from_product"].map({p: c for p, c in cluster_assignments.items()})
-    dt["to_category"] = dt["to_product"].map({p: c for p, c in cluster_assignments.items()})
+    dt["from_category"] = dt["from_product"].map(dict(cluster_assignments.items()))
+    dt["to_category"] = dt["to_product"].map(dict(cluster_assignments.items()))
 
     rows = []
     for delisted in dt["from_product"].unique():

@@ -1,6 +1,7 @@
 """Main Streamlit application."""
 
 import traceback
+from typing import Any
 
 import pandas as pd
 import streamlit as st
@@ -21,6 +22,7 @@ from src.ui.cdt_unified_tab import render_cdt_tab
 from src.ui.cohort_tab import render_cohort_tab
 from src.ui.copurchase_tab import render_copurchase_tab
 from src.ui.export import render_export_buttons
+from src.ui.pricing_tab import render_pricing_tab
 from src.ui.product_performance_tab import render_product_performance_tab
 from src.ui.promotional_tab import render_promotional_tab
 from src.ui.rules_tab import render_rules_tab
@@ -28,13 +30,10 @@ from src.ui.segmentation_tab import render_segmentation_tab
 from src.ui.sidebar import render_sidebar
 from src.ui.switching_tab import render_switching_tab
 from src.ui.tree_tab import render_tree_tab
-from src.ui.pricing_tab import render_pricing_tab
 from src.utils.pipeline import (
-    clear_pipeline,
     get_pipeline,
     get_pipeline_summary,
     init_pipeline,
-    invalidate_downstream,
     set_pipeline,
 )
 from src.viz.heatmap import create_heatmap, create_scatter_heatmap
@@ -64,7 +63,6 @@ st.set_page_config(
 def main():
     # Initialize pipeline
     init_pipeline()
-    
     # Header
     st.title("Market Basket Analysis")
     st.caption(
@@ -78,25 +76,19 @@ def main():
 
     # Load data
     transactions_df = None
-    product_lookup = {}
 
     try:
-        if config["use_sample"]:
+        if config.use_sample:
             with st.spinner("Generating sample data..."):
-                transactions_df = generate_transactions(
-                    n_customers=200, seed=42
-                )
-        elif config["uploaded_file"] is not None:
+                transactions_df = generate_transactions(n_customers=200, seed=42)
+        elif config.uploaded_file is not None:
             with st.spinner("Loading transaction data..."):
-                transactions_df = load_transactions(
-                    config["uploaded_file"], config["column_mapping"]
-                )
+                transactions_df = load_transactions(config.uploaded_file, config.column_mapping)
 
         if transactions_df is not None and not transactions_df.empty:
             # Store in pipeline
             set_pipeline("transactions_df", transactions_df)
             set_pipeline("product_lookup", get_product_lookup(transactions_df))
-            
             # Also keep in session_state for backward compatibility
             st.session_state["loaded_df"] = transactions_df
 
@@ -115,14 +107,13 @@ def main():
 
             # Pipeline status indicator
             with st.expander(" Pipeline Status", expanded=False):
-                pipeline = get_pipeline()
                 summary = get_pipeline_summary()
                 for k, v in summary.items():
                     if v != "empty":
                         st.text(f"  {k}: {v}")
 
             # Run analysis when button clicked
-            if config["run_analysis"]:
+            if config.run_analysis:
                 run_analysis(config)
             else:
                 st.info(" Configure parameters in sidebar and click **Run Analysis** to start")
@@ -135,15 +126,15 @@ def main():
 def run_analysis(config: Config):
     """Run the selected analysis using pipeline data."""
 
-    analysis_mode = config["analysis_mode"]
-    params = config["analysis_params"]
+    analysis_mode = config.analysis_mode
+    params = config.analysis_params
 
     # Common FP-Growth parameters
     fp_params = {
-        "min_support": config["min_support"],
-        "min_confidence": config["min_confidence"],
-        "max_itemset_len": config["max_itemset_len"],
-        "min_lift": config["min_lift"],
+        "min_support": config.min_support,
+        "min_confidence": config.min_confidence,
+        "max_itemset_len": config.max_itemset_len,
+        "min_lift": config.min_lift,
     }
 
     # Merge params
@@ -151,8 +142,8 @@ def run_analysis(config: Config):
 
     # Get data from pipeline
     pipeline = get_pipeline()
-    transactions_df = pipeline.get("transactions_df")
-    product_lookup = pipeline.get("product_lookup")
+    transactions_df = pipeline.transactions_df
+    product_lookup = pipeline.product_lookup
 
     if transactions_df is None:
         st.error("No transaction data loaded. Please upload data or use sample data.")
@@ -182,19 +173,29 @@ def run_analysis(config: Config):
         elif analysis_mode == "CDT Builder":
             render_cdt_tab(transactions_df, product_lookup, all_params, pipeline, mode="cdt")
         elif analysis_mode == "Demand Transference":
-            render_cdt_tab(transactions_df, product_lookup, all_params, pipeline, mode="transference")
+            render_cdt_tab(
+                transactions_df, product_lookup, all_params, pipeline, mode="transference"
+            )
         elif analysis_mode == "Assortment Optimizer":
             render_cdt_tab(transactions_df, product_lookup, all_params, pipeline, mode="assortment")
         elif analysis_mode == "Elasticity Analysis":
-            render_pricing_tab(transactions_df, product_lookup, all_params, pipeline, mode="elasticity")
+            render_pricing_tab(
+                transactions_df, product_lookup, all_params, pipeline, mode="elasticity"
+            )
         elif analysis_mode == "KVI Identification":
             render_pricing_tab(transactions_df, product_lookup, all_params, pipeline, mode="kvi")
         elif analysis_mode == "Price Curve Diagnostics":
-            render_pricing_tab(transactions_df, product_lookup, all_params, pipeline, mode="price_curves")
+            render_pricing_tab(
+                transactions_df, product_lookup, all_params, pipeline, mode="price_curves"
+            )
         elif analysis_mode == "Promo Uplift Modeling":
-            render_pricing_tab(transactions_df, product_lookup, all_params, pipeline, mode="promo_uplift")
+            render_pricing_tab(
+                transactions_df, product_lookup, all_params, pipeline, mode="promo_uplift"
+            )
         elif analysis_mode == "Elasticity Benchmark":
-            render_pricing_tab(transactions_df, product_lookup, all_params, pipeline, mode="benchmark")
+            render_pricing_tab(
+                transactions_df, product_lookup, all_params, pipeline, mode="benchmark"
+            )
         elif analysis_mode == "CDT Benchmark":
             render_cdt_tab(transactions_df, product_lookup, all_params, pipeline, mode="cdt")
         else:
@@ -205,7 +206,9 @@ def run_analysis(config: Config):
         st.code(traceback.format_exc())
 
 
-def render_rules_analysis(transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict):
+def render_rules_analysis(
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: Any
+):
     """Render association rules analysis (default mode with all visualizations)."""
 
     # Create basket matrix

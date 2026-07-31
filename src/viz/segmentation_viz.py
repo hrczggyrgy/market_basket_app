@@ -5,8 +5,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from lifelines import KaplanMeierFitter
-from lifelines.statistics import logrank_test
-from scipy.stats import gaussian_kde
 
 
 def plot_kaplan_meier(

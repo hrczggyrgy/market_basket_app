@@ -131,7 +131,7 @@ def find_optimal_clusters(
         except Exception as e:
             import warnings
 
-            warnings.warn(f"Cluster scoring failed for k={k}: {e}")
+            warnings.warn(f"Cluster scoring failed for k={k}: {e}", stacklevel=2)
             scores[k] = np.nan
             continue
 

@@ -223,8 +223,8 @@ def run_cdt_validation(
             results.append(
                 {
                     "method": method,
-                    "adjusted_rand_index": -1.0,
-                    "normalized_mutual_info": -1.0,
+                    "adjusted_rand_index": float("nan"),
+                    "normalized_mutual_info": float("nan"),
                     "n_clusters_found": 0,
                     "n_true_clusters": n_true_clusters,
                     "n_products_matched": 0,

@@ -18,8 +18,7 @@ except ImportError:
 
 # Optional lifetimes for BG/NBD CLV model (ALG-2)
 try:
-    from lifetimes import BetaGeoFitter, GammaGammaFitter
-    from lifetimes.utils import summary_data_from_transaction_data
+    from lifetimes import GammaGammaFitter
 
     LIFETIMES_AVAILABLE = True
 except ImportError:
@@ -175,7 +174,7 @@ def compute_cluster_quality_metrics(
     except Exception as e:
         import warnings
 
-        warnings.warn(f"Cluster stats computation failed: {e}")
+        warnings.warn(f"Cluster stats computation failed: {e}", stacklevel=2)
         return {}
 
 
@@ -829,7 +828,7 @@ def predict_clv_bg_nbd(
         (DataFrame with customer_id, predicted_clv, predicted_purchases,
          expected_avg_value, p_alive, clv_segment, model_diagnostics)
     """
-    if not LIFELINES_AVAILABLE:
+    if not LIFETIMES_AVAILABLE:
         raise ImportError("lifetimes required: pip install lifetimes")
 
     from lifetimes import BetaGeoFitter, GammaGammaFitter

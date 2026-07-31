@@ -1,7 +1,7 @@
 """Pricing & Promotions Tab — Elasticity, KVI, Price Curves, Promo Uplift."""
 
 import warnings
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -38,7 +38,7 @@ def render_pricing_tab(
     product_lookup: dict,
     params: dict,
     mode: str = "elasticity",
-    pipeline: dict = None,
+    pipeline: Any = None,
 ):
     """Main entry point for Pricing & Promotions tab with sub-modes."""
 
@@ -89,7 +89,7 @@ def _render_elasticity_analysis(
     min_price_variation = params.get("min_price_variation", 0.05)
 
     # Check pipeline for cached elasticity results
-    cached_elasticity = pipeline.get("elasticity_results") if pipeline else None
+    cached_elasticity = pipeline.elasticity_results if pipeline else None
     if cached_elasticity is not None and not cached_elasticity.empty:
         st.info("Using cached elasticity results from pipeline")
 

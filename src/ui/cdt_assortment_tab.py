@@ -12,14 +12,12 @@ import streamlit as st
 from src.analytics import (
     build_cdt,
     build_customer_sequences,
-    build_similarity_matrix,
     build_similarity_matrix_ensemble,
     compute_affinity_matrix,
     compute_bundling_matrix,
     extract_product_attributes,
     find_optimal_clusters,
     get_cluster_assignments,
-    get_dendrogram_data,
     get_substitution_matrix,
     get_top_bundling_pairs,
     get_top_substitution_pairs,
@@ -107,7 +105,7 @@ def _invalidate_data_cache_if_changed(transactions_df: pd.DataFrame) -> None:
     cached_fingerprint = st.session_state.get("cdt_assortment_data_fingerprint")
     if cached_fingerprint is not None and cached_fingerprint != data_fingerprint:
         # Data changed - clear all CDT assortment session state
-        keys_to_delete = [k for k in st.session_state.keys() if k.startswith("cdt_assortment_")]
+        keys_to_delete = [k for k in st.session_state if k.startswith("cdt_assortment_")]
         for key in keys_to_delete:
             del st.session_state[key]
 
@@ -257,7 +255,7 @@ def _render_cdt_builder(transactions_df: pd.DataFrame, product_lookup: dict, par
             attr_df,
             min_cluster_size=params.get("min_cluster_size", 3),
             quality_threshold=params.get("quality_threshold", 60) / 100,
-            candidate_attributes=params.get("candidate_attributes", None),
+            candidate_attributes=params.get("candidate_attributes"),
             criterion=params.get("split_criterion", "mutual_info"),
             alpha=params.get("split_alpha", 0.5),
         )
@@ -477,13 +475,6 @@ def _render_demand_transference(transactions_df: pd.DataFrame, product_lookup: d
 
     # Need to run CDT pipeline first to get similarity, clusters, etc.
     with st.spinner("Building CDT pipeline for demand transference..."):
-        # Build similarity
-        sim_matrix = build_similarity_matrix(
-            transactions_df,
-            method=params.get("similarity_methods", ["phi"])[0],
-            min_cooccurrence=params.get("min_cooccurrence", 5),
-        )
-
         # Build sequences and switching
         sequences = build_customer_sequences(transactions_df)
         switching_df = compute_switching_matrix(sequences)
@@ -618,13 +609,6 @@ def _render_assortment_optimizer(transactions_df: pd.DataFrame, product_lookup: 
 
     # Build required inputs
     with st.spinner("Preparing assortment optimization inputs..."):
-        # Similarity
-        sim_matrix = build_similarity_matrix(
-            transactions_df,
-            method=params.get("similarity_methods", ["phi"])[0],
-            min_cooccurrence=params.get("min_cooccurrence", 5),
-        )
-
         # Switching for substitution
         sequences = build_customer_sequences(transactions_df)
         switching_df = compute_switching_matrix(sequences)

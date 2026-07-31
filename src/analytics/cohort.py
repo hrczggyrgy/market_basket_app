@@ -4,10 +4,6 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from lifetimes import BetaGeoFitter, GammaGammaFitter
-from lifetimes.utils import summary_data_from_transaction_data
-from scipy import optimize
-from scipy.stats import norm
 
 
 def _prepare_cohort_df(transactions_df: pd.DataFrame, cohort_period: str = "M") -> pd.DataFrame:
@@ -404,7 +400,6 @@ def compute_cohort_decay_rate(
     decay_rates = {}
     for cohort_idx in retention_matrix.index:
         retention = retention_matrix.loc[cohort_idx].values
-        periods = np.arange(len(retention))
 
         # Fit exponential decay: R(t) = R₀ * exp(-λt)
         # log(R) = log(R₀) - λt
@@ -528,20 +523,9 @@ def compute_waterfall_decomposition(
 
         new = cust_t - cust_t_1
         retained = cust_t & cust_t_1
-        reactivated = (
-            (cust_t - cust_t_1)
-            & set(
-                df[df["period"] < period_t_1]
-                .groupby("customer_id")["period"]
-                .max()[
-                    df[df["period"] < period_t_1].groupby("customer_id")["period"].max()
-                    == period_t_1
-                ]
-                .index
-            )
-            if i > 1
-            else set()
-        )
+        # Reactivated: active in t, not in t-1, but active before t-1
+        active_before_t_1 = set(df[df["period"] < period_t_1]["customer_id"])
+        reactivated = (cust_t - cust_t_1) & active_before_t_1 if i > 1 else set()
         churned = cust_t_1 - cust_t
 
         waterfall_data.append(

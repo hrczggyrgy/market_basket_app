@@ -6,6 +6,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from src.analytics.cdt_behavioral import (
+    build_behavioral_matrices,
+    compute_affinity_matrix,
+)
 from src.application.pipeline import PipelineStage, get_pipeline_store
 from src.config import AppConfig, get_config
 from src.domain.dto import PipelineResult
@@ -336,28 +340,26 @@ class CDTService:
 
         return root, metadata
 
-    def _build_behavioral_matrices(
-        self,
-        transactions_df: pd.DataFrame,
-        sim_matrix: pd.DataFrame,
-        tree_root,
-        cdt_config: CDTConfig,
-    ):
-        """Build switching, substitution, and bundling matrices."""
-from src.analytics.cdt_behavioral import (
-        build_behavioral_matrices,
-        compute_affinity_matrix,
+
+def _build_behavioral_matrices(
+    self,
+    transactions_df: pd.DataFrame,
+    sim_matrix: pd.DataFrame,
+    tree_root,
+    cdt_config: CDTConfig,
+):
+    """Build switching, substitution, and bundling matrices."""
+    # Compute affinity matrix first
+    affinity_matrix = compute_affinity_matrix(sim_matrix, tree_root)
+    # Build behavioral matrices (switching, substitution, bundling)
+    switching_df, substitution_df, bundling_df = build_behavioral_matrices(
+        transactions_df,
+        sim_matrix,
+        affinity_matrix,
+        top_n_products=cdt_config.top_n_products,
     )
 
-        # Build behavioral matrices (switching, substitution, bundling)
-        switching_df, substitution_df, bundling_df = build_behavioral_matrices(
-            transactions_df,
-            sim_matrix,
-            affinity_matrix,
-            top_n_products=cdt_config.top_n_products,
-        )
-
-        return switching_df, substitution_df, bundling_df
+    return switching_df, substitution_df, bundling_df
 
 
 def get_cdt_service(config: Optional[AppConfig] = None) -> CDTService:

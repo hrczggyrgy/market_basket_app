@@ -1,7 +1,6 @@
 """Tests for promotional_validation module."""
 
 import pandas as pd
-import pytest
 
 from src.analytics.promotional_validation import (
     generate_synthetic_promo_data,
@@ -11,9 +10,7 @@ from src.analytics.promotional_validation import (
 
 class TestGenerateSyntheticPromoData:
     def test_returns_dataframe_and_dict(self):
-        df, weeks = generate_synthetic_promo_data(
-            n_weeks=26, n_products=2, random_seed=42
-        )
+        df, weeks = generate_synthetic_promo_data(n_weeks=26, n_products=2, random_seed=42)
         assert isinstance(df, pd.DataFrame)
         assert isinstance(weeks, dict)
         assert len(df) > 0
@@ -27,9 +24,7 @@ class TestGenerateSyntheticPromoData:
 
 class TestRunPromoDetectionValidation:
     def test_returns_dataframe(self):
-        result = run_promo_detection_validation(
-            n_weeks=26, n_products=2, promo_weeks_fraction=0.2
-        )
+        result = run_promo_detection_validation(n_weeks=26, n_products=2, promo_weeks_fraction=0.2)
         assert isinstance(result, pd.DataFrame)
         assert len(result) > 0
 

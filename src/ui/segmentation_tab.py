@@ -1,5 +1,6 @@
 """Customer Segmentation Tab - Enhanced with behavioral features, validation, migration, and actionable segment cards."""
 
+import contextlib
 import traceback
 
 import numpy as np
@@ -1201,18 +1202,10 @@ def render_validation(transactions_df: pd.DataFrame, pipeline: dict = None):
         for method in methods:
             for k in range(k_range[0], k_range[1] + 1):
                 try:
-                    try:
+                    with contextlib.suppress(ImportError):
                         import hdbscan  # noqa: F401
-
-                        HDBSCAN_AVAILABLE = True
-                    except ImportError:
-                        HDBSCAN_AVAILABLE = False
-                    try:
+                    with contextlib.suppress(ImportError):
                         import umap  # noqa: F401
-
-                        UMAP_AVAILABLE = True
-                    except ImportError:
-                        UMAP_AVAILABLE = False
 
                     if method == "kmeans":
                         model = KMeans(n_clusters=k, random_state=42, n_init=10)
@@ -1324,13 +1317,13 @@ def render_migration(transactions_df: pd.DataFrame, pipeline: dict = None):
     st.subheader("Segment Migration Analysis")
     st.caption("Track how customers move between segments over time")
 
-    period_freq = st.selectbox(
+    _period_freq = st.selectbox(
         "Period Frequency",
         ["M", "W", "Q"],
         format_func=lambda x: {"M": "Monthly", "W": "Weekly", "Q": "Quarterly"}[x],
         key="mig_period",
     )
-    n_periods = st.slider("Number of Periods", 3, 12, 6, key="mig_n_periods")
+    _n_periods = st.slider("Number of Periods", 3, 12, 6, key="mig_n_periods")
 
     with st.spinner("Computing segment migrations..."):
         migrations = _cached_compute_segment_migration(transactions_df)
@@ -3574,64 +3567,3 @@ def _render_cdt_results_tabs(
                 top_bundles = get_top_bundling_pairs(bundling_df, top_n=100)
                 csv = top_bundles.to_csv(index=False)
                 st.download_button("Bundling Pairs", csv, "cdt_bundling.csv", "text/csv")
-
-
-def detect_attribute_columns(df: pd.DataFrame) -> list[str]:
-    """Detect common product attribute columns."""
-    candidates = [
-        "category",
-        "brand",
-        "size",
-        "flavor",
-        "color",
-        "variant",
-        "type",
-        "style",
-        "material",
-        "collection",
-        "line",
-        "range",
-        "pack_size",
-        "unit",
-        "weight",
-        "volume",
-        "scent",
-        "design",
-        "theme",
-        "occasion",
-        "target_audience",
-        "gender",
-        "age_group",
-    ]
-    return [c for c in candidates if c in df.columns]
-
-
-def render_quality_summary(metadata: dict):
-    """Render CDT quality metrics at top of results."""
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        delta = " Pass" if metadata["passed_threshold"] else " Fail"
-        st.metric(
-            "Tree Quality vs Baseline",
-            f"{metadata['quality_ratio']:.1%}",
-            delta=delta,
-            help="CDT threshold: 60%",
-        )
-
-    with col2:
-        st.metric("Tree Quality Score", f"{metadata['tree_quality']:.3f}")
-
-    with col3:
-        st.metric("Unconstrained Baseline", f"{metadata['unconstrained_baseline']:.3f}")
-
-    with col4:
-        st.metric("Threshold", f"{metadata['quality_threshold']:.0%}")
-
-    if not metadata["passed_threshold"]:
-        st.warning(
-            f" Tree quality ({metadata['quality_ratio']:.1%}) is below the "
-            f"{metadata['quality_threshold']:.0%} threshold. "
-            f"Consider: lowering min_cluster_size, adding more attributes, "
-            f"or using a different similarity method."
-        )

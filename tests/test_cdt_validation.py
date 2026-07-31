@@ -1,7 +1,6 @@
 """Tests for cdt_validation module."""
 
 import pandas as pd
-import pytest
 
 from src.analytics.cdt_validation import (
     generate_synthetic_cluster_data,
@@ -20,9 +19,7 @@ class TestGenerateSyntheticClusterData:
         assert len(labels) == 10
 
     def test_required_columns_present(self):
-        df, _ = generate_synthetic_cluster_data(
-            n_products=6, n_true_clusters=2, n_customers=30
-        )
+        df, _ = generate_synthetic_cluster_data(n_products=6, n_true_clusters=2, n_customers=30)
         for col in ["date", "transaction_id", "stockcode", "customer_id", "price", "quantity"]:
             assert col in df.columns, f"Missing column: {col}"
 
@@ -86,5 +83,13 @@ class TestRunCdtValidation:
             min_cooccurrence=1,
         )
         for _, row in result.iterrows():
-            assert row["adjusted_rand_index"] >= -1.0
-            assert row["normalized_mutual_info"] >= 0.0
+            # Should not use -1.0 as error marker (now uses NaN)
+            assert row["adjusted_rand_index"] != -1.0, f"Found -1.0 error marker: {row}"
+            assert row["normalized_mutual_info"] != -1.0, f"Found -1.0 error marker: {row}"
+            # If not NaN, should be >= 0
+            import math
+
+            if not math.isnan(row["adjusted_rand_index"]):
+                assert row["adjusted_rand_index"] >= 0.0
+            if not math.isnan(row["normalized_mutual_info"]):
+                assert row["normalized_mutual_info"] >= 0.0

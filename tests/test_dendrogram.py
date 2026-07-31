@@ -14,7 +14,6 @@ from src.analytics.cdt_community import merge_community_dendrograms
 from src.ui.cdt_assortment_tab import create_dendrogram_plot
 from src.viz.cdt_viz import plot_dendrogram
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -135,9 +134,7 @@ class TestCreateDendrogramPlot:
 class TestClusteringToDendrogram:
     def test_full_pipeline_on_synthetic_data(self, similarity_df):
         """Run perform_hierarchical_clustering then plot_dendrogram."""
-        Z, labels = perform_hierarchical_clustering(
-            similarity_df, linkage_method="average"
-        )
+        Z, labels = perform_hierarchical_clustering(similarity_df, linkage_method="average")
         assert Z.size > 0
         assert len(labels) == 3
         fig = plot_dendrogram(Z, labels)
@@ -147,15 +144,11 @@ class TestClusteringToDendrogram:
     def test_empty_similarity_matrix(self):
         empty_df = pd.DataFrame()
         with pytest.raises(ValueError, match="cannot be determined on an empty"):
-            perform_hierarchical_clustering(
-                empty_df, linkage_method="average"
-            )
+            perform_hierarchical_clustering(empty_df, linkage_method="average")
 
     def test_full_pipeline_ordered_labels_match(self, similarity_df):
         """Verify that ordered labels returned are a permutation of input."""
-        Z, labels = perform_hierarchical_clustering(
-            similarity_df, linkage_method="average"
-        )
+        Z, labels = perform_hierarchical_clustering(similarity_df, linkage_method="average")
         assert set(labels) == {"A", "B", "C"}
 
 
@@ -181,9 +174,7 @@ class TestCommunityMergeToDendrogram:
 
     def test_merge_two_communities(self, community_data):
         dendrograms, assignments = community_data
-        merged_Z, merged_labels = merge_community_dendrograms(
-            dendrograms, assignments
-        )
+        merged_Z, merged_labels = merge_community_dendrograms(dendrograms, assignments)
         assert merged_Z.size > 0
         assert len(merged_labels) == 6
         # merged_Z is display-only (may not be valid scipy linkage);
@@ -194,9 +185,7 @@ class TestCommunityMergeToDendrogram:
         Z = linkage(X, method="ward")
         dendrograms = {0: (Z, ["A", "B", "C"])}
         assignments = {"A": 0, "B": 0, "C": 0}
-        merged_Z, merged_labels = merge_community_dendrograms(
-            dendrograms, assignments
-        )
+        merged_Z, merged_labels = merge_community_dendrograms(dendrograms, assignments)
         assert merged_Z.size > 0
         assert merged_labels == ["A", "B", "C"]
 
@@ -210,9 +199,7 @@ class TestCommunityMergeToDendrogram:
     def test_merge_with_empty_linkage(self):
         dendrograms = {0: (np.array([]), []), 1: (np.array([]), [])}
         assignments = {}
-        merged_Z, merged_labels = merge_community_dendrograms(
-            dendrograms, assignments
-        )
+        merged_Z, merged_labels = merge_community_dendrograms(dendrograms, assignments)
         assert merged_Z.size == 0
 
 
@@ -223,9 +210,7 @@ class TestCommunityMergeToDendrogram:
 
 class TestGetClusterAssignments:
     def test_valid_linkage(self, small_linkage, similarity_df):
-        assignments = get_cluster_assignments(
-            small_linkage, similarity_df, n_clusters=2
-        )
+        assignments = get_cluster_assignments(small_linkage, similarity_df, n_clusters=2)
         assert len(assignments) == 3
         assert all(cluster in (0, 1) for cluster in assignments.values())
 
@@ -235,9 +220,6 @@ class TestGetClusterAssignments:
         assert len(set(assignments.values())) == 3  # each its own cluster
 
     def test_single_cluster(self, small_linkage, similarity_df):
-        assignments = get_cluster_assignments(
-            small_linkage, similarity_df, n_clusters=1
-        )
+        assignments = get_cluster_assignments(small_linkage, similarity_df, n_clusters=1)
         assert len(assignments) == 3
         assert all(cluster == 0 for cluster in assignments.values())
-

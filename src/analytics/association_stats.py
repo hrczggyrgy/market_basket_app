@@ -313,7 +313,6 @@ def bootstrap_lift_ci(
     # Build original basket matrix
     basket = create_basket_matrix(transactions_df)
     n_customers = len(basket)
-    product_probs = basket.mean()
 
     # Get unique rules
     rules = rules_df[["product_a", "product_b"]].drop_duplicates()

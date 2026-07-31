@@ -76,9 +76,9 @@ def compute_mutual_information(
     n = len(products)
 
     # Joint distribution P(c, a)
-    joint_counts = defaultdict(int)
-    cluster_counts = defaultdict(int)
-    attr_counts = defaultdict(int)
+    joint_counts: defaultdict[tuple[int, str], int] = defaultdict(int)
+    cluster_counts: defaultdict[int, int] = defaultdict(int)
+    attr_counts: defaultdict[str, int] = defaultdict(int)
 
     for prod in products:
         c = cluster_assignments[prod]
@@ -116,13 +116,13 @@ def compute_gini_gain(
     n = len(products)
 
     # Parent Gini
-    cluster_counts = defaultdict(int)
+    cluster_counts: defaultdict[int, int] = defaultdict(int)
     for p in products:
         cluster_counts[cluster_assignments[p]] += 1
     parent_gini = 1.0 - sum((c / n) ** 2 for c in cluster_counts.values())
 
     # Child Gini (weighted)
-    attr_groups = defaultdict(list)
+    attr_groups: defaultdict[str, list[str]] = defaultdict(list)
     for p in products:
         attr_groups[attribute_values.get(p, "UNKNOWN")].append(p)
 
@@ -133,7 +133,7 @@ def compute_gini_gain(
     for group_products in attr_groups.values():
         if len(group_products) < 2:
             continue
-        group_counts = defaultdict(int)
+        group_counts: defaultdict[int, int] = defaultdict(int)
         for p in group_products:
             group_counts[cluster_assignments[p]] += 1
         group_n = len(group_products)
@@ -161,13 +161,13 @@ def compute_entropy_gain(
     n = len(products)
 
     # Parent Entropy
-    cluster_counts = defaultdict(int)
+    cluster_counts: defaultdict[int, int] = defaultdict(int)
     for p in products:
         cluster_counts[cluster_assignments[p]] += 1
     parent_entropy = -sum((c / n) * np.log(c / n) for c in cluster_counts.values() if c > 0)
 
     # Child Entropy (weighted)
-    attr_groups = defaultdict(list)
+    attr_groups: defaultdict[str, list[str]] = defaultdict(list)
     for p in products:
         attr_groups[attribute_values.get(p, "UNKNOWN")].append(p)
 
@@ -178,7 +178,7 @@ def compute_entropy_gain(
     for group_products in attr_groups.values():
         if len(group_products) < 2:
             continue
-        group_counts = defaultdict(int)
+        group_counts: defaultdict[int, int] = defaultdict(int)
         for p in group_products:
             group_counts[cluster_assignments[p]] += 1
         group_n = len(group_products)
@@ -246,14 +246,16 @@ def compute_attribute_split_quality(
     score = compute_split_score(relevant_products, sub_assignments, sub_attrs, criterion, alpha)
 
     # Group products by attribute value
-    attr_groups = defaultdict(list)
+    attr_groups: defaultdict[str, list[str]] = defaultdict(list)
     for p in relevant_products:
         attr_groups[attribute_values[p]].append(p)
 
     # Filter groups below min size
-    attr_groups = {k: v for k, v in attr_groups.items() if len(v) >= min_cluster_size}
+    attr_groups_filtered: dict[str, list[str]] = {
+        k: v for k, v in attr_groups.items() if len(v) >= min_cluster_size
+    }
 
-    return score, dict(attr_groups)
+    return score, attr_groups_filtered
 
 
 def find_best_attribute_split(
@@ -445,6 +447,20 @@ def build_cdt_recursive(
             size=len(products),
             is_leaf=True,
         )
+
+    # Return internal node with children
+    return TreeNode(
+        node_id=node_id,
+        name=f"Split: {best_attr} ({criterion}={score:.3f})",
+        products=products,
+        attribute=best_attr,
+        similarity_within=sim_within,
+        size=len(products),
+        is_leaf=False,
+        split_criterion=criterion,
+        split_score=score,
+        children=children,
+    )
 
 
 def score_tree(root: TreeNode, similarity_matrix: pd.DataFrame) -> float:
@@ -720,7 +736,6 @@ def build_cdt_beam_search(
 
             # Recurse on each group
             new_attrs = [a for a in available_attrs if a != attr]
-            child_scores = []
             for attr_value, group_products in groups.items():
                 if len(group_products) < min_cluster_size:
                     continue

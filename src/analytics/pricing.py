@@ -573,9 +573,11 @@ def estimate_bayesian_hierarchical_elasticity(
 
         # --- 3b. Convergence diagnostics ---
         convergence_diagnostics = _bayesian_convergence_diagnostics(trace)
-        print(
-            f"Bayesian convergence: R-hat max={convergence_diagnostics.get('rhat_max', 'N/A'):.3f}, ESS min={convergence_diagnostics.get('ess_min', 'N/A'):.0f}"
-        )
+        rhat_max = convergence_diagnostics.get("rhat_max")
+        ess_min = convergence_diagnostics.get("ess_min")
+        rhat_str = f"{rhat_max:.3f}" if rhat_max is not None else "N/A"
+        ess_str = f"{ess_min:.0f}" if ess_min is not None else "N/A"
+        print(f"Bayesian convergence: R-hat max={rhat_str}, ESS min={ess_str}")
 
     # --- 4. Extract SKU-level posterior ---
     beta_post = trace.posterior["beta_sku"] if hasattr(trace, "posterior") else trace["beta_sku"]

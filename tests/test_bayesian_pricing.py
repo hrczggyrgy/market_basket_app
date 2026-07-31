@@ -16,7 +16,7 @@ def bayesian_sample_data():
         cats = {"S001": "CatA", "S002": "CatA", "S003": "CatB"}
         for w in range(30):
             p = 2.0 + np.random.uniform(-0.5, 0.5)
-            q = max(1, int(100 * p ** -1.5 + np.random.normal(0, 5)))
+            q = max(1, int(100 * p**-1.5 + np.random.normal(0, 5)))
             rows.append(
                 {
                     "date": pd.Timestamp("2024-01-01") + pd.Timedelta(weeks=w),

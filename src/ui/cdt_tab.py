@@ -103,7 +103,7 @@ def _invalidate_cdt_cache_if_data_changed(transactions_df: pd.DataFrame) -> None
     cached_fingerprint = st.session_state.get("cdt_data_fingerprint")
     if cached_fingerprint is not None and cached_fingerprint != data_fingerprint:
         # Data changed - clear all CDT session state
-        keys_to_delete = [k for k in st.session_state.keys() if k.startswith("cdt_")]
+        keys_to_delete = [k for k in st.session_state if k.startswith("cdt_")]
         for key in keys_to_delete:
             del st.session_state[key]
 

@@ -1,7 +1,6 @@
 """Tests for segmentation_validation module."""
 
 import pandas as pd
-import pytest
 
 from src.analytics.segmentation_validation import (
     generate_synthetic_customer_segments,
@@ -26,17 +25,13 @@ class TestGenerateSyntheticCustomerSegments:
 
     def test_correct_number_of_segments(self):
         n_seg = 4
-        _, labels = generate_synthetic_customer_segments(
-            n_customers=80, n_true_segments=n_seg
-        )
+        _, labels = generate_synthetic_customer_segments(n_customers=80, n_true_segments=n_seg)
         assert len(set(labels.values())) == n_seg
 
 
 class TestRunSegmentationValidation:
     def test_returns_dataframe(self):
-        result = run_segmentation_validation(
-            n_customers=60, n_true_segments=3
-        )
+        result = run_segmentation_validation(n_customers=60, n_true_segments=3)
         assert isinstance(result, pd.DataFrame)
         assert len(result) > 0
 
@@ -53,8 +48,6 @@ class TestRunSegmentationValidation:
 
     def test_includes_all_methods(self):
         methods = ["rfm_quantile", "rfm_kmeans", "behavioral"]
-        result = run_segmentation_validation(
-            n_customers=60, n_true_segments=3, methods=methods
-        )
+        result = run_segmentation_validation(n_customers=60, n_true_segments=3, methods=methods)
         assert len(result) == len(methods)
         assert set(result["method"].tolist()) == set(methods)

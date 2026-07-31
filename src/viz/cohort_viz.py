@@ -2,9 +2,7 @@
 
 import numpy as np
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
-from scipy import optimize
 
 
 def plot_ltv_power_law(
@@ -69,11 +67,10 @@ def plot_decay_rate(
     fig = go.Figure()
 
     for cohort_idx in decay_df.index:
-        lambda_val = decay_df.loc[cohort_idx, "lambda"]
-        r0 = decay_df.loc[cohort_idx, "r0"]
+        _lambda_val = decay_df.loc[cohort_idx, "lambda"]
+        _r0 = decay_df.loc[cohort_idx, "r0"]
         r2 = decay_df.loc[cohort_idx, "r2"]
 
-        periods = np.arange(13)
         fitted = decay_df.loc[cohort_idx, "r0"] * np.exp(
             -decay_df.loc[cohort_idx, "lambda"] * np.arange(13)
         )

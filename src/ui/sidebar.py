@@ -658,7 +658,7 @@ def validate_data_quality(df: pd.DataFrame, analysis_mode: str, params: dict) ->
     # Basic counts
     n_transactions = df["transaction_id"].nunique() if "transaction_id" in df.columns else 0
     n_customers = df["customer_id"].nunique() if "customer_id" in df.columns else 0
-    n_products = df["stockcode"].nunique() if "stockcode" in df.columns else 0
+    _n_products = df["stockcode"].nunique() if "stockcode" in df.columns else 0
 
     # Null checks
     customer_null_pct = (

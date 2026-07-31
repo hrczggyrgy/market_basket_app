@@ -164,7 +164,7 @@ def compute_cluster_quality_metrics(
     except Exception as e:
         import warnings
 
-        warnings.warn(f"Cluster stats computation failed: {e}")
+        warnings.warn(f"Cluster stats computation failed: {e}", stacklevel=2)
         return {}
 
 
@@ -1577,40 +1577,6 @@ def compute_enhanced_behavioral_features(
     )
 
     return features
-
-
-def compute_rfm_features(
-    transactions_df: pd.DataFrame, snapshot_date: Optional[pd.Timestamp] = None
-) -> pd.DataFrame:
-    """Compute comprehensive RFM features per customer (backward compatible)."""
-    # Use enhanced features but keep only RFM for backward compatibility
-    enhanced = compute_enhanced_behavioral_features(transactions_df, snapshot_date)
-    # Keep only classic RFM columns for compatibility
-    rfm_cols = [
-        "customer_id",
-        "recency_days",
-        "frequency",
-        "monetary",
-        "avg_order_value",
-        "max_order_value",
-        "n_items",
-        "n_unique_products",
-        "n_unique_categories",
-        "first_purchase",
-        "last_purchase",
-        "avg_price_paid",
-        "std_order_value",
-        "customer_lifetime_days",
-        "purchase_interval",
-        "items_per_order",
-        "revenue_per_item",
-        "order_value_cv",
-        "recency_segment",
-        "frequency_segment",
-        "monetary_segment",
-    ]
-    available = [c for c in rfm_cols if c in enhanced.columns]
-    return enhanced[available]
 
 
 def compute_segment_migration(

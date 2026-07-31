@@ -213,10 +213,10 @@ def compute_basket_value_uplift(
     )
     for prod in top_products:
         baskets_with = basket_value[
-            basket_products.index[basket_products.apply(lambda s: prod in s)]
+            basket_products.index[basket_products.apply(lambda s, p=prod: p in s)]
         ]
         baskets_without = basket_value[
-            basket_products.index[basket_products.apply(lambda s: prod not in s)]
+            basket_products.index[basket_products.apply(lambda s, p=prod: p not in s)]
         ]
         avg_with = baskets_with.mean() if len(baskets_with) > 0 else np.nan
         avg_without = baskets_without.mean() if len(baskets_without) > 0 else np.nan

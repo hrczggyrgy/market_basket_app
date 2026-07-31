@@ -4,89 +4,99 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 import streamlit as st
+from pydantic import BaseModel
 
 PIPELINE_KEY = "pipeline_store"
 
 
-def init_pipeline():
-    """Initialize the pipeline store in session state."""
+class PipelineState(BaseModel):
+    """Type-safe pipeline state model."""
+
+    transactions_df: Optional[pd.DataFrame] = None
+    product_lookup: Optional[Dict[str, Any]] = None
+    basket_matrix: Optional[pd.DataFrame] = None
+    frequent_itemsets: Optional[pd.DataFrame] = None
+    rules: Optional[pd.DataFrame] = None
+    filtered_rules: Optional[pd.DataFrame] = None
+    similarity_matrix: Optional[pd.DataFrame] = None
+    linkage_matrix: Optional[Any] = None
+    cluster_assignments: Optional[pd.DataFrame] = None
+    cdt_tree: Optional[Any] = None
+    cdt_metadata: Optional[Dict[str, Any]] = None
+    sequences: Optional[Any] = None
+    switching_matrix: Optional[pd.DataFrame] = None
+    substitution_matrix: Optional[pd.DataFrame] = None
+    bundling_matrix: Optional[pd.DataFrame] = None
+    customer_features: Optional[pd.DataFrame] = None
+    rfm_features: Optional[pd.DataFrame] = None
+    segment_assignments: Optional[pd.DataFrame] = None
+    segment_profiles: Optional[pd.DataFrame] = None
+    clv_predictions: Optional[pd.DataFrame] = None
+    elasticity_results: Optional[pd.DataFrame] = None
+    kvi_scores: Optional[pd.DataFrame] = None
+    price_curves: Optional[Any] = None
+    promo_flags: Optional[pd.DataFrame] = None
+    uplift_model: Optional[Any] = None
+    uplift_results: Optional[pd.DataFrame] = None
+    demand_transference_matrix: Optional[pd.DataFrame] = None
+    assortment_scenarios: Optional[Any] = None
+    assortment_evaluation: Optional[Any] = None
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+def _get_state() -> PipelineState:
+    """Get or initialize typed pipeline state."""
     if PIPELINE_KEY not in st.session_state:
-        st.session_state[PIPELINE_KEY] = {
-            # Data layer
-            "transactions_df": None,
-            "product_lookup": None,
-            "basket_matrix": None,
-            # Association rules layer
-            "frequent_itemsets": None,
-            "rules": None,
-            "filtered_rules": None,
-            # CDT layer
-            "similarity_matrix": None,
-            "linkage_matrix": None,
-            "cluster_assignments": None,
-            "cdt_tree": None,
-            "cdt_metadata": None,
-            "sequences": None,
-            "switching_matrix": None,
-            "substitution_matrix": None,
-            "bundling_matrix": None,
-            # Segmentation layer
-            "customer_features": None,
-            "rfm_features": None,
-            "segment_assignments": None,
-            "segment_profiles": None,
-            "clv_predictions": None,
-            # Elasticity/Pricing layer
-            "elasticity_results": None,
-            "kvi_scores": None,
-            "price_curves": None,
-            # Promo Uplift layer
-            "promo_flags": None,
-            "uplift_model": None,
-            "uplift_results": None,
-            # Demand Transference layer
-            "demand_transference_matrix": None,
-            # Assortment layer
-            "assortment_scenarios": None,
-            "assortment_evaluation": None,
-        }
-
-
-def get_pipeline() -> Dict[str, Any]:
-    """Get the pipeline store, initializing if needed."""
-    init_pipeline()
+        st.session_state[PIPELINE_KEY] = PipelineState()
     return st.session_state[PIPELINE_KEY]
 
 
+def init_pipeline():
+    """Initialize the pipeline store in session state."""
+    _get_state()
+
+
+def get_pipeline() -> PipelineState:
+    """Get the typed pipeline state."""
+    return _get_state()
+
+
 def set_pipeline(key: str, value: Any):
-    """Set a value in the pipeline store."""
-    init_pipeline()
-    st.session_state[PIPELINE_KEY][key] = value
+    """Set a value in the pipeline store with type validation."""
+    state = _get_state()
+    if hasattr(state, key):
+        setattr(state, key, value)
+    else:
+        raise KeyError(
+            f"Invalid pipeline key: {key}. Valid keys: {list(state.model_fields.keys())}"
+        )
 
 
 def get_from_pipeline(key: str, default: Any = None) -> Any:
     """Get a value from the pipeline store."""
-    init_pipeline()
-    return st.session_state[PIPELINE_KEY].get(key, default)
+    state = _get_state()
+    return getattr(state, key, default)
 
 
 def has_pipeline_data(key: str) -> bool:
     """Check if pipeline has data for a key."""
-    init_pipeline()
-    val = st.session_state[PIPELINE_KEY].get(key)
+    state = _get_state()
+    val = getattr(state, key, None)
     return val is not None and (not isinstance(val, pd.DataFrame) or not val.empty)
 
 
 def clear_pipeline(keys: Optional[list] = None):
     """Clear pipeline data. If keys provided, only clear those keys."""
-    init_pipeline()
+    state = _get_state()
     if keys is None:
-        for k in st.session_state[PIPELINE_KEY]:
-            st.session_state[PIPELINE_KEY][k] = None
+        for k in state.model_fields:
+            setattr(state, k, None)
     else:
         for k in keys:
-            if k in st.session_state[PIPELINE_KEY]:
-                st.session_state[PIPELINE_KEY][k] = None
+            if hasattr(state, k):
+                setattr(state, k, None)
 
 
 def invalidate_downstream(from_stage: str):
@@ -132,17 +142,19 @@ def invalidate_downstream(from_stage: str):
     try:
         idx = stage_order.index(from_stage)
         # Clear all stages after this one
+        state = _get_state()
         for stage in stage_order[idx + 1 :]:
-            st.session_state[PIPELINE_KEY][stage] = None
+            if hasattr(state, stage):
+                setattr(state, stage, None)
     except ValueError:
         pass
 
 
 def get_pipeline_summary() -> Dict[str, str]:
     """Get a summary of what's in the pipeline for debugging."""
-    init_pipeline()
+    state = _get_state()
     summary = {}
-    for k, v in st.session_state[PIPELINE_KEY].items():
+    for k, v in state:
         if v is None:
             summary[k] = "empty"
         elif isinstance(v, pd.DataFrame):
