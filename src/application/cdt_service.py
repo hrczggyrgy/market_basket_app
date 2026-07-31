@@ -6,9 +6,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from src.application.pipeline import PipelineStage, PipelineStore, get_pipeline_store
+from src.application.pipeline import PipelineStage, get_pipeline_store
 from src.config import AppConfig, get_config
-from src.domain.dto import PipelineResult, PipelineStage
+from src.domain.dto import PipelineResult
 from src.infrastructure.logging import (
     AnalysisLogger,
     get_logger,
@@ -344,24 +344,12 @@ class CDTService:
         cdt_config: CDTConfig,
     ):
         """Build switching, substitution, and bundling matrices."""
-        from src.analytics.cdt_behavioral import (
-            build_behavioral_matrices,
-            compute_affinity_matrix,
-            get_substitution_matrix,
-        )
+from src.analytics.cdt_behavioral import (
+        build_behavioral_matrices,
+        compute_affinity_matrix,
+    )
 
-        # Build affinity matrix for bundling
-        affinity_matrix = compute_affinity_matrix(
-            transactions_df,
-            min_support=0.001,
-            max_len=2,
-            min_lift=1.0,
-            top_n_products=cdt_config.top_n_products,
-        )
-
-        # Get substitution matrix
-        substitution_matrix = get_substitution_matrix(sim_matrix)
-
+        # Build behavioral matrices (switching, substitution, bundling)
         switching_df, substitution_df, bundling_df = build_behavioral_matrices(
             transactions_df,
             sim_matrix,

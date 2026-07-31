@@ -1,9 +1,13 @@
 """Cohort Analytics - Customer acquisition cohorts, retention, revenue."""
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from lifetimes import BetaGeoFitter, GammaGammaFitter
+from lifetimes.utils import summary_data_from_transaction_data
+from scipy import optimize
+from scipy.stats import norm
 
 
 def _prepare_cohort_df(transactions_df: pd.DataFrame, cohort_period: str = "M") -> pd.DataFrame:
@@ -313,3 +317,298 @@ def cohort_comparison_summary(
     }
 
     return summary
+
+
+def compute_cohort_ltv_curve(
+    transactions_df: pd.DataFrame,
+    cohort_period: str = "M",
+    max_periods: int = 12,
+) -> Tuple[pd.DataFrame, Dict]:
+    """
+    Compute Cohort Lifetime Value (LTV) curve with power-law fit.
+
+    Fits LTV(t) = a * t^b to cumulative revenue per cohort customer
+    from period 0 to period N.
+
+    Returns:
+        DataFrame with fitted LTV curve per cohort
+        Dict with fit parameters (a, b, R²) per cohort
+    """
+    prepared = _prepare_cohort_df(transactions_df, cohort_period)
+    revenue_matrix = compute_cohorts(
+        transactions_df, cohort_period=cohort_period, metric="revenue", _prepared=prepared
+    )
+
+    # Limit to max_periods
+    period_cols = [c for c in revenue_matrix.columns if c.startswith("Period ")]
+    if len(period_cols) > 12:
+        period_cols = period_cols[:max_periods]
+    revenue_matrix = revenue_matrix[period_cols]
+
+    ltv_curves = []
+    fit_params = {}
+
+    for cohort_idx in revenue_matrix.index:
+        cohort_revenue = revenue_matrix.loc[cohort_idx].values
+        periods = np.arange(1, len(cohort_revenue) + 1)
+
+        # Cumulative revenue per customer
+        cum_revenue = np.cumsum(cohort_revenue)
+
+        # Fit power law: LTV(t) = a * t^b
+        # log(LTV) = log(a) + b * log(t)
+        valid = cum_revenue > 0
+        if valid.sum() < 3:
+            fit_params = {"a": 0, "b": 0, "r2": 0}
+            ltv_curve = np.zeros_like(cum_revenue)
+        else:
+            log_t = np.log(periods[valid])
+            log_ltv = np.log(cum_revenue[valid])
+            coeffs = np.polyfit(log_t, log_ltv, 1)
+            b = coeffs[0]
+            a = np.exp(coeffs[1])
+            # R²
+            y_pred = a * periods**b
+            ss_res = np.sum((cum_revenue - y_pred) ** 2)
+            ss_tot = np.sum((cum_revenue - np.mean(cum_revenue)) ** 2)
+            r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+            fit_params = {"a": a, "b": b, "r2": r2}
+            ltv_curve = a * periods**b
+
+        fit_params[cohort_idx] = fit_params
+        ltv_curves.append(ltv_curve)
+
+    ltv_df = pd.DataFrame(
+        np.column_stack(ltv_curves).T if ltv_curves else np.array([]),
+        index=revenue_matrix.index,
+        columns=[f"Period {i + 1}" for i in range(max_periods)],
+    )
+
+    return ltv_df, fit_params
+
+
+def compute_cohort_decay_rate(
+    transactions_df: pd.DataFrame,
+    cohort_period: str = "M",
+) -> pd.DataFrame:
+    """
+    Compute cohort decay rate λ by fitting R(t) = R₀ * e^(-λt) to retention series.
+
+    Returns DataFrame with decay rate λ per cohort.
+    """
+    prepared = _prepare_cohort_df(transactions_df, cohort_period)
+    retention_matrix = compute_cohorts(
+        transactions_df, cohort_period=cohort_period, metric="retention", _prepared=prepared
+    )
+
+    decay_rates = {}
+    for cohort_idx in retention_matrix.index:
+        retention = retention_matrix.loc[cohort_idx].values
+        periods = np.arange(len(retention))
+
+        # Fit exponential decay: R(t) = R₀ * exp(-λt)
+        # log(R) = log(R₀) - λt
+        valid = retention > 0
+        if valid.sum() < 3:
+            decay_rates[cohort_idx] = {
+                "lambda": 0,
+                "r2": 0,
+                "r0": retention[0] if len(retention) > 0 else 0,
+            }
+            continue
+
+        log_r = np.log(retention[valid])
+        t_valid = np.arange(len(retention))[valid]
+        coeffs = np.polyfit(t_valid, log_r, 1)
+        lambda_val = -coeffs[0]  # negative slope = decay rate
+        r0 = np.exp(coeffs[1])
+
+        # R²
+        y_pred = np.exp(coeffs[1]) * np.exp(-lambda_val * np.arange(len(retention)))
+        ss_res = np.sum((retention - y_pred) ** 2)
+        ss_tot = np.sum((retention - np.mean(retention)) ** 2)
+        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+
+        decay_rates[cohort_idx] = {"lambda": max(0, lambda_val), "r2": r2, "r0": r0}
+
+    return pd.DataFrame.from_dict(decay_rates, orient="index")
+
+
+def compute_reactivation_rate(
+    transactions_df: pd.DataFrame,
+    cohort_period: str = "M",
+    inactivity_threshold: int = 2,
+) -> pd.DataFrame:
+    """
+    Compute reactivation rate: among customers who churned (≥ inactivity_threshold periods inactive),
+    what fraction returned in a subsequent period.
+
+    Returns reactivation rate per cohort.
+    """
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["period"] = df["date"].dt.to_period(cohort_period)
+
+    # Get all customer-period activity
+    activity = df.groupby(["customer_id", "period"]).size().reset_index(name="active")
+
+    # For each customer, find churn and reactivation
+    reactivation_data = []
+    for cust_id, cust_data in activity.groupby("customer_id"):
+        cust_data = cust_data.sort_values("period")
+        periods = cust_data["period"].values
+
+        # Find gaps
+        for i in range(1, len(periods)):
+            gap = (periods[i] - periods[i - 1]).n
+            if gap >= inactivity_threshold:
+                # Check if customer returned after this gap
+                returned = (periods[i + 1 :] > periods[i]).any()
+                reactivation_data.append(
+                    {
+                        "customer_id": cust_id,
+                        "churned_after_period": periods[i - 1],
+                        "reactivated": returned,
+                    }
+                )
+
+    if not reactivation_data:
+        return pd.DataFrame()
+
+    react_df = pd.DataFrame(reactivation_data)
+    react_df["churned_period"] = react_df["churned_after_period"].astype(str)
+
+    # Merge with cohort info
+    from_date = df.groupby("customer_id")["date"].min().dt.to_period("M")
+    react_df["cohort"] = react_df["customer_id"].map(from_date).astype(str)
+
+    # Compute reactivation rate per cohort
+    cohort_rates = (
+        react_df.groupby("cohort")["reactivated"]
+        .agg(
+            reactivated="sum",
+            churned="count",
+        )
+        .reset_index()
+    )
+    cohort_rates["reactivation_rate"] = cohort_rates["reactivated"] / cohort_rates["churned"]
+
+    return cohort_rates
+
+
+def compute_waterfall_decomposition(
+    transactions_df: pd.DataFrame,
+    cohort_period: str = "M",
+) -> pd.DataFrame:
+    """
+    Decompose period-over-period customer change into:
+    - New customers (first purchase in period)
+    - Retained customers (active in both periods)
+    - Reactivated customers (inactive in t-1, active in t)
+    - Churned customers (active in t-1, inactive in t)
+
+    Returns period-over-period waterfall decomposition.
+    """
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["period"] = df["date"].dt.to_period(cohort_period)
+
+    periods = sorted(df["period"].unique())
+    if len(periods) < 2:
+        return pd.DataFrame()
+
+    waterfall_data = []
+
+    for i in range(1, len(periods)):
+        period_t = periods[i]
+        period_t_1 = periods[i - 1]
+
+        cust_t = set(df[df["period"] == period_t]["customer_id"])
+        cust_t_1 = set(df[df["period"] == period_t_1]["customer_id"])
+
+        new = cust_t - cust_t_1
+        retained = cust_t & cust_t_1
+        reactivated = (
+            (cust_t - cust_t_1)
+            & set(
+                df[df["period"] < period_t_1]
+                .groupby("customer_id")["period"]
+                .max()[
+                    df[df["period"] < period_t_1].groupby("customer_id")["period"].max()
+                    == period_t_1
+                ]
+                .index
+            )
+            if i > 1
+            else set()
+        )
+        churned = cust_t_1 - cust_t
+
+        waterfall_data.append(
+            {
+                "period": str(period_t),
+                "new_customers": len(new),
+                "retained_customers": len(retained),
+                "reactivated_customers": len(reactivated),
+                "churned_customers": len(churned),
+                "net_change": len(cust_t) - len(cust_t_1),
+            }
+        )
+
+    return pd.DataFrame(waterfall_data)
+
+
+def compute_cohort_p_alive(
+    transactions_df: pd.DataFrame,
+    cohort_period: str = "M",
+) -> pd.DataFrame:
+    """
+    Compute BG/NBD P(alive) for each customer in each cohort.
+
+    Uses lifetimes library BG/NBD model to compute probability customer is still alive.
+    """
+    if not hasattr(compute_cohort_p_alive, "_lifetimes_available"):
+        try:
+            from lifetimes import BetaGeoFitter
+            from lifetimes.utils import summary_data_from_transaction_data
+
+            compute_cohort_p_alive._lifetimes_available = True
+        except ImportError:
+            compute_cohort_p_alive._lifetimes_available = False
+
+    if not compute_cohort_p_alive._lifetimes_available:
+        return pd.DataFrame()
+
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+
+    # Prepare summary data for BG/NBD
+    observation_period_end = df["date"].max()
+    summary = summary_data_from_transaction_data(
+        df,
+        customer_id_col="customer_id",
+        datetime_col="date",
+        monetary_value_col="revenue" if "revenue" in df.columns else None,
+        observation_period_end=observation_period_end,
+        freq="D",
+    )
+
+    # Fit BG/NBD
+    bgf = BetaGeoFitter(penalizer_coef=0.01)
+    bgf.fit(summary["frequency"], summary["recency"], summary["T"])
+
+    # Compute P(alive) for each customer
+    p_alive = bgf.conditional_probability_alive(
+        summary["frequency"], summary["recency"], summary["T"]
+    )
+
+    # Merge with cohort info
+    summary["p_alive"] = p_alive
+    summary = summary.reset_index()
+    summary["cohort"] = (
+        summary["customer_id"]
+        .map(transactions_df.groupby("customer_id")["date"].min().dt.to_period("M"))
+        .astype(str)
+    )
+
+    return summary[["customer_id", "cohort", "p_alive", "frequency", "recency", "T"]]

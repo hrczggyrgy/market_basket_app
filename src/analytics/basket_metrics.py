@@ -438,3 +438,158 @@ def compute_shopper_loyalty_metrics(
         .sort_values("repeat_rate", ascending=False)
         .reset_index(drop=True)
     )
+
+
+# ---------------------------------------------------------------------------
+# 5. Customer Entropy Score
+# ---------------------------------------------------------------------------
+# H_c = -Σ s_p log s_p where s_p is the share of customer c's spend on product p.
+# Low entropy = concentrated buyer (loyalty risk), High entropy = variety seeker.
+# ---------------------------------------------------------------------------
+
+
+def compute_customer_entropy(
+    transactions_df: pd.DataFrame,
+    product_col: str = "stockcode",
+    customer_col: str = "customer_id",
+) -> pd.DataFrame:
+    """
+    Compute Customer Entropy Score: H_c = -Σ s_p log s_p
+    where s_p is the share of customer c's spend on product p.
+
+    Low entropy = highly concentrated buyer (loyalty risk)
+    High entropy = variety seeker
+    """
+    df = transactions_df.copy()
+    df["revenue"] = df["price"] * df["quantity"]
+
+    # Spend per customer per product
+    spend = df.groupby([customer_col, product_col])["revenue"].sum().reset_index()
+
+    # Total spend per customer
+    total_spend = spend.groupby(customer_col)["revenue"].sum().rename("total_spend")
+    spend = spend.merge(total_spend, on=customer_col)
+
+    # Share per product per customer
+    spend["share"] = spend["revenue"] / spend["total_spend"]
+
+    # Entropy per customer
+    def entropy(group):
+        shares = group["share"].values
+        shares = shares[shares > 0]
+        if len(shares) == 0:
+            return 0
+        return -np.sum(shares * np.log(shares))
+
+    entropy_df = spend.groupby(customer_col).apply(entropy).reset_index(name="entropy")
+
+    # Normalize entropy (max entropy = log(n_products))
+    max_entropy = np.log(transactions_df[product_col].nunique())
+    entropy_df["normalized_entropy"] = entropy_df["entropy"] / max_entropy if max_entropy > 0 else 0
+
+    return entropy_df
+
+
+# ---------------------------------------------------------------------------
+# 6. Inter-Purchase Time CV (IPT-CV)
+# ---------------------------------------------------------------------------
+# IPT-CV = std(inter_purchase_times) / mean(inter_purchase_times)
+# Low CV = regular buyer, High CV = irregular buyer
+# ---------------------------------------------------------------------------
+
+
+def compute_ipt_cv(
+    transactions_df: pd.DataFrame,
+    customer_col: str = "customer_id",
+    date_col: str = "date",
+) -> pd.DataFrame:
+    """
+    Compute Inter-Purchase Time Coefficient of Variation (IPT-CV) per customer.
+
+    IPT-CV = std(inter_purchase_times) / mean(inter_purchase_times)
+    Low CV = regular buyer, High CV = irregular buyer
+    """
+    df = transactions_df.copy()
+    df[date_col] = pd.to_datetime(df[date_col])
+
+    # Sort by customer and date
+    df = df.sort_values([customer_col, date_col])
+
+    # Compute inter-purchase times per customer
+    df["prev_date"] = df.groupby(customer_col)[date_col].shift(1)
+    df["inter_purchase_days"] = (df[date_col] - df["prev_date"]).dt.days
+
+    # Drop first purchase per customer (no previous purchase)
+    repeat_purchases = df.dropna(subset=["inter_purchase_days"])
+
+    if repeat_purchases.empty:
+        return pd.DataFrame(columns=[customer_col, "ipt_mean", "ipt_std", "ipt_cv"])
+
+    # Compute CV per customer
+    ipt_stats = (
+        repeat_purchases.groupby(customer_col)["inter_purchase_days"]
+        .agg(
+            ipt_mean="mean",
+            ipt_std="std",
+        )
+        .reset_index()
+    )
+
+    # Avoid division by zero
+    ipt_stats["ipt_cv"] = np.where(
+        ipt_stats["ipt_mean"] > 0,
+        ipt_stats["ipt_std"] / ipt_stats["ipt_mean"],
+        np.nan,
+    )
+
+    return ipt_stats[[customer_col, "ipt_mean", "ipt_std", "ipt_cv"]]
+
+
+# ---------------------------------------------------------------------------
+# 7. Customer Entropy Score (from transaction data)
+# ---------------------------------------------------------------------------
+# H_c = -Σ s_p log s_p where s_p is the share of customer c's spend on product p.
+# Low entropy = concentrated buyer (loyalty risk), High entropy = variety seeker.
+# ---------------------------------------------------------------------------
+
+
+def compute_customer_entropy_from_transactions(
+    transactions_df: pd.DataFrame,
+    product_col: str = "stockcode",
+    customer_col: str = "customer_id",
+) -> pd.DataFrame:
+    """
+    Compute Customer Entropy Score from transaction data:
+    H_c = -Σ s_p log s_p where s_p is the share of customer c's spend on product p.
+
+    Low entropy = concentrated buyer (loyalty risk)
+    High entropy = variety seeker
+    """
+    df = transactions_df.copy()
+    df["revenue"] = df["price"] * df["quantity"]
+
+    # Spend per customer per product
+    spend = df.groupby([customer_col, product_col])["revenue"].sum().reset_index()
+
+    # Total spend per customer
+    total_spend = spend.groupby(customer_col)["revenue"].sum().rename("total_spend")
+    spend = spend.merge(total_spend, on=customer_col)
+
+    # Share per product per customer
+    spend["share"] = spend["revenue"] / spend["total_spend"]
+
+    # Entropy per customer
+    def entropy(group):
+        shares = group["share"].values
+        shares = shares[shares > 0]
+        if len(shares) == 0:
+            return 0
+        return -np.sum(shares * np.log(shares))
+
+    entropy_df = spend.groupby(customer_col).apply(entropy).reset_index(name="entropy")
+
+    # Normalize entropy (max entropy = log(n_products))
+    max_entropy = np.log(transactions_df[product_col].nunique())
+    entropy_df["normalized_entropy"] = entropy_df["entropy"] / max_entropy if max_entropy > 0 else 0
+
+    return entropy_df

@@ -973,3 +973,200 @@ def get_segment_profiles(
     profiles["customer_share"] = profiles["n_customers"] / profiles["n_customers"].sum()
 
     return profiles
+
+
+def compute_customer_entropy(
+    transactions_df: pd.DataFrame,
+    product_col: str = "stockcode",
+    customer_col: str = "customer_id",
+) -> pd.DataFrame:
+    """
+    Compute Customer Entropy Score: H_c = -Σ s_p log s_p
+    where s_p is the share of customer c's spend on product p.
+
+    Low entropy = highly concentrated buyer (loyalty risk)
+    High entropy = variety seeker
+    """
+    df = transactions_df.copy()
+    df["revenue"] = df["price"] * df["quantity"]
+
+    # Spend per customer per product
+    spend = df.groupby([customer_col, product_col])["revenue"].sum().reset_index()
+
+    # Total spend per customer
+    total_spend = spend.groupby(customer_col)["revenue"].sum().rename("total_spend")
+    spend = spend.merge(total_spend, on=customer_col)
+
+    # Share per product per customer
+    spend["share"] = spend["revenue"] / spend["total_spend"]
+
+    # Entropy per customer
+    def entropy(group):
+        shares = group["share"].values
+        shares = shares[shares > 0]
+        if len(shares) == 0:
+            return 0
+        return -np.sum(shares * np.log(shares))
+
+    entropy_df = spend.groupby(customer_col).apply(entropy).reset_index(name="entropy")
+
+    # Normalize entropy (max entropy = log(n_products))
+    max_entropy = np.log(transactions_df[product_col].nunique())
+    entropy_df["normalized_entropy"] = entropy_df["entropy"] / max_entropy if max_entropy > 0 else 0
+
+    return entropy_df
+
+
+def compute_ipt_cv(
+    transactions_df: pd.DataFrame,
+    customer_col: str = "customer_id",
+    date_col: str = "date",
+) -> pd.DataFrame:
+    """
+    Compute Inter-Purchase Time Coefficient of Variation (IPT-CV) per customer.
+
+    IPT-CV = std(inter_purchase_times) / mean(inter_purchase_times)
+    Low CV = regular buyer, High CV = irregular buyer
+    """
+    df = transactions_df.copy()
+    df[date_col] = pd.to_datetime(df[date_col])
+
+    # Sort by customer and date
+    df = df.sort_values([customer_col, date_col])
+
+    # Compute inter-purchase times per customer
+    df["prev_date"] = df.groupby(customer_col)[date_col].shift(1)
+    df["inter_purchase_days"] = (df[date_col] - df["prev_date"]).dt.days
+
+    # Drop first purchase per customer (no previous purchase)
+    repeat_purchases = df.dropna(subset=["inter_purchase_days"])
+
+    if repeat_purchases.empty:
+        return pd.DataFrame(columns=[customer_col, "ipt_mean", "ipt_std", "ipt_cv"])
+
+    # Compute CV per customer
+    ipt_stats = (
+        repeat_purchases.groupby(customer_col)["inter_purchase_days"]
+        .agg(
+            ipt_mean="mean",
+            ipt_std="std",
+        )
+        .reset_index()
+    )
+
+    # Avoid division by zero
+    ipt_stats["ipt_cv"] = np.where(
+        ipt_stats["ipt_mean"] > 0,
+        ipt_stats["ipt_std"] / ipt_stats["ipt_mean"],
+        np.nan,
+    )
+
+    return ipt_stats[["customer_id", "ipt_mean", "ipt_std", "ipt_cv"]]
+
+
+def compute_bg_nbd_p_alive(
+    transactions_df: pd.DataFrame,
+    prediction_horizon_days: int = 90,
+    freq: str = "D",
+) -> Tuple[pd.DataFrame, Dict]:
+    """
+    Compute P(alive) using BG/NBD model from lifetimes library.
+
+    Returns customer-level P(alive) with diagnostics.
+    """
+    if not LIFETIMES_AVAILABLE:
+        raise ImportError("lifetimes library required: pip install lifetimes")
+
+    from lifetimes import BetaGeoFitter
+    from lifetimes.utils import summary_data_from_transaction_data
+
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["revenue"] = df["price"] * df["quantity"]
+
+    # Prepare summary data for BG/NBD
+    observation_period_end = df["date"].max() - pd.Timedelta(prediction_horizon_days, unit="D")
+
+    summary = summary_data_from_transaction_data(
+        df,
+        customer_id_col="customer_id",
+        datetime_col="date",
+        monetary_value_col="revenue",
+        observation_period_end=observation_period_end,
+        freq=freq,
+    )
+
+    # Filter customers with at least 1 repeat purchase for Gamma-Gamma
+    summary_cal = summary[summary["frequency"] > 0].copy()
+
+    if len(summary_cal) < 10:
+        raise ValueError("Insufficient repeat customers for BG/NBD (need >= 10)")
+
+    # Fit BG/NBD for purchase prediction
+    bgf = BetaGeoFitter(penalizer_coef=0.01)
+    bgf.fit(summary_cal["frequency"], summary_cal["recency"], summary_cal["T"])
+
+    # Predict probability alive
+    summary_cal["p_alive"] = bgf.conditional_probability_alive(
+        summary_cal["frequency"], summary_cal["recency"], summary_cal["T"]
+    )
+
+    # Predict expected purchases in horizon
+    t = prediction_horizon_days if freq == "D" else prediction_horizon_days / 7
+    summary_cal["predicted_purchases"] = bgf.conditional_expected_number_of_purchases_up_to_time(
+        t, summary_cal["frequency"], summary_cal["recency"], summary_cal["T"]
+    )
+
+    # Fit Gamma-Gamma for monetary value
+    ggf = GammaGammaFitter(penalizer_coef=0.01)
+    ggf.fit(summary_cal["frequency"], summary_cal["monetary_value"])
+    summary_cal["expected_avg_value"] = ggf.conditional_expected_average_profit(
+        summary_cal["frequency"], summary_cal["monetary_value"]
+    )
+
+    # CLV = predicted_purchases * expected_avg_value
+    summary_cal["predicted_clv"] = (
+        summary_cal["predicted_purchases"] * summary_cal["expected_avg_value"]
+    )
+
+    # Prepare output
+    result = summary_cal[
+        ["predicted_purchases", "expected_avg_value", "predicted_clv", "p_alive"]
+    ].copy()
+    result = result.reset_index()
+    result.columns = [
+        "customer_id",
+        "predicted_purchases",
+        "expected_avg_value",
+        "predicted_clv",
+        "p_alive",
+    ]
+
+    # Add segment labels
+    result["clv_segment"] = pd.qcut(
+        result["predicted_clv"],
+        q=4,
+        labels=["Bronze", "Silver", "Gold", "Platinum"],
+        duplicates="drop",
+    )
+
+    # Model diagnostics
+    diagnostics = {
+        "bgf_params": {
+            "r": float(bgf.params_["r"]),
+            "alpha": float(bgf.params_["alpha"]),
+            "a": float(bgf.params_["a"]),
+            "b": float(bgf.params_["b"]),
+            "log_likelihood": float(bgf._log_likelihood),
+        },
+        "ggf_params": {
+            "p": float(ggf.params_["p"]),
+            "q": float(ggf.params_["q"]),
+            "v": float(ggf.params_["v"]),
+            "log_likelihood": float(ggf._log_likelihood),
+        },
+        "n_customers_fit": len(summary_cal),
+        "n_customers_total": len(summary),
+    }
+
+    return result, diagnostics

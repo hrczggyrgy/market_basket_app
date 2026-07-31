@@ -11,10 +11,11 @@ References
 - Oracle Retail Science Cloud Services 19.1 Implementation Guide
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+import statsmodels.api as sm
 
 
 def compute_demand_transference_matrix(
@@ -393,3 +394,198 @@ def _apply_cdt_recovery_constraints(
     return min(
         recovered, max_recovery * sum(recovery_detail.get(d, {}).values() for d in recovery_detail)
     )
+
+
+def compute_category_leakage_rate(
+    switching_df: pd.DataFrame,
+    cluster_assignments: Dict[str, int],
+    min_cooccurrence: int = 5,
+) -> Dict[str, float]:
+    """
+    Compute category-level leakage rate: fraction of demand from a product
+    that leaks OUT of the category entirely (no within-category substitute chosen).
+
+    Uses switching rates instead of DT revenue_at_risk.
+
+    Args:
+        switching_df: Output from compute_switching_matrix with columns
+                      from_product, to_product, switch_rate
+        cluster_assignments: Dict mapping product -> category
+        min_cooccurrence: Minimum co-occurrence threshold (ignored, kept for API compatibility)
+
+    Returns:
+        Dict: {category: leakage_rate}
+    """
+    dt = switching_df.copy()
+    dt["from_category"] = dt["from_product"].map({p: c for p, c in cluster_assignments.items()})
+    dt["to_category"] = dt["to_product"].map({p: c for p, c in cluster_assignments.items()})
+
+    # Leakage = switching rate flowing to different category
+    leakage = dt[dt["from_category"] != dt["to_category"]]
+    total_switch = dt.groupby("from_category")["switch_rate"].sum()
+    leakage_sum = leakage.groupby("from_category")["switch_rate"].sum()
+
+    leakage_rate = (leakage_sum / total_switch).fillna(0).to_dict()
+    return leakage_rate
+
+
+def compute_cross_price_elasticity(
+    transactions_df: pd.DataFrame,
+    product_pairs: List[Tuple[str, str]],
+    price_col: str = "price",
+    qty_col: str = "quantity",
+    date_col: str = "date",
+    freq: str = "W",
+    min_periods: int = 10,
+    min_price_variation: float = 0.05,
+) -> pd.DataFrame:
+    """
+    Estimate cross-price elasticities for specified product pairs.
+
+    For each pair (A, B), runs bivariate log-log OLS:
+        log(qty_A) = alpha + beta_own * log(price_A) + beta_cross * log(price_B) + error
+
+    beta_cross > 0 -> B is a substitute for A
+    beta_cross < 0 -> B is a complement to A
+
+    Args:
+        transactions_df: Transaction data
+        product_pairs: List of (product_a, product_b) tuples to estimate cross-elasticity
+        freq: Time frequency for aggregation
+        min_periods: Minimum weeks of data
+        min_price_variation: Minimum price CV
+
+    Returns:
+        DataFrame with cross-elasticity estimates per pair
+    """
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["revenue"] = df["price"] * df["quantity"]
+
+    results = []
+
+    for prod_a, prod_b in product_pairs:
+        # Get weekly data for both products
+        prod_a_df = df[df["stockcode"] == prod_a].copy()
+        prod_b_df = df[df["stockcode"] == prod_b].copy()
+
+        if len(prod_a_df) < min_periods or len(prod_b_df) < min_periods:
+            continue
+
+        weekly_a = (
+            prod_a_df.set_index("date")
+            .groupby(pd.Grouper(freq=freq))
+            .agg(avg_price_a=("price", "mean"), total_qty_a=("quantity", "sum"))
+            .dropna()
+        )
+        weekly_b = (
+            prod_b_df.set_index("date")
+            .groupby(pd.Grouper(freq=freq))
+            .agg(avg_price_b=("price", "mean"), total_qty_b=("quantity", "sum"))
+            .dropna()
+        )
+
+        # Align on date index
+        weekly = weekly_a.join(weekly_b, how="inner")
+        if len(weekly) < min_periods:
+            continue
+
+        # Check price variation for both
+        cv_a = weekly["avg_price_a"].std() / weekly["avg_price_a"].mean()
+        cv_b = weekly["avg_price_b"].std() / weekly["avg_price_b"].mean()
+        if cv_a < min_price_variation or cv_b < min_price_variation:
+            continue
+
+        # Log-log regression: log(qty_a) ~ log(price_a) + log(price_b)
+        log_price_a = np.log(weekly["avg_price_a"].replace(0, np.nan).dropna())
+        log_price_b = np.log(
+            weekly.loc[log_price_a.index, "avg_price_b"].replace(0, np.nan).dropna()
+        )
+        log_qty_a = np.log(weekly.loc[log_price_a.index, "total_qty_a"].replace(0, np.nan).dropna())
+
+        if len(log_price_a) < min_periods:
+            continue
+
+        # Bivariate OLS
+        X = np.column_stack([log_price_a.values, log_price_b.values])
+        X = sm.add_constant(X)
+        y = log_qty_a.values
+
+        try:
+            model = sm.OLS(y, X).fit(cov_type="HC3")
+            own_elasticity = model.params[1]
+            cross_elasticity = model.params[2]
+            own_se = model.bse[1]
+            cross_se = model.bse[2]
+            own_p = model.pvalues[1]
+            cross_p = model.pvalues[2]
+            r2 = model.rsquared
+        except Exception:
+            continue
+
+        results.append(
+            {
+                "product_a": prod_a,
+                "product_b": prod_b,
+                "own_elasticity": own_elasticity,
+                "own_elasticity_se": own_se,
+                "own_elasticity_p": own_p,
+                "cross_elasticity": cross_elasticity,
+                "cross_elasticity_se": cross_se,
+                "cross_elasticity_p": cross_p,
+                "r_squared": r2,
+                "n_obs": len(log_price_a),
+                "avg_price_a": weekly["avg_price_a"].mean(),
+                "avg_price_b": weekly["avg_price_b"].mean(),
+            }
+        )
+
+    if not results:
+        return pd.DataFrame()
+
+    return pd.DataFrame(results)
+
+
+def compute_recovery_hhi(
+    demand_transference_df: pd.DataFrame,
+    cluster_assignments: Dict[str, int],
+) -> pd.DataFrame:
+    """
+    Compute Herfindahl-Hirschman Index (HHI) on demand recovery for each delisted product.
+
+    HHI = sum(s_i^2) where s_i = share of revenue recovered by substitute i
+    HHI -> 1: concentrated recovery (fragile, one substitute captures most demand)
+    HHI -> 0: diversified recovery (robust, many substitutes share demand)
+
+    Returns DataFrame with HHI per delisted product.
+    """
+    dt = demand_transference_df.copy()
+    dt["from_category"] = dt["from_product"].map({p: c for p, c in cluster_assignments.items()})
+    dt["to_category"] = dt["to_product"].map({p: c for p, c in cluster_assignments.items()})
+
+    rows = []
+    for delisted in dt["from_product"].unique():
+        delisted_dt = dt[dt["from_product"] == delisted]
+        if delisted_dt.empty:
+            continue
+
+        # Revenue at risk shares per substitute
+        total_risk = delisted_dt["revenue_at_risk"].sum()
+        if total_risk == 0:
+            continue
+
+        shares = delisted_dt.groupby("to_product")["revenue_at_risk"].sum() / total_risk
+        hhi = (shares**2).sum()
+
+        rows.append(
+            {
+                "delisted_product": delisted,
+                "recovery_hhi": hhi,
+                "n_substitutes": len(shares),
+                "total_revenue_at_risk": total_risk,
+                "top_substitute": shares.idxmax() if len(shares) > 0 else None,
+                "top_share": shares.max() if len(shares) > 0 else 0,
+            }
+        )
+
+    return pd.DataFrame(rows).sort_values("recovery_hhi")

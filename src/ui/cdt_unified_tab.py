@@ -72,14 +72,20 @@ def _invalidate_data_cache_if_changed(transactions_df: pd.DataFrame) -> None:
         return
 
     # Create a fingerprint of the current dataset
-    data_fingerprint = hash((
-        len(transactions_df),
-        transactions_df["transaction_id"].nunique() if "transaction_id" in transactions_df.columns else 0,
-        transactions_df["customer_id"].nunique() if "customer_id" in transactions_df.columns else 0,
-        transactions_df["stockcode"].nunique() if "stockcode" in transactions_df.columns else 0,
-        str(transactions_df["date"].min()) if "date" in transactions_df.columns else "",
-        str(transactions_df["date"].max()) if "date" in transactions_df.columns else "",
-    ))
+    data_fingerprint = hash(
+        (
+            len(transactions_df),
+            transactions_df["transaction_id"].nunique()
+            if "transaction_id" in transactions_df.columns
+            else 0,
+            transactions_df["customer_id"].nunique()
+            if "customer_id" in transactions_df.columns
+            else 0,
+            transactions_df["stockcode"].nunique() if "stockcode" in transactions_df.columns else 0,
+            str(transactions_df["date"].min()) if "date" in transactions_df.columns else "",
+            str(transactions_df["date"].max()) if "date" in transactions_df.columns else "",
+        )
+    )
 
     # Check if fingerprint matches cached one
     cached_fingerprint = st.session_state.get("cdt_unified_data_fingerprint")
@@ -241,8 +247,10 @@ def _render_cdt_config_panel(
         with col3:
             st.subheader("Clustering")
             cdt_config.linkage_method = st.selectbox(
-                "Linkage Method", ["average", "complete", "single"],
-                index=0, help="Average = default"
+                "Linkage Method",
+                ["average", "complete", "single"],
+                index=0,
+                help="Average = default",
             )
             cdt_config.min_k = st.slider("Min Clusters (k)", 2, 10, cdt_config.min_k)
             cdt_config.max_k = st.slider("Max Clusters (k)", 3, 20, cdt_config.max_k)
@@ -251,13 +259,17 @@ def _render_cdt_config_panel(
             st.subheader("Tree Building")
             cdt_config.min_cluster_size = st.slider(
                 "Min Cluster Size",
-                2, 10, cdt_config.min_cluster_size,
+                2,
+                10,
+                cdt_config.min_cluster_size,
                 help="Min products per tree node",
             )
             cdt_config.quality_threshold = (
                 st.slider(
                     "Quality Threshold (%)",
-                    40, 80, int(cdt_config.quality_threshold * 100),
+                    40,
+                    80,
+                    int(cdt_config.quality_threshold * 100),
                     help="Tree quality vs unconstrained baseline (default: 60%)",
                 )
                 / 100.0
@@ -269,8 +281,7 @@ def _render_cdt_config_panel(
                 help="Attribute split scoring method",
             )
             cdt_config.split_alpha = st.slider(
-                "Split Alpha (entropy/Gini mix)",
-                0.0, 1.0, cdt_config.split_alpha, 0.1
+                "Split Alpha (entropy/Gini mix)", 0.0, 1.0, cdt_config.split_alpha, 0.1
             )
 
     # Attribute columns
@@ -303,15 +314,9 @@ def _render_cdt_config_panel(
 
     # Behavioral parameters
     with st.expander("**Behavioral**", expanded=False):
-        cdt_config.top_n_products = st.slider(
-            "Top N Products", 20, 200, cdt_config.top_n_products
-        )
-        cdt_config.min_lift = st.slider(
-            "Min Lift", 1.0, 3.0, cdt_config.min_lift, 0.1
-        )
-        cdt_config.max_sub = st.slider(
-            "Max Substitution", 0.0, 0.5, cdt_config.max_sub, 0.05
-        )
+        cdt_config.top_n_products = st.slider("Top N Products", 20, 200, cdt_config.top_n_products)
+        cdt_config.min_lift = st.slider("Min Lift", 1.0, 3.0, cdt_config.min_lift, 0.1)
+        cdt_config.max_sub = st.slider("Max Substitution", 0.0, 0.5, cdt_config.max_sub, 0.05)
 
     # Expected duration hint
     n_rows = len(transactions_df)
@@ -391,6 +396,7 @@ def _render_cdt_config_panel(
     except Exception as e:
         st.error(f"Pipeline failed: {str(e)}")
         import traceback
+
         st.code(traceback.format_exc())
         return
 
@@ -422,7 +428,9 @@ def _render_cdt_results_tabs(
     active = st.session_state.get("cdt_unified_active_tab", 0)
     for i, (col, label) in enumerate(zip(btn_cols, _CDT_TABS)):
         btn_type = "primary" if i == active else "secondary"
-        if col.button(label, key=f"cdt_unified_tab_btn_{i}", type=btn_type, use_container_width=True):
+        if col.button(
+            label, key=f"cdt_unified_tab_btn_{i}", type=btn_type, use_container_width=True
+        ):
             st.session_state["cdt_unified_active_tab"] = i
             active = i
             st.rerun()
@@ -506,8 +514,7 @@ def _tab_dendrogram(
 def _tab_similarity(similarity_matrix: pd.DataFrame, similarity_method: str):
     st.subheader("Product Similarity Matrix")
     st.caption(
-        f"Method: {similarity_method.upper()}. "
-        "Red=dissimilar, Blue=similar / substitutable."
+        f"Method: {similarity_method.upper()}. Red=dissimilar, Blue=similar / substitutable."
     )
     top_n = st.slider(
         "Top N Products",
@@ -538,10 +545,7 @@ def _tab_switching(switching_df: pd.DataFrame, product_lookup: dict):
     # Diagnostic metrics
     n_pairs = len(switching_df)
     max_rate = switching_df["switch_rate"].max()
-    st.info(
-        f"📊 **{n_pairs:,}** switching pairs detected — "
-        f"max switch rate: **{max_rate:.1%}**"
-    )
+    st.info(f"📊 **{n_pairs:,}** switching pairs detected — max switch rate: **{max_rate:.1%}**")
 
     top_n_heatmap = st.slider(
         "Top N products in heatmap",
@@ -555,6 +559,7 @@ def _tab_switching(switching_df: pd.DataFrame, product_lookup: dict):
     with col1:
         with st.spinner("Rendering switching heatmap — please wait…"):
             from src.analytics.cdt_behavioral import switching_matrix_to_heatmap
+
             switch_matrix = switching_matrix_to_heatmap(switching_df, top_n=top_n_heatmap)
 
         if switch_matrix.empty:
@@ -574,6 +579,7 @@ def _tab_switching(switching_df: pd.DataFrame, product_lookup: dict):
     with col2:
         st.write("**Top Switching Paths**")
         from src.analytics.cdt_behavioral import get_top_switching_paths
+
         top_switches = get_top_switching_paths(switching_df, top_n=15)
         if not top_switches.empty:
             display_df = top_switches.copy()
@@ -595,11 +601,15 @@ def _tab_switching(switching_df: pd.DataFrame, product_lookup: dict):
     )
     min_rate_input = st.slider(
         "Min switch rate for network edges",
-        0.00, 0.20, 0.05, 0.01,
+        0.00,
+        0.20,
+        0.05,
+        0.01,
         key="cdt_net_min_rate",
     )
     with st.spinner("Rendering network graph — please wait…"):
         from src.viz.cdt_viz import plot_switching_network
+
         fig_net = plot_switching_network(switching_df, product_lookup, min_rate=min_rate_input)
     st.plotly_chart(fig_net, use_container_width=True)
     render_analytics_export(switching_df, "CDT_Switching")
@@ -627,6 +637,7 @@ def _tab_substitution(substitution_df: pd.DataFrame, product_lookup: dict):
 
     st.write("**Top Substitutable Pairs**")
     from src.analytics.cdt_behavioral import get_top_substitution_pairs
+
     top_subs = get_top_substitution_pairs(substitution_df, top_n=20)
     if not top_subs.empty:
         display_df = top_subs.copy()
@@ -653,6 +664,7 @@ def _tab_bundling(bundling_df: pd.DataFrame, product_lookup: dict):
 
     st.write("**Top Bundling Pairs**")
     from src.analytics.cdt_behavioral import get_top_bundling_pairs
+
     top_bundles = get_top_bundling_pairs(bundling_df, top_n=20)
     if not top_bundles.empty:
         display_df = top_bundles.copy()
@@ -734,6 +746,7 @@ def _tab_cdt_benchmark():
     if st.button("▶️ Run CDT Benchmark", type="primary", key="cdt_bench_run"):
         with st.spinner("Running CDT benchmark against synthetic ground truth…"):
             from src.analytics.cdt_validation import run_cdt_validation
+
             methods = [
                 "legacy_phi",
                 "legacy_jaccard",
@@ -832,6 +845,7 @@ def _tab_export(
         st.write("**Tree Structure (JSON)**")
         if st.button("Export CDT as JSON"):
             from src.analytics.cdt_tree_builder import tree_to_json
+
             json_str = tree_to_json(root)
             st.download_button(
                 "Download JSON",
@@ -843,6 +857,7 @@ def _tab_export(
         st.write("**Tree Structure (CSV)**")
         if st.button("Export CDT as CSV"):
             from src.analytics.cdt_tree_builder import tree_to_dataframe
+
             df = tree_to_dataframe(root)
             csv = df.to_csv(index=False)
             st.download_button(
@@ -862,12 +877,14 @@ def _tab_export(
     with export_cols[1]:
         if not substitution_df.empty:
             from src.analytics.cdt_behavioral import get_top_substitution_pairs
+
             top_subs = get_top_substitution_pairs(substitution_df, top_n=100)
             csv = top_subs.to_csv(index=False)
             st.download_button("Substitution Pairs", csv, "cdt_substitution.csv", "text/csv")
     with export_cols[2]:
         if not bundling_df.empty:
             from src.analytics.cdt_behavioral import get_top_bundling_pairs
+
             top_bundles = get_top_bundling_pairs(bundling_df, top_n=100)
             csv = top_bundles.to_csv(index=False)
             st.download_button("Bundling Pairs", csv, "cdt_bundling.csv", "text/csv")
@@ -1085,6 +1102,7 @@ def _render_assortment_optimizer(transactions_df: pd.DataFrame, product_lookup: 
     # Solver info
     if solver == "milp":
         import importlib.util
+
         if importlib.util.find_spec("ortools.linear_solver.pywraplp"):
             st.info("🔧 Using OR-Tools MILP solver")
         else:
@@ -1095,7 +1113,9 @@ def _render_assortment_optimizer(transactions_df: pd.DataFrame, product_lookup: 
 
     # Run optimization
     if st.button("🚀 Optimize Assortment", type="primary"):
-        with st.spinner(f"Optimizing assortment (max {max_skus} SKUs, {min_coverage:.0%} coverage)..."):
+        with st.spinner(
+            f"Optimizing assortment (max {max_skus} SKUs, {min_coverage:.0%} coverage)..."
+        ):
             if solver == "milp":
                 selected_skus, metrics = optimize_assortment_milp(
                     transactions_df,
@@ -1237,10 +1257,29 @@ def _render_scenario_comparison(
 def detect_attribute_columns(df: pd.DataFrame) -> list[str]:
     """Detect common product attribute columns."""
     candidates = [
-        "category", "brand", "size", "flavor", "color", "variant",
-        "type", "style", "material", "collection", "line", "range",
-        "pack_size", "unit", "weight", "volume", "scent", "design",
-        "theme", "occasion", "target_audience", "gender", "age_group",
+        "category",
+        "brand",
+        "size",
+        "flavor",
+        "color",
+        "variant",
+        "type",
+        "style",
+        "material",
+        "collection",
+        "line",
+        "range",
+        "pack_size",
+        "unit",
+        "weight",
+        "volume",
+        "scent",
+        "design",
+        "theme",
+        "occasion",
+        "target_audience",
+        "gender",
+        "age_group",
     ]
     return [c for c in candidates if c in df.columns]
 

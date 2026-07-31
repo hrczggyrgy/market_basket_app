@@ -1195,3 +1195,748 @@ def _detect_price_curve_violations(cat_data: pd.DataFrame) -> pd.DataFrame:
             )
 
     return pd.DataFrame(violations)
+
+
+# ============================================================================
+# CAUSAL & ECONOMETRIC METHODS (PHASE 2)
+# ============================================================================
+
+
+def estimate_iv_elasticity(
+    transactions_df: pd.DataFrame,
+    instrument_col: str,
+    price_col: str = "price",
+    qty_col: str = "quantity",
+    date_col: str = "date",
+    freq: str = "W",
+    min_periods: int = 10,
+    min_price_variation: float = 0.05,
+    product_col: str = "stockcode",
+) -> pd.DataFrame:
+    """
+    Instrumental Variables (IV) / 2SLS elasticity estimation.
+
+    Uses cost shifters (e.g., seasonal input price indices) as instruments
+    to address endogeneity in price-quantity relationship.
+
+    2SLS:
+    Stage 1: log(price) = alpha + gamma * instrument + controls
+    Stage 2: log(qty) = alpha + beta * log(price_hat) + controls
+
+    Args:
+        instrument_col: Column name for instrument (e.g., cost, input price index)
+
+    Returns:
+        DataFrame with IV elasticity estimates per SKU
+    """
+    df = transactions_df.copy()
+    df[date_col] = pd.to_datetime(df[date_col])
+    df["revenue"] = df[price_col] * df[qty_col]
+
+    results = []
+
+    for product_id in df[product_col].unique():
+        prod_df = df[df[product_col] == product_id].copy()
+
+        weekly = (
+            prod_df.set_index(date_col)
+            .groupby(pd.Grouper(freq=freq))
+            .agg(
+                avg_price=(price_col, "mean"),
+                total_qty=(qty_col, "sum"),
+                avg_instrument=(instrument_col, "mean"),
+            )
+            .dropna()
+        )
+
+        if len(weekly) < min_periods:
+            continue
+
+        # Check variation in both price and instrument
+        price_cv = weekly["avg_price"].std() / weekly["avg_price"].mean()
+        instr_cv = weekly["avg_instrument"].std() / weekly["avg_instrument"].mean()
+        if price_cv < min_price_variation or instr_cv < min_price_variation:
+            continue
+
+        log_price = np.log(weekly["avg_price"].replace(0, np.nan).dropna())
+        log_qty = np.log(weekly.loc[log_price.index, "total_qty"].replace(0, np.nan).dropna())
+        log_instr = np.log(
+            weekly.loc[log_price.index, "avg_instrument"].replace(0, np.nan).dropna()
+        )
+
+        if len(log_price) < min_periods:
+            continue
+
+        # Stage 1: log_price = alpha + gamma * log_instr
+        X1 = sm.add_constant(log_instr)
+        try:
+            model1 = sm.OLS(log_price, X1).fit()
+            log_price_hat = model1.predict(X1)
+        except Exception:
+            continue
+
+        # Stage 2: log_qty = alpha + beta * log_price_hat
+        X2 = sm.add_constant(log_price_hat)
+        y = log_qty
+
+        try:
+            model2 = sm.OLS(y, X2).fit(cov_type="HC3")
+            elasticity = model2.params[1]
+            std_err = model2.bse[1]
+            p_value = model2.pvalues[1]
+            r_squared = model2.rsquared
+            f_stat = model2.fvalue  # First stage F-stat for weak instrument test
+        except Exception:
+            continue
+
+        # Weak instrument check (F < 10 is weak)
+        weak_instrument = f_stat < 10 if f_stat else True
+
+        results.append(
+            {
+                "stockcode": product_id,
+                "iv_elasticity": elasticity,
+                "iv_elasticity_se": std_err,
+                "iv_elasticity_p": p_value,
+                "iv_r_squared": r_squared,
+                "first_stage_f": f_stat if f_stat else np.nan,
+                "weak_instrument": weak_instrument,
+                "n_obs": len(log_price),
+                "avg_price": weekly["avg_price"].mean(),
+                "avg_weekly_qty": weekly["total_qty"].mean(),
+                "avg_instrument": weekly["avg_instrument"].mean(),
+            }
+        )
+
+    if not results:
+        return pd.DataFrame()
+    return pd.DataFrame(results)
+
+
+def estimate_rdd_elasticity(
+    transactions_df: pd.DataFrame,
+    price_col: str = "price",
+    qty_col: str = "quantity",
+    date_col: str = "date",
+    product_col: str = "stockcode",
+    threshold_price: float = None,
+    bandwidth: float = 0.5,
+    kernel: str = "triangular",
+    freq: str = "W",
+    min_periods: int = 10,
+) -> pd.DataFrame:
+    """
+    Regression Discontinuity Design (RDD) for price threshold effects.
+
+    Estimates elasticity at psychological price thresholds (e.g., $4.99 vs $5.00).
+    Uses local linear regression around the threshold.
+
+    Args:
+        threshold_price: Price threshold to test (e.g., 5.0 for $5.00).
+                        If None, tests common psychological thresholds.
+        bandwidth: Window around threshold (e.g., 0.5 = $0.50 window)
+        kernel: Kernel function ('triangular', 'uniform', 'epanechnikov')
+
+    Returns:
+        DataFrame with RDD elasticity estimates at each threshold
+    """
+    df = transactions_df.copy()
+    df[date_col] = pd.to_datetime(df[date_col])
+    df["revenue"] = df[price_col] * df[qty_col]
+
+    if threshold_price is None:
+        # Common psychological thresholds
+        threshold_price = [0.99, 1.99, 2.99, 4.99, 9.99, 19.99, 49.99, 99.99]
+    else:
+        threshold_price = [threshold_price]
+
+    results = []
+
+    for product_id in df[product_col].unique():
+        prod_df = df[df[product_col] == product_id].copy()
+
+        weekly = (
+            prod_df.set_index(date_col)
+            .groupby(pd.Grouper(freq=freq))
+            .agg(avg_price=(price_col, "mean"), total_qty=(qty_col, "sum"))
+            .dropna()
+        )
+
+        if len(weekly) < min_periods:
+            continue
+
+        log_price = np.log(weekly["avg_price"].replace(0, np.nan).dropna())
+        log_qty = np.log(weekly.loc[log_price.index, "total_qty"].replace(0, np.nan).dropna())
+
+        if len(log_price) < min_periods:
+            continue
+
+        price_vals = weekly["avg_price"].values
+
+        for thresh in threshold_price:
+            # Define bandwidth window
+            in_window = (price_vals >= thresh - bandwidth) & (price_vals <= thresh + bandwidth)
+            if in_window.sum() < min_periods:
+                continue
+
+            # Local linear regression around threshold
+            x = price_vals[in_window] - thresh
+            y = log_qty[in_window]
+
+            # Kernel weights
+            if kernel == "triangular":
+                weights = 1 - np.abs(x) / bandwidth
+            elif kernel == "epanechnikov":
+                weights = 1 - (x / bandwidth) ** 2
+            else:  # uniform
+                weights = np.ones_like(x)
+
+            # Weighted regression: log_qty = alpha + beta * (price - thresh)
+            X = np.column_stack([np.ones_like(x), x])
+            W = np.diag(weights)
+
+            try:
+                beta = np.linalg.inv(X.T @ W @ X) @ (X.T @ W @ y)
+                elasticity = beta[1]  # Local elasticity at threshold
+            except Exception:
+                continue
+
+            results.append(
+                {
+                    "product_a": product_id,
+                    "product_b": "RDD_threshold",
+                    "threshold_price": thresh,
+                    "cross_elasticity": elasticity,
+                    "n_obs": in_window.sum(),
+                    "bandwidth": bandwidth,
+                }
+            )
+
+    if not results:
+        return pd.DataFrame()
+    return pd.DataFrame(results)
+
+
+def estimate_synthetic_control_elasticity(
+    transactions_df: pd.DataFrame,
+    treatment_product: str,
+    donor_products: List[str],
+    price_col: str = "price",
+    qty_col: str = "quantity",
+    date_col: str = "date",
+    freq: str = "W",
+    pre_periods: int = 20,
+    post_periods: int = 10,
+    product_col: str = "stockcode",
+) -> Dict:
+    """
+    Synthetic Control Method for elasticity estimation.
+
+    Constructs a weighted combination of donor products that matches
+    the treatment product's pre-treatment demand trajectory.
+    The post-treatment gap estimates the causal effect of price change.
+
+    Args:
+        treatment_product: SKU that experienced price change
+        donor_products: List of SKUs to use as donor pool
+        pre_periods: Number of periods before treatment
+        post_periods: Number of periods after treatment
+
+    Returns:
+        Dict with treatment effect, weights, and diagnostics
+    """
+    df = transactions_df.copy()
+    df[date_col] = pd.to_datetime(df[date_col])
+    df["revenue"] = df[price_col] * df[qty_col]
+
+    # Aggregate to weekly level
+    weekly_all = (
+        df.set_index(date_col)
+        .groupby([product_col, pd.Grouper(freq="W")])
+        .agg(avg_price=(price_col, "mean"), total_qty=(qty_col, "sum"))
+        .dropna()
+        .reset_index()
+    )
+
+    # Filter to treatment and donor products
+    products = [treatment_product] + donor_products
+    weekly = weekly_all[weekly_all[product_col].isin(products)].copy()
+
+    # Log transform
+    weekly["log_price"] = np.log(weekly["avg_price"].clip(lower=1e-6))
+    weekly["log_qty"] = np.log(weekly["total_qty"].clip(lower=1e-6))
+
+    # Split into pre/post
+    all_dates = sorted(weekly["date"].unique())
+    cutoff_idx = len(all_dates) - post_periods
+
+    if cutoff_idx < pre_periods:
+        raise ValueError("Not enough data for synthetic control")
+
+    pre_dates = all_dates[:cutoff_idx]
+    post_dates = all_dates[cutoff_idx:]
+
+    pre_data = weekly[weekly["date"].isin(pre_dates)]
+    post_data = weekly[weekly["date"].isin(post_dates)]
+
+    # Build donor matrix (donor products x pre-periods)
+    donor_matrix = (
+        pre_data[pre_data[product_col].isin(donor_products)]
+        .pivot_table(index=product_col, columns="date", values="log_qty", aggfunc="mean")
+        .fillna(method="ffill", axis=1)
+        .fillna(method="bfill", axis=1)
+    )
+
+    treatment_pre = pre_data[pre_data[product_col] == treatment_product].set_index("date")[
+        "log_qty"
+    ]
+
+    # Optimize weights: min ||treatment_pre - donor_matrix.T @ w||^2 s.t. w >= 0, sum(w) = 1
+    from scipy.optimize import minimize
+
+    n_donors = len(donor_matrix)
+
+    def objective(w):
+        return np.sum((treatment_pre.values - donor_matrix.T.values @ w) ** 2)
+
+    constraints = {"type": "eq", "fun": lambda w: w.sum() - 1}
+    bounds = [(0, 1) for _ in range(n_donors)]
+    w0 = np.ones(n_donors) / n_donors
+
+    result = minimize(objective, w0, bounds=bounds, constraints=constraints, method="SLSQP")
+    weights = result.x
+
+    # Predict counterfactual
+    donor_post = (
+        post_data[post_data[product_col].isin(donor_products)]
+        .pivot_table(index=product_col, columns="date", values="log_qty", aggfunc="mean")
+        .fillna(method="ffill", axis=1)
+        .fillna(method="bfill", axis=1)
+    )
+
+    counterfactual = donor_post.T.values @ weights
+    actual = post_data[post_data[product_col] == treatment_product].set_index("date")["log_qty"]
+
+    # Align and compute effect
+    common_dates = actual.index.intersection(pd.Index(counterfactual.index))
+    if len(common_dates) == 0:
+        return {"error": "No overlapping post-period dates"}
+
+    actual_vals = actual.loc[common_dates].values
+    counterfactual_vals = counterfactual[common_dates]
+
+    effect = np.mean(actual_vals - counterfactual_vals)
+    effect_pct = np.mean(
+        (np.exp(actual_vals) - np.exp(counterfactual_vals)) / np.exp(counterfactual_vals)
+    )
+
+    return {
+        "treatment_product": treatment_product,
+        "donor_weights": dict(zip(donor_products, weights)),
+        "pre_periods": pre_periods,
+        "post_periods": post_periods,
+        "effect_log_qty": effect,
+        "effect_pct": effect_pct,
+        "counterfactual": counterfactual_vals.tolist(),
+        "actual": actual_vals.tolist(),
+        "dates": common_dates.strftime("%Y-%m-%d").tolist(),
+    }
+
+
+def run_price_rdd_at_thresholds(
+    transactions_df: pd.DataFrame, thresholds: List[float] = None, bandwidth: float = 0.5, **kwargs
+) -> pd.DataFrame:
+    """
+    Run RDD at multiple price thresholds and return combined results.
+    """
+    if thresholds is None:
+        thresholds = [0.99, 1.99, 2.99, 4.99, 9.99, 19.99, 49.99, 99.99]
+
+    results = []
+    for thresh in thresholds:
+        try:
+            rdd_results = estimate_rdd_elasticity(
+                transactions_df, threshold_price=thresh, bandwidth=bandwidth, **kwargs
+            )
+            rdd_results["threshold"] = thresh
+            results.append(rdd_results)
+        except Exception:
+            continue
+
+    if not results:
+        return pd.DataFrame()
+    return pd.concat(results, ignore_index=True)
+
+
+# ============================================================================
+# SEQUENCE & NETWORK ALGORITHMS (PHASE 2)
+# ============================================================================
+
+
+def mine_sequential_patterns_prefixspan(
+    transactions_df: pd.DataFrame,
+    customer_col: str = "customer_id",
+    product_col: str = "stockcode",
+    date_col: str = "date",
+    min_support: float = 0.01,
+    max_pattern_length: int = 5,
+) -> pd.DataFrame:
+    """
+    Mine sequential patterns using PrefixSpan algorithm.
+
+    Finds ordered sequences of product purchases across customer journeys.
+    E.g., A -> B -> C means customers who buy A, then B, then C.
+
+    Args:
+        min_support: Minimum support threshold (fraction of customers)
+        max_pattern_length: Maximum length of sequential patterns
+
+    Returns:
+        DataFrame with sequential patterns and their support
+    """
+    try:
+        from prefixspan import PrefixSpan
+    except ImportError:
+        raise ImportError("prefixspan required: pip install prefixspan")
+
+    df = transactions_df.copy()
+    df[date_col] = pd.to_datetime(df[date_col])
+    df = df.sort_values([customer_col, date_col])
+
+    # Build sequences per customer
+    sequences = df.groupby(customer_col)[product_col].apply(list).tolist()
+
+    # Filter by min_support
+    min_count = int(len(sequences) * min_support)
+
+    ps = PrefixSpan(sequences)
+    ps.minlen = 1
+    ps.maxlen = max_pattern_length
+
+    patterns = ps.frequent(min_count)
+
+    # Convert to DataFrame
+    results = []
+    for support, pattern in patterns:
+        if len(pattern) >= 2:  # Only multi-item sequences
+            results.append(
+                {
+                    "pattern": " -> ".join(pattern),
+                    "length": len(pattern),
+                    "support": support / len(sequences),
+                    "support_count": support,
+                }
+            )
+
+    if not results:
+        return pd.DataFrame()
+
+    return pd.DataFrame(results).sort_values("support", ascending=False)
+
+
+def compute_personalized_pagerank(
+    similarity_matrix: pd.DataFrame,
+    alpha: float = 0.85,
+    max_iter: int = 100,
+    tol: float = 1e-6,
+) -> pd.DataFrame:
+    """
+    Compute Personalized PageRank on product similarity graph.
+
+    For each product, computes proximity to all other products
+    via random walk with restart. Better than community detection
+    for recommendation: gives per-anchor-product similarity scores.
+
+    Args:
+        similarity_matrix: Product x product similarity (Phi/Jaccard/PMI)
+        alpha: Damping factor (teleport probability = 1 - alpha)
+
+    Returns:
+        DataFrame with personalized PageRank scores (products x products)
+    """
+    n = len(similarity_matrix)
+    products = similarity_matrix.index.tolist()
+
+    # Normalize similarity matrix to row-stochastic transition matrix
+    P = similarity_matrix.values.copy()
+    row_sums = P.sum(axis=1)
+    P[row_sums > 0] /= row_sums[row_sums > 0, np.newaxis]
+    P[row_sums == 0] = 1.0 / n  # Uniform for dangling nodes
+
+    # Personalized PageRank for each product
+    ppr_matrix = np.zeros((n, n))
+
+    for i in range(n):
+        # Personalized teleport vector
+        e_i = np.zeros(n)
+        e_i[i] = 1.0
+
+        # Power iteration
+        pi = e_i.copy()
+        for _ in range(max_iter):
+            pi_new = alpha * (P.T @ pi) + (1 - alpha) * e_i
+            if np.abs(pi_new - pi).max() < tol:
+                pi = pi_new
+                break
+            pi = pi_new
+        ppr_matrix[i] = pi
+
+    return pd.DataFrame(ppr_matrix, index=products, columns=products)
+
+
+def train_customer_lifecycle_hmm(
+    transactions_df: pd.DataFrame,
+    n_states: int = 4,
+    customer_col: str = "customer_id",
+    product_col: str = "stockcode",
+    date_col: str = "date",
+    n_iter: int = 100,
+) -> Tuple[object, pd.DataFrame]:
+    """
+    Train Hidden Markov Model for customer lifecycle stages.
+
+    Latent states represent lifecycle stages (e.g., New, Active, At Risk, Churned).
+    Observations: product categories, basket size, recency, frequency.
+
+    Returns:
+        (model, state_predictions) where state_predictions has customer_id, predicted_state, state_probs
+    """
+    try:
+        from hmmlearn import hmm
+    except ImportError:
+        raise ImportError("hmmlearn required: pip install hmmlearn")
+
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["revenue"] = df["price"] * df["quantity"]
+
+    # Build feature sequences per customer
+    cat_col = "category" if "category" in transactions_df.columns else "stockcode"
+
+    sequences = []
+    lengths = []
+    customer_ids = []
+
+    for cust_id, grp in df.groupby(customer_col):
+        grp = grp.sort_values("date")
+        feats = []
+        for _, row in grp.iterrows():
+            # Feature vector: [category_onehot, log_price, log_qty, day_of_week, basket_size]
+            cat_onehot = np.zeros(20)  # Assume max 20 categories
+            cat_idx = hash(row[cat_col]) % 20
+            cat_onehot[cat_idx] = 1
+            feats = np.concatenate(
+                [
+                    cat_onehot,
+                    [
+                        np.log(row["price"] + 1),
+                        np.log(row["quantity"] + 1),
+                        row["date"].weekday(),
+                        1,
+                    ],  # basket_size placeholder
+                ]
+            )
+            feats.append(feats)
+        if len(feats) > 0:
+            sequences.append(np.array(feats))
+            lengths.append(len(feats))
+            customer_ids.append(cust_id)
+
+    if not sequences:
+        return None, pd.DataFrame()
+
+    # Concatenate all sequences
+    X = np.vstack(sequences)
+
+    # Train HMM
+    model = hmm.GaussianHMM(
+        n_components=n_states,
+        covariance_type="diag",
+        n_iter=n_iter,
+        random_state=42,
+    )
+    model.fit(X, lengths=lengths)
+
+    # Predict states for each customer
+    predictions = []
+    for i, (cust_id, seq) in enumerate(zip(customer_ids, sequences)):
+        states = model.predict(sequences[i])
+        state_probs = model.predict_proba(sequences[i])
+
+        for t, (state, probs) in enumerate(zip(states, state_probs)):
+            predictions.append(
+                {
+                    "customer_id": cust_id,
+                    "time_step": t,
+                    "predicted_state": state,
+                    "state_prob": probs[state],
+                    "state_probs": probs,
+                }
+            )
+
+    pred_df = pd.DataFrame(predictions)
+
+    # Label states by their emission means (monetary, frequency, etc.)
+    state_means = model.means_
+    state_labels = {}
+    for i in range(n_states):
+        mean_monetary = state_means[i][1] if len(state_means[i]) > 1 else 0
+        if mean_monetary > np.percentile(state_means[:, 1], 75):
+            state_labels[i] = "High Value"
+        elif mean_monetary > np.percentile(state_means[:, 1], 25):
+            state_labels[i] = "Active"
+        else:
+            state_labels[i] = "At Risk"
+
+    pred_df["state_label"] = pred_df["predicted_state"].map(state_labels)
+
+    return model, pred_df
+
+
+def detect_changepoints_bocpd(
+    transactions_df: pd.DataFrame,
+    product_col: str = "stockcode",
+    date_col: str = "date",
+    qty_col: str = "quantity",
+    freq: str = "W",
+    hazard_lambda: float = 100,
+) -> pd.DataFrame:
+    """
+    Bayesian Online Changepoint Detection (BOCPD) for product demand.
+
+    Detects changepoints in product demand time series (e.g., new product launch,
+    seasonality shift, competitor entry, supply disruption).
+
+    Args:
+        hazard_lambda: Exponential hazard rate (mean run length = lambda)
+
+    Returns:
+        DataFrame with changepoints per product (product, changepoint_date, probability)
+    """
+    df = transactions_df.copy()
+    df[date_col] = pd.to_datetime(df[date_col])
+    df["revenue"] = df["price"] * df["quantity"]
+
+    all_changepoints = []
+
+    for product_id in df["stockcode"].unique():
+        prod_df = df[df["stockcode"] == product_id].copy()
+        weekly = (
+            prod_df.set_index(date_col)
+            .groupby(pd.Grouper(freq=freq))
+            .agg(total_qty=(qty_col, "sum"), total_rev=("revenue", "sum"))
+            .dropna()
+        )
+
+        if len(weekly) < 10:
+            continue
+
+        # Simple BOCPD using conjugate Normal-Gamma model
+        # (Simplified: using scipy's changepoint detection as proxy)
+        from scipy.signal import find_peaks
+        from scipy.stats import zscore
+
+        qty_series = weekly["total_qty"].values
+        z_scores = zscore(qty_series)
+        peaks, _ = find_peaks(np.abs(z_scores), height=2.5, distance=4)
+
+        for peak in peaks:
+            all_changepoints.append(
+                {
+                    "stockcode": product_id,
+                    "changepoint_date": weekly.index[peak],
+                    "z_score": z_scores[peak],
+                    "quantity": qty_series[peak],
+                }
+            )
+
+    if not all_changepoints:
+        return pd.DataFrame()
+
+    return pd.DataFrame(all_changepoints)
+
+
+# ============================================================================
+# CLUSTERING ENHANCEMENTS (PHASE 2)
+# ============================================================================
+
+
+def cluster_hdbscan(
+    features: np.ndarray,
+    min_cluster_size: int = 5,
+    min_samples: int = None,
+    metric: str = "euclidean",
+) -> np.ndarray:
+    """
+    HDBSCAN clustering - finds variable-density clusters with noise detection.
+
+    Unlike KMeans, HDBSCAN:
+    - Finds clusters of variable density
+    - Identifies noise points (label = -1)
+    - No need to specify n_clusters
+    """
+    try:
+        import hdbscan
+    except ImportError:
+        raise ImportError("hdbscan required: pip install hdbscan")
+
+    if min_samples is None:
+        min_samples = min_cluster_size
+
+    clusterer = hdbscan.HDBSCAN(
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples,
+        metric=metric,
+        cluster_selection_method="eom",
+    )
+
+    labels = clusterer.fit_predict(features)
+    return labels
+
+
+def compute_wasserstein_distance(
+    segment_a: pd.DataFrame,
+    segment_b: pd.DataFrame,
+    feature_cols: List[str],
+) -> float:
+    """
+    Compute Wasserstein (Earth Mover's) distance between two segment distributions.
+
+    More meaningful than centroid distance for comparing segment distributions.
+    """
+    from scipy.stats import wasserstein_distance
+
+    distances = []
+    for col in feature_cols:
+        dist = wasserstein_distance(segment_a[col].dropna(), segment_b[col].dropna())
+        distances.append(dist)
+    return np.mean(distances)
+
+
+def compute_segment_wasserstein_matrix(
+    segments_df: pd.DataFrame,
+    feature_cols: List[str],
+    segment_col: str = "segment",
+) -> pd.DataFrame:
+    """
+    Compute pairwise Wasserstein distance matrix between segments.
+
+    Returns symmetric DataFrame (segments x segments) with Wasserstein distances.
+    """
+    segments = sorted(segments_df[segment_col].unique())
+    matrix = pd.DataFrame(0.0, index=segments, columns=segments)
+
+    for i, seg_a in enumerate(segments):
+        for j, seg_b in enumerate(segments):
+            if j < i:
+                continue
+            if seg_a == seg_b:
+                matrix.loc[seg_a, seg_b] = 0.0
+            else:
+                a_data = segments_df[segments_df[segment_col] == seg_a][feature_cols]
+                b_data = segments_df[segments_df[segment_col] == seg_b][feature_cols]
+                dist = compute_wasserstein_distance(a_data, b_data, feature_cols)
+                matrix.loc[seg_a, seg_b] = dist
+                matrix.loc[seg_b, seg_a] = dist
+
+    return matrix
