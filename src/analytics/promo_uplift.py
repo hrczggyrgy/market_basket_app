@@ -447,6 +447,217 @@ def estimate_propensity_score(
     return pd.Series(propensity, index=X.index)
 
 
+def check_propensity_overlap(
+    propensity: pd.Series,
+    treatment: pd.Series,
+    min_overlap: float = 0.1,
+    trim_threshold: float = 0.01,
+) -> Dict:
+    """
+    Check propensity score overlap (common support) between treated and control.
+
+    Overlap is crucial for valid causal inference. If treated and control units
+    have disjoint propensity score ranges, causal estimates are unreliable.
+
+    Args:
+        propensity: Propensity scores (0-1)
+        treatment: Binary treatment indicator (0/1)
+        min_overlap: Minimum required overlap proportion (default 0.1)
+        trim_threshold: Trim observations with propensity < trim_threshold or > 1-trim_threshold
+
+    Returns:
+        Dict with overlap metrics, warnings, and trimmed indices if applicable
+    """
+    treated_ps = propensity[treatment == 1]
+    control_ps = propensity[treatment == 0]
+
+    if len(treated_ps) == 0 or len(control_ps) == 0:
+        return {
+            "overlap": False,
+            "warning": "No treated or control units",
+            "treated_range": None,
+            "control_range": None,
+            "overlap_proportion": 0.0,
+            "trimmed": False,
+        }
+
+    treated_range = (treated_ps.min(), treated_ps.max())
+    control_range = (control_ps.min(), control_ps.max())
+
+    # Compute overlap proportion
+    overlap_lower = max(treated_range[0], control_range[0])
+    overlap_upper = min(treated_range[1], control_range[1])
+
+    if overlap_lower >= overlap_upper:
+        overlap_proportion = 0.0
+    else:
+        # Proportion of each group in the overlap region
+        treated_in_overlap = ((treated_ps >= overlap_lower) & (treated_ps <= overlap_upper)).mean()
+        control_in_overlap = ((control_ps >= overlap_lower) & (control_ps <= overlap_upper)).mean()
+        overlap_proportion = min(treated_in_overlap, control_in_overlap)
+
+    # Check for extreme propensity scores (near 0 or 1)
+    trim_low = (propensity < trim_threshold).sum()
+    trim_high = (propensity > 1 - trim_threshold).sum()
+
+    results = {
+        "overlap": overlap_proportion >= min_overlap,
+        "overlap_proportion": overlap_proportion,
+        "treated_range": treated_range,
+        "control_range": control_range,
+        "overlap_range": (overlap_lower, overlap_upper),
+        "treated_in_overlap": treated_in_overlap,
+        "control_in_overlap": control_in_overlap,
+        "min_overlap_required": min_overlap,
+        "trim_low": int(trim_low),
+        "trim_high": int(trim_high),
+        "trim_threshold": trim_threshold,
+        "warnings": [],
+    }
+
+    if overlap_proportion < min_overlap:
+        results["warnings"].append(
+            f"Insufficient propensity overlap: {overlap_proportion:.1%} < {min_overlap:.1%}. "
+            f"Causal estimates may be unreliable."
+        )
+
+    if trim_low > 0 or trim_high > 0:
+        results["warnings"].append(
+            f"Extreme propensity scores detected: {trim_low} below {trim_threshold}, "
+            f"{trim_high} above {1 - trim_threshold}. Consider trimming."
+        )
+
+    # Check for complete separation
+    if treated_range[0] > control_range[1] or control_range[0] > treated_range[1]:
+        results["warnings"].append(
+            "Complete separation: treated and control propensity ranges do not overlap at all."
+        )
+        results["overlap"] = False
+
+    return results
+
+
+def trim_propensity_scores(
+    X: pd.DataFrame,
+    treatment: pd.Series,
+    propensity: pd.Series,
+    trim_threshold: float = 0.01,
+) -> Tuple[pd.DataFrame, pd.Series, pd.Series, pd.Series]:
+    """
+    Trim observations with extreme propensity scores.
+
+    Removes units with propensity < trim_threshold or > 1-trim_threshold
+    to improve overlap and reduce extrapolation.
+
+    Returns trimmed X, treatment, y, propensity.
+    """
+    mask = (propensity >= trim_threshold) & (propensity <= 1 - trim_threshold)
+
+    return X[mask], treatment[mask], propensity[mask], mask
+
+
+def validate_uplift_assumptions(
+    X: pd.DataFrame,
+    treatment: pd.Series,
+    y: pd.Series,
+    propensity: pd.Series,
+    min_overlap: float = 0.1,
+) -> Dict:
+    """
+    Comprehensive validation of uplift modeling assumptions.
+
+    Checks:
+    1. Propensity score overlap (common support)
+    2. Balance before/after stratification
+    3. Treatment effect heterogeneity
+    4. Sample size adequacy
+
+    Returns dict with validation results and recommendations.
+    """
+    # 1. Overlap check
+    overlap_results = check_propensity_overlap(propensity, treatment, min_overlap=min_overlap)
+
+    # 2. Covariate balance (standardized mean differences)
+    treated_mask = treatment == 1
+    control_mask = treatment == 0
+
+    balance_results = {}
+    for col in X.select_dtypes(include=[np.number]).columns:
+        treated_mean = X.loc[treated_mask, col].mean()
+        control_mean = X.loc[control_mask, col].mean()
+        treated_std = X.loc[treated_mask, col].std()
+        control_std = X.loc[control_mask, col].std()
+        pooled_std = np.sqrt((treated_std**2 + control_std**2) / 2)
+
+        if pooled_std > 0:
+            smd = (treated_mean - control_mean) / pooled_std
+        else:
+            smd = 0
+
+        balance_results[col] = {
+            "smd": float(smd),
+            "balanced": abs(smd) < 0.1,  # SMD < 0.1 is good balance
+            "treated_mean": float(treated_mean),
+            "control_mean": float(control_mean),
+        }
+
+    # Overall balance
+    max_smd = max(abs(v["smd"]) for v in balance_results.values()) if balance_results else 0
+
+    # 3. Sample size check
+    n_treated = treated_mask.sum()
+    n_control = control_mask.sum()
+    min_group = min(n_treated, n_control)
+
+    # 4. Outcome variance check
+    treated_var = y[treated_mask].var()
+    control_var = y[control_mask].var()
+
+    results = {
+        "overlap": overlap_results,
+        "covariate_balance": balance_results,
+        "max_smd": max_smd,
+        "balance_ok": max_smd < 0.2,
+        "sample_sizes": {
+            "treated": int(n_treated),
+            "control": int(n_control),
+            "min_group": int(min_group),
+            "total": int(len(treatment)),
+        },
+        "outcome_variance": {
+            "treated": float(treated_var) if not np.isnan(treated_var) else 0,
+            "control": float(control_var) if not np.isnan(control_var) else 0,
+        },
+        "warnings": overlap_results.get("warnings", []),
+        "recommendations": [],
+    }
+
+    # Add recommendations
+    if not overlap_results["overlap"]:
+        results["recommendations"].append(
+            "Insufficient propensity overlap. Consider: trimming extreme scores, "
+            "adding covariates, or using different propensity model."
+        )
+
+    if max_smd > 0.2:
+        results["recommendations"].append(
+            f"Covariate imbalance detected (max SMD={max_smd:.2f}). "
+            "Consider propensity score matching or weighting."
+        )
+
+    if min_group < 30:
+        results["recommendations"].append(
+            f"Small minimum group size ({min_group}). Results may be underpowered."
+        )
+
+    if min_group < 10:
+        results["recommendations"].append(
+            f"Very small group size ({min_group}). Consider collecting more data."
+        )
+
+    return results
+
+
 def propensity_stratification_uplift(
     X: pd.DataFrame,
     treatment: pd.Series,
@@ -470,7 +681,6 @@ def propensity_stratification_uplift(
         if mask.sum() < 10:
             continue
 
-        X_s = X[mask]
         T_s = treatment[mask]
         y_s = y[mask]
 
@@ -740,7 +950,7 @@ def promo_roi_analysis(
     decomp = decompose_promo_lift(transactions_df, promo_df)
 
     results = []
-    for sku in decomp["total_lift"].keys():
+    for sku in decomp["total_lift"]:
         total_lift = decomp["total_lift"].get(sku, 0)
         inc = decomp["incrementality"].get(sku, 0)
         fwd = decomp["forward_buy"].get(sku, 0)

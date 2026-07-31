@@ -74,16 +74,18 @@ def generate_synthetic_customer_segments(
                     price = round(base_price * rng.uniform(0.9, 1.1), 2)
                 qty = rng.poisson(1) + 1
                 tid = f"{cust}_{date_str}_{rng.integers(1000)}"
-                rows.append({
-                    "date": date,
-                    "transaction_id": tid,
-                    "stockcode": chosen,
-                    "product": f"Product {chosen}",
-                    "customer_id": cust,
-                    "price": price,
-                    "quantity": qty,
-                    "category": cat,
-                })
+                rows.append(
+                    {
+                        "date": date,
+                        "transaction_id": tid,
+                        "stockcode": chosen,
+                        "product": f"Product {chosen}",
+                        "customer_id": cust,
+                        "price": price,
+                        "quantity": qty,
+                        "category": cat,
+                    }
+                )
 
     return pd.DataFrame(rows), true_labels
 
@@ -176,24 +178,28 @@ def run_segmentation_validation(
             n_found = predicted.nunique()
             runtime = time.time() - t0
 
-            results.append({
-                "method": method,
-                "adjusted_rand_index": round(ari, 4),
-                "normalized_mutual_info": round(nmi, 4),
-                "n_segments_found": n_found,
-                "n_true_segments": n_true_segments,
-                "runtime_seconds": round(runtime, 3),
-            })
+            results.append(
+                {
+                    "method": method,
+                    "adjusted_rand_index": round(ari, 4),
+                    "normalized_mutual_info": round(nmi, 4),
+                    "n_segments_found": n_found,
+                    "n_true_segments": n_true_segments,
+                    "runtime_seconds": round(runtime, 3),
+                }
+            )
         except Exception as exc:
             runtime = time.time() - t0
-            results.append({
-                "method": method,
-                "adjusted_rand_index": -1.0,
-                "normalized_mutual_info": -1.0,
-                "n_segments_found": 0,
-                "n_true_segments": n_true_segments,
-                "runtime_seconds": round(runtime, 3),
-                "error": str(exc),
-            })
+            results.append(
+                {
+                    "method": method,
+                    "adjusted_rand_index": -1.0,
+                    "normalized_mutual_info": -1.0,
+                    "n_segments_found": 0,
+                    "n_true_segments": n_true_segments,
+                    "runtime_seconds": round(runtime, 3),
+                    "error": str(exc),
+                }
+            )
 
     return pd.DataFrame(results)

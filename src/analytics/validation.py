@@ -41,7 +41,7 @@ def generate_synthetic_elasticity_data(
     """
     rng = np.random.default_rng(random_seed)
 
-    categories = [f"Cat{chr(65+i)}" for i in range(n_categories)]
+    categories = [f"Cat{chr(65 + i)}" for i in range(n_categories)]
     skus_per_cat = max(1, n_skus // n_categories)
 
     rows = []
@@ -52,7 +52,7 @@ def generate_synthetic_elasticity_data(
 
     for cat in categories:
         for i in range(skus_per_cat):
-            sku = f"{cat}_{i+1:03d}"
+            sku = f"{cat}_{i + 1:03d}"
 
             # Ground-truth parameters
             true_alpha = rng.normal(4.0, 0.5)
@@ -161,12 +161,18 @@ def run_validation(
 
     # 3. Bayesian hierarchical (ADVI)
     bayes_advi = estimate_bayesian_hierarchical_elasticity(
-        df, min_periods=5, min_price_variation=0.01, n_samples=n_samples, bayesian_mode="fast (ADVI)"
+        df,
+        min_periods=5,
+        min_price_variation=0.01,
+        n_samples=n_samples,
+        bayesian_mode="fast (ADVI)",
     )
     if not bayes_advi.empty:
         merged = bayes_advi.merge(truth, on="stockcode")
         coverage = _coverage(
-            merged["true_elasticity"], merged["elasticity_hdi_lower"], merged["elasticity_hdi_upper"]
+            merged["true_elasticity"],
+            merged["elasticity_hdi_lower"],
+            merged["elasticity_hdi_upper"],
         )
         results.append(
             {
@@ -212,6 +218,7 @@ def run_validation(
     except Exception as e:
         # NUTS benchmark failed; log warning and continue
         import streamlit as st
+
         st.warning(f"NUTS benchmark failed: {e}")
 
     return pd.DataFrame(results)

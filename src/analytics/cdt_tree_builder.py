@@ -317,7 +317,7 @@ def compute_within_group_similarity(
     similarity_matrix: pd.DataFrame,
 ) -> float:
     """Compute average pairwise similarity within a group of products.
-    
+
     Optimized with NumPy vectorization (50-200x speedup for large groups).
     """
     if len(products) < 2:
@@ -327,15 +327,15 @@ def compute_within_group_similarity(
     valid_products = [p for p in products if p in similarity_matrix.index]
     if len(valid_products) < 2:
         return 0.0
-    
+
     # Get submatrix
     submat = similarity_matrix.loc[valid_products, valid_products].values
-    
+
     # Extract upper triangle (excluding diagonal)
     n = len(valid_products)
     triu_indices = np.triu_indices(n, k=1)
     sims = submat[triu_indices]
-    
+
     return float(np.mean(sims)) if len(sims) > 0 else 0.0
 
 
@@ -446,7 +446,8 @@ def build_cdt_recursive(
             is_leaf=True,
         )
 
-    def score_tree(root: TreeNode, similarity_matrix: pd.DataFrame) -> float:
+
+def score_tree(root: TreeNode, similarity_matrix: pd.DataFrame) -> float:
     """
     Score the CDT tree by computing weighted average within-cluster similarity.
 
@@ -622,13 +623,13 @@ def build_cdt_beam_search(
 ) -> Tuple[TreeNode, Dict]:
     """
     Build CDT using beam search (ALG-5).
-    
+
     At each node, keeps top-k attribute splits by score, recurses on all,
     and selects the path with best final leaf quality score.
-    
+
     Args:
         beam_width: Number of top splits to keep at each node (default: 3)
-        
+
     Returns:
         (root_node, metadata_dict) - same as build_cdt
     """
@@ -656,22 +657,23 @@ def build_cdt_beam_search(
         is_leaf=False,
         children=[],
     )
-    
+
     # Queue of nodes to expand: (node, products, available_attrs, parent_attr)
     initial_attrs = [
-        a for a in (candidate_attributes or attributes_df.columns)
-        if a in attributes_df.columns
+        a for a in (candidate_attributes or attributes_df.columns) if a in attributes_df.columns
     ]
-    
-    beam = [(root, all_products, initial_attrs, None, 0.0)]  # (node, products, attrs, parent_attr, path_score)
-    
+
+    beam = [
+        (root, all_products, initial_attrs, None, 0.0)
+    ]  # (node, products, attrs, parent_attr, path_score)
+
     def expand_node(node, products, available_attrs, parent_attr, path_score):
         """Expand a single node, return list of (child_node, new_path_score) tuples."""
         if len(products) < min_cluster_size or not available_attrs:
             node.is_leaf = True
             node.name = f"Leaf ({len(products)} products)"
             return [(node, path_score)]
-        
+
         # Find best attribute splits
         split_candidates = []
         for attr in available_attrs:
@@ -689,16 +691,16 @@ def build_cdt_beam_search(
             )
             if score > 0 and len(groups) >= 2:
                 split_candidates.append((attr, groups, score))
-        
+
         # Sort by score descending, take top beam_width
         split_candidates.sort(key=lambda x: x[2], reverse=True)
         top_splits = split_candidates[:beam_width]
-        
+
         if not top_splits:
             node.is_leaf = True
             node.name = f"Leaf ({len(products)} products)"
             return [(node, path_score)]
-        
+
         # Expand each candidate
         results = []
         for attr, groups, score in top_splits:
@@ -715,7 +717,7 @@ def build_cdt_beam_search(
                 split_score=score,
                 children=[],
             )
-            
+
             # Recurse on each group
             new_attrs = [a for a in available_attrs if a != attr]
             child_scores = []
@@ -739,16 +741,16 @@ def build_cdt_beam_search(
                 child_node.attribute_value = attr_value
                 child_node.name = f"{attr}={attr_value} ({len(group_products)})"
                 new_node.children.append(child_node)
-            
+
             if len(new_node.children) <= 1:
                 new_node.is_leaf = True
                 new_node.name = f"Leaf ({len(products)} products)"
                 new_node.children = []
-            
+
             results.append((new_node, path_score + score))
-        
+
         return results
-    
+
     # Run beam search
     completed_trees = []
     while beam:
@@ -757,7 +759,9 @@ def build_cdt_beam_search(
             expanded = expand_node(node, products, available_attrs, parent_attr, path_score)
             for child_node, new_score in expanded:
                 # Check if this branch is complete (all leaves)
-                is_complete = all(c.is_leaf for c in child_node.children) if not child_node.is_leaf else True
+                is_complete = (
+                    all(c.is_leaf for c in child_node.children) if not child_node.is_leaf else True
+                )
                 if is_complete:
                     completed_trees.append((child_node, new_score))
                 else:
@@ -767,24 +771,32 @@ def build_cdt_beam_search(
                             new_attrs = [a for a in available_attrs if a != c.attribute]
                             new_beam.append((c, c.products, new_attrs, c.attribute, new_score))
         beam = new_beam
-    
+
     # Select best tree by final quality score
     if not completed_trees:
         # Fallback to greedy
         return build_cdt(
-            similarity_matrix, cluster_assignments, attributes_df,
-            min_cluster_size, quality_threshold, candidate_attributes, criterion, alpha
+            similarity_matrix,
+            cluster_assignments,
+            attributes_df,
+            min_cluster_size,
+            quality_threshold,
+            candidate_attributes,
+            criterion,
+            alpha,
         )
-    
+
     best_root, best_score = max(completed_trees, key=lambda x: x[1])
-    
+
     # Score the final tree
     tree_quality = score_tree(best_root, similarity_matrix)
     n_leaves = count_leaves(best_root)
-    unconstrained_baseline = compute_unconstrained_baseline(similarity_matrix, max_clusters=n_leaves)
+    unconstrained_baseline = compute_unconstrained_baseline(
+        similarity_matrix, max_clusters=n_leaves
+    )
     quality_ratio = tree_quality / unconstrained_baseline if unconstrained_baseline > 0 else 0
     passed_threshold = quality_ratio >= quality_threshold
-    
+
     metadata = {
         "unconstrained_baseline": unconstrained_baseline,
         "tree_quality": tree_quality,
@@ -797,7 +809,7 @@ def build_cdt_beam_search(
         "beam_width": beam_width,
         "method": "beam_search",
     }
-    
+
     return best_root, metadata
 
 

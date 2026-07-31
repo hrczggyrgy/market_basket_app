@@ -40,8 +40,8 @@ def generate_synthetic_cluster_data(
     """
     rng = np.random.default_rng(random_seed)
     products_per_cluster = max(1, n_products // n_true_clusters)
-    products = [f"P{i+1:03d}" for i in range(n_products)]
-    categories = [f"Cat{chr(65+i)}" for i in range(n_true_clusters)]
+    products = [f"P{i + 1:03d}" for i in range(n_products)]
+    categories = [f"Cat{chr(65 + i)}" for i in range(n_true_clusters)]
 
     true_labels: Dict[str, int] = {}
     product_to_cat: Dict[str, str] = {}
@@ -76,16 +76,18 @@ def generate_synthetic_cluster_data(
                 qty = rng.poisson(2) + 1
                 price = round(rng.uniform(1.0, 10.0), 2)
                 tid = f"{cust}_{date_str}_{rng.integers(100)}"
-                rows.append({
-                    "date": date,
-                    "transaction_id": tid,
-                    "stockcode": chosen,
-                    "product": f"Product {chosen}",
-                    "customer_id": cust,
-                    "price": price,
-                    "quantity": qty,
-                    "category": product_to_cat[chosen],
-                })
+                rows.append(
+                    {
+                        "date": date,
+                        "transaction_id": tid,
+                        "stockcode": chosen,
+                        "product": f"Product {chosen}",
+                        "customer_id": cust,
+                        "price": price,
+                        "quantity": qty,
+                        "category": product_to_cat[chosen],
+                    }
+                )
 
     return pd.DataFrame(rows), true_labels
 
@@ -199,9 +201,7 @@ def run_cdt_validation(
                 max_clusters=min(max_k, len(sim) - 1),
             )
 
-            predicted = get_cluster_assignments(
-                linkage_matrix, sim, n_clusters=optimal_k
-            )
+            predicted = get_cluster_assignments(linkage_matrix, sim, n_clusters=optimal_k)
 
             ari = _adjusted_rand_index(true_labels, predicted)
             nmi = _normalized_mutual_info(true_labels, predicted)
@@ -214,9 +214,7 @@ def run_cdt_validation(
                     "normalized_mutual_info": round(nmi, 4),
                     "n_clusters_found": optimal_k,
                     "n_true_clusters": n_true_clusters,
-                    "n_products_matched": len(
-                        [k for k in true_labels if k in predicted]
-                    ),
+                    "n_products_matched": len([k for k in true_labels if k in predicted]),
                     "runtime_seconds": round(runtime, 3),
                 }
             )

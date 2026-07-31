@@ -45,9 +45,7 @@ def derive_price_tier(
     n_unique = med_price.nunique()
     effective_q = min(n_tiers, n_unique)
     if effective_q < 2:
-        return pd.Series(
-            [labels[0]] * len(med_price), index=med_price.index, name="price_tier"
-        )
+        return pd.Series([labels[0]] * len(med_price), index=med_price.index, name="price_tier")
     tier = pd.qcut(med_price, q=effective_q, labels=labels[:effective_q], duplicates="drop")
     return tier.rename("price_tier")
 
@@ -77,9 +75,7 @@ def derive_velocity_tier(
     n_unique = velocity.nunique()
     effective_q = min(n_tiers, n_unique)
     if effective_q < 2:
-        return pd.Series(
-            [labels[0]] * len(velocity), index=velocity.index, name="velocity_tier"
-        )
+        return pd.Series([labels[0]] * len(velocity), index=velocity.index, name="velocity_tier")
     tier = pd.qcut(velocity, q=effective_q, labels=labels[:effective_q], duplicates="drop")
     return tier.rename("velocity_tier")
 

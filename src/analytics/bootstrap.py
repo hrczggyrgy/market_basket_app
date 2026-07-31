@@ -53,7 +53,8 @@ def bootstrap_ci(
             replicates.append(statistic_fn(resample))
         except Exception as e:
             import warnings
-            warnings.warn(f"Bootstrap statistic failed on resample: {e}")
+
+            warnings.warn(f"Bootstrap statistic failed on resample: {e}", stacklevel=2)
             continue
 
     if not replicates:
@@ -154,7 +155,8 @@ def bootstrap_ci_customer(
             replicates.append(statistic_fn(resample))
         except Exception as e:
             import warnings
-            warnings.warn(f"Bootstrap statistic failed on resample: {e}")
+
+            warnings.warn(f"Bootstrap statistic failed on resample: {e}", stacklevel=2)
             continue
 
     if not replicates:

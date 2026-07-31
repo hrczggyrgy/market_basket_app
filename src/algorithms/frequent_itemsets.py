@@ -2,7 +2,9 @@
 
 from typing import Literal
 
+import numpy as np
 import pandas as pd
+import scipy.sparse
 from mlxtend.frequent_patterns import apriori, fpgrowth
 
 
@@ -195,7 +197,8 @@ def create_basket_matrix(
     item_col: str = "stockcode",
     quantity_col: str = "quantity",
     min_quantity: int = 1,
-) -> pd.DataFrame:
+    sparse: bool = False,
+) -> pd.DataFrame | scipy.sparse.csr_matrix:
     """
     Create one-hot encoded basket matrix from transaction data.
 
@@ -205,17 +208,49 @@ def create_basket_matrix(
         item_col: Column name for item identifier
         quantity_col: Column name for quantity
         min_quantity: Minimum quantity to consider item as present
+        sparse: If True, return scipy sparse CSR matrix instead of DataFrame
 
     Returns:
-        One-hot encoded DataFrame (transactions x items)
+        One-hot encoded DataFrame (transactions x items) or sparse CSR matrix
     """
     df = transactions_df[transactions_df[quantity_col] >= min_quantity].copy()
 
-    basket = df.groupby([transaction_col, item_col])[quantity_col].sum().unstack(fill_value=0)
+    # Get unique items and transactions
+    items = df[item_col].unique()
+    transactions = df[transaction_col].unique()
 
-    basket = (basket > 0).astype(bool)
+    # Create mapping
+    item_to_idx = {item: i for i, item in enumerate(items)}
+    txn_to_idx = {txn: i for i, txn in enumerate(transactions)}
 
-    return basket
+    # Build sparse matrix directly
+    n_transactions = len(transactions)
+    n_items = len(items)
+
+    # Use COO format for construction
+    row_indices = df[transaction_col].map(txn_to_idx).values
+    col_indices = df[item_col].map(item_to_idx).values
+    data = np.ones(len(df), dtype=bool)
+
+    if sparse:
+        # Use COO for construction, convert to CSR
+        coo = scipy.sparse.coo_matrix(
+            (data, (row_indices, col_indices)), shape=(n_transactions, n_items), dtype=bool
+        )
+        csr = coo.tocsr()
+        # Set index/columns for reference
+        csr.index = transactions
+        csr.columns = items
+        return csr
+    else:
+        # Dense DataFrame - build from sparse
+        coo = scipy.sparse.coo_matrix(
+            (data, (row_indices, col_indices)), shape=(n_transactions, n_items), dtype=bool
+        )
+        csr = coo.tocsr()
+        basket = pd.DataFrame.sparse.from_spmatrix(csr, index=transactions, columns=items)
+        basket = basket.astype(bool)
+        return basket
 
 
 def get_product_lookup(

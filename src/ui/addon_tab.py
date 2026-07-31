@@ -10,7 +10,9 @@ from src.analytics.sufficiency import assess_data_sufficiency, format_sufficienc
 from src.ui.export import render_analytics_export
 
 
-def render_addon_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
+def render_addon_tab(
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None
+):
     """Render add-on analysis tab."""
     st.header("➕ Add-on / Complementary Products")
     st.caption(

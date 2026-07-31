@@ -24,7 +24,7 @@ from src.ui.tabs import persistent_tabs
 
 
 def render_product_performance_tab(
-    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None
 ):
     """Render product performance analytics tab with persistent sub-tabs."""
     st.header(" Product Performance Analytics")

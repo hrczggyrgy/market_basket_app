@@ -13,6 +13,13 @@ import pandas as pd
 import streamlit as st
 
 
+def _hash_dataframe(df: pd.DataFrame, cols: List[str]) -> str:
+    """Create hash of dataframe for caching."""
+    subset = df[cols].copy()
+    subset = subset.sort_values(cols).reset_index(drop=True)
+    return hashlib.md5(subset.to_json().encode()).hexdigest()[:16]
+
+
 @st.cache_data
 def build_customer_sequences(
     transactions_df: pd.DataFrame,
@@ -219,6 +226,49 @@ def compute_phi_coefficient(table: Dict[str, int]) -> float:
     return numerator / denominator
 
 
+def compute_fisher_exact_pvalue(table: Dict[str, int], alternative: str = "greater") -> float:
+    """
+    Compute Fisher's exact test p-value for a 2x2 co-purchase table.
+
+    Tests whether co-purchase frequency is significantly greater than expected by chance.
+    Uses scipy.stats.fisher_exact for exact computation.
+
+    Args:
+        table: Dict with keys 'both', 'a_only', 'b_only', 'neither'
+        alternative: 'greater' (one-sided, positive association), 'less', or 'two-sided'
+
+    Returns:
+        p-value in [0, 1]
+    """
+    try:
+        from scipy.stats import fisher_exact
+    except ImportError:
+        return 1.0
+
+    a = table["both"]
+    b = table["a_only"]
+    c = table["b_only"]
+    d = table["neither"]
+
+    # Contingency table: [[a, b], [c, d]]
+    contingency = [[a, b], [c, d]]
+
+    # Skip if any cell is zero (no information)
+    if a == 0:
+        return 1.0
+
+    try:
+        _, pvalue = fisher_exact(contingency, alternative=alternative)
+        return float(pvalue)
+    except Exception:
+        return 1.0
+
+
+def compute_fisher_exact_pvalue_greater(table: Dict[str, int]) -> float:
+    """Convenience wrapper for one-sided 'greater' alternative."""
+    return compute_fisher_exact_pvalue(table, alternative="greater")
+
+
 def compute_jaccard(table: Dict[str, int]) -> float:
     """
     Compute Jaccard similarity from 2x2 co-purchase table.
@@ -240,6 +290,104 @@ def compute_jaccard(table: Dict[str, int]) -> float:
         return 0.0
 
     return both / union
+
+
+def bootstrap_similarity_ci(
+    transactions_df: pd.DataFrame,
+    product_a: str,
+    product_b: str,
+    n_bootstrap: int = 200,
+    confidence: float = 0.95,
+    method: str = "phi",
+    min_cooccurrence: int = 2,
+) -> Tuple[float, float]:
+    """
+    Compute bootstrap confidence interval for product-pair similarity.
+
+    Resamples customers with replacement, recomputes similarity for each bootstrap
+    sample, and returns the percentile CI.
+
+    Args:
+        transactions_df: Transaction DataFrame
+        product_a: First product ID
+        product_b: Second product ID
+        n_bootstrap: Number of bootstrap iterations (default 200)
+        confidence: Confidence level (default 0.95)
+        method: Similarity method ('phi', 'jaccard', 'pmi', 'cosine_tfidf')
+        min_cooccurrence: Minimum co-occurrence threshold
+
+    Returns:
+        Tuple of (lower_bound, upper_bound) for the similarity CI
+    """
+    # Use the project's bootstrap utility with customer-level resampling
+    import warnings
+
+    from src.analytics.bootstrap import bootstrap_ci_customer
+
+    # Get unique customers
+    customers = transactions_df["customer_id"].unique()
+    if len(customers) < 10:
+        return (0.0, 0.0)
+
+    # Filter to only customers who bought either product
+    cust_product = transactions_df.groupby("customer_id")["stockcode"].apply(set)
+    relevant_customers = [
+        c
+        for c in customers
+        if product_a in cust_product.get(c, set()) or product_b in cust_product.get(c, set())
+    ]
+
+    if len(relevant_customers) < 5:
+        return (0.0, 0.0)
+
+    # Build bootstrap samples
+    def compute_sim(boot_df):
+        tables = build_copurchase_tables(
+            boot_df,
+            min_cooccurrence=min_cooccurrence,
+            min_product_support=1,
+        )
+        key = tuple(sorted((product_a, product_b)))
+        if key not in tables:
+            return 0.0
+        table = tables[key]
+        if method == "phi":
+            return compute_phi_coefficient(table)
+        elif method == "jaccard":
+            return compute_jaccard(table)
+        else:
+            return 0.0
+
+    # Filter transactions to relevant customers
+    relevant_df = transactions_df[transactions_df["customer_id"].isin(relevant_customers)]
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            res = bootstrap_ci_customer(
+                relevant_df,
+                compute_sim,
+                n_resamples=n_bootstrap,
+                ci_level=confidence,
+                random_seed=42,
+            )
+            return (float(res["lower"]), float(res["upper"]))
+    except Exception:
+        # Fallback: manual bootstrap
+        sims = []
+        relevant_cust = relevant_customers
+        for _ in range(n_bootstrap):
+            boot_idx = np.random.choice(len(relevant_cust), len(relevant_cust), replace=True)
+            boot_customers = [relevant_cust[i] for i in boot_idx]
+            boot_df = transactions_df[transactions_df["customer_id"].isin(boot_customers)]
+            sim = compute_sim(boot_df)
+            sims.append(sim)
+        if sims:
+            alpha = 1 - confidence
+            lower = np.percentile(sims, 100 * alpha / 2)
+            upper = np.percentile(sims, 100 * (1 - alpha / 2))
+            return (float(lower), float(upper))
+        return (0.0, 0.0)
 
 
 @st.cache_data
@@ -592,13 +740,6 @@ def compute_switching_matrix_from_sequences(
     df = pd.DataFrame(rows)
     df = df.sort_values("switch_count", ascending=False).reset_index(drop=True)
     return df
-
-
-def _hash_dataframe(df: pd.DataFrame, cols: List[str]) -> str:
-    """Create hash of dataframe for caching."""
-    subset = df[cols].copy()
-    subset = subset.sort_values(cols).reset_index(drop=True)
-    return hashlib.md5(subset.to_json().encode()).hexdigest()[:16]
 
 
 def get_cached_similarity_key(

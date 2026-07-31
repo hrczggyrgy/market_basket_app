@@ -1,15 +1,18 @@
 """Pricing, Elasticity & KVI Analytics."""
 
 import warnings
-from typing import Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 from scipy import stats
 
-# Optional statsmodels for robust OLS
+# Optional statsmodels for robust OLS and diagnostics
 try:
     import statsmodels.api as sm
+    from statsmodels.stats.diagnostic import het_breuschpagan
+    from statsmodels.stats.outliers_influence import variance_inflation_factor
+
     STATSMODELS_AVAILABLE = True
 except ImportError:
     STATSMODELS_AVAILABLE = False
@@ -17,9 +20,65 @@ except ImportError:
 warnings.filterwarnings("ignore")
 
 
-# ============================================================================
-# ELASTICITY ESTIMATION
-# ============================================================================
+def _ols_diagnostics(model, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+    """Compute OLS diagnostics: Breusch-Pagan, Durbin-Watson, VIF, condition number."""
+    diagnostics = {}
+
+    if not STATSMODELS_AVAILABLE:
+        return diagnostics
+
+    try:
+        # Breusch-Pagan test for heteroskedasticity
+        bp_lm, bp_p, _, _ = het_breuschpagan(model.resid, X)
+        diagnostics["breusch_pagan_lm"] = float(bp_lm)
+        diagnostics["breusch_pagan_p"] = float(bp_p)
+        diagnostics["heteroskedasticity_detected"] = bp_p < 0.05
+    except Exception:
+        pass
+
+    try:
+        # Durbin-Watson test for autocorrelation
+        from statsmodels.stats.stattools import durbin_watson
+
+        dw = durbin_watson(model.resid)
+        diagnostics["durbin_watson"] = float(dw)
+        diagnostics["autocorrelation_detected"] = dw < 1.5 or dw > 2.5
+    except Exception:
+        pass
+
+    try:
+        # Variance Inflation Factor (for multi-collinearity)
+        # Only meaningful if X has multiple columns
+        if X.shape[1] > 1:
+            vif_data = pd.DataFrame()
+            vif_data["feature"] = range(X.shape[1])
+            vif_data["VIF"] = [variance_inflation_factor(X, i) for i in range(X.shape[1])]
+            diagnostics["vif"] = vif_data.to_dict("records")
+            diagnostics["max_vif"] = float(vif_data["VIF"].max())
+            diagnostics["multicollinearity_detected"] = vif_data["VIF"].max() > 10
+    except Exception:
+        pass
+
+    try:
+        # Condition number for multicollinearity
+        cond_num = np.linalg.cond(X)
+        diagnostics["condition_number"] = float(cond_num)
+        diagnostics["ill_conditioned"] = cond_num > 30
+    except Exception:
+        pass
+
+    try:
+        # Ramsey RESET test for functional form misspecification
+        from statsmodels.stats.diagnostic import linear_reset
+
+        reset_result = linear_reset(model, power=3)
+        diagnostics["ramsey_reset_f"] = float(reset_result.fvalue)
+        diagnostics["ramsey_reset_p"] = float(reset_result.pvalue)
+        diagnostics["functional_form_misspec"] = reset_result.pvalue < 0.05
+    except Exception:
+        pass
+
+    return diagnostics
 
 
 def estimate_loglog_elasticity(
@@ -73,6 +132,7 @@ def estimate_loglog_elasticity(
         # Use statsmodels OLS with robust SE if available, fallback to scipy
         if use_robust_se and STATSMODELS_AVAILABLE:
             import statsmodels.api as sm
+
             X = sm.add_constant(log_price)
             model = sm.OLS(log_qty, X).fit(cov_type="HC3")
             elasticity = model.params[log_price.name]
@@ -81,12 +141,16 @@ def estimate_loglog_elasticity(
             r_squared = model.rsquared
             conf_int = model.conf_int().loc[log_price.name]
             ci_lower, ci_upper = conf_int[0], conf_int[1]
+
+            # Add diagnostics
+            diagnostics = _ols_diagnostics(model, X.values, log_qty.values)
         else:
             slope, intercept, r_value, p_value, std_err = stats.linregress(log_price, log_qty)
             elasticity = slope
             r_squared = r_value**2
             ci_lower = elasticity - 1.96 * std_err
             ci_upper = elasticity + 1.96 * std_err
+            diagnostics = {}
 
         results.append(
             {
@@ -101,6 +165,7 @@ def estimate_loglog_elasticity(
                 "avg_price": weekly["avg_price"].mean(),
                 "avg_weekly_qty": weekly["total_qty"].mean(),
                 "price_cv": price_cv,
+                "diagnostics": diagnostics,
             }
         )
 
@@ -121,8 +186,9 @@ def estimate_hierarchical_elasticity(
     """
     Empirical Bayes / partial pooling elasticity estimation.
 
-    Shrinks individual SKU elasticities toward category-level mean using Ridge regression.
-    This is a simplified approximation of hierarchical Bayesian elasticity.
+    Shrinks individual SKU elasticities toward category-level mean using
+    variance-weighted James-Stein style shrinkage.
+    This replaces the simple n_obs-based weight with variance-ratio weighting.
     """
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
@@ -165,6 +231,7 @@ def estimate_hierarchical_elasticity(
                 "p_value": p_value,
                 "n_obs": len(log_price),
                 "avg_price": weekly["avg_price"].mean(),
+                "std_err": std_err,
             }
         )
 
@@ -173,18 +240,204 @@ def estimate_hierarchical_elasticity(
 
     ols_df = pd.DataFrame(ols_results)
 
-    # Category means
+    # Category-level variance (between-SKU variance within category)
+    cat_vars = ols_df.groupby("category")["elasticity_ols"].var().rename("cat_var")
     cat_means = ols_df.groupby("category")["elasticity_ols"].mean().rename("elasticity_cat")
+    cat_n = ols_df.groupby("category").size().rename("cat_n")
 
-    # Shrink toward category mean: weight = n_obs / (n_obs + lambda)
-    ols_df["shrink_weight"] = ols_df["n_obs"] / (ols_df["n_obs"] + ridge_alpha)
     ols_df = ols_df.merge(cat_means, on="category", how="left")
+    ols_df = ols_df.merge(cat_vars, on="category", how="left")
+    ols_df = ols_df.merge(cat_n, on="category", how="left")
+
+    # James-Stein / empirical Bayes shrinkage weight:
+    # weight = within_SKU_variance / (within_SKU_variance + between_SKU_variance)
+    # Using std_err^2 as proxy for within-SKU variance, cat_var as between-SKU variance
+    ols_df["within_var"] = ols_df["std_err"] ** 2
+    ols_df["between_var"] = ols_df["cat_var"]
+
+    # Shrinkage weight: more shrinkage when within-var >> between-var
+    # weight = between_var / (within_var + between_var) -> closer to cat mean
+    ols_df["shrink_weight"] = ols_df["between_var"] / (
+        ols_df["within_var"] + ols_df["between_var"] + 1e-8
+    )
+
+    # Cap weight to reasonable range
+    ols_df["shrink_weight"] = ols_df["shrink_weight"].clip(0.05, 0.95)
+
     ols_df["elasticity_shrunk"] = (
-        ols_df["shrink_weight"] * ols_df["elasticity_ols"]
-        + (1 - ols_df["shrink_weight"]) * ols_df["elasticity_cat"]
+        ols_df["shrink_weight"] * ols_df["elasticity_cat"]
+        + (1 - ols_df["shrink_weight"]) * ols_df["elasticity_ols"]
     )
 
     return ols_df
+
+
+def estimate_cross_price_elasticity(
+    transactions_df: pd.DataFrame,
+    product_pairs: List[Tuple[str, str]],
+    category_col: str = "category",
+    freq: str = "W",
+    min_periods: int = 10,
+    min_price_variation: float = 0.05,
+) -> pd.DataFrame:
+    """
+    Estimate cross-price elasticities for specified product pairs.
+
+    For each pair (A, B), runs bivariate log-log OLS:
+        log(qty_A) = alpha + beta_own * log(price_A) + beta_cross * log(price_B) + error
+
+    beta_cross > 0 -> B is a substitute for A
+    beta_cross < 0 -> B is a complement to A
+
+    Args:
+        transactions_df: Transaction data
+        product_pairs: List of (product_a, product_b) tuples to estimate cross-elasticity
+        category_col: Category column for grouping
+        freq: Time frequency for aggregation
+        min_periods: Minimum weeks of data
+        min_price_variation: Minimum price CV
+
+    Returns:
+        DataFrame with cross-elasticity estimates per pair
+    """
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["revenue"] = df["price"] * df["quantity"]
+
+    results = []
+
+    for prod_a, prod_b in product_pairs:
+        # Get weekly data for both products
+        prod_a_df = df[df["stockcode"] == prod_a].copy()
+        prod_b_df = df[df["stockcode"] == prod_b].copy()
+
+        if len(prod_a_df) < min_periods or len(prod_b_df) < min_periods:
+            continue
+
+        weekly_a = (
+            prod_a_df.set_index("date")
+            .groupby(pd.Grouper(freq=freq))
+            .agg(avg_price_a=("price", "mean"), total_qty_a=("quantity", "sum"))
+            .dropna()
+        )
+        weekly_b = (
+            prod_b_df.set_index("date")
+            .groupby(pd.Grouper(freq=freq))
+            .agg(avg_price_b=("price", "mean"), total_qty_b=("quantity", "sum"))
+            .dropna()
+        )
+
+        # Align on date index
+        weekly = weekly_a.join(weekly_b, how="inner")
+        if len(weekly) < min_periods:
+            continue
+
+        # Check price variation for both
+        cv_a = weekly["avg_price_a"].std() / weekly["avg_price_a"].mean()
+        cv_b = weekly["avg_price_b"].std() / weekly["avg_price_b"].mean()
+        if cv_a < min_price_variation or cv_b < min_price_variation:
+            continue
+
+        # Log-log regression: log(qty_a) ~ log(price_a) + log(price_b)
+        log_price_a = np.log(weekly["avg_price_a"].replace(0, np.nan).dropna())
+        log_price_b = np.log(
+            weekly.loc[log_price_a.index, "avg_price_b"].replace(0, np.nan).dropna()
+        )
+        log_qty_a = np.log(weekly.loc[log_price_a.index, "total_qty_a"].replace(0, np.nan).dropna())
+
+        if len(log_price_a) < min_periods:
+            continue
+
+        # Bivariate OLS
+        X = np.column_stack([log_price_a.values, log_price_b.values])
+        X = sm.add_constant(X)
+        y = log_qty_a.values
+
+        try:
+            model = sm.OLS(y, X).fit(cov_type="HC3")
+            own_elasticity = model.params[1]
+            cross_elasticity = model.params[2]
+            own_se = model.bse[1]
+            cross_se = model.bse[2]
+            own_p = model.pvalues[1]
+            cross_p = model.pvalues[2]
+            r2 = model.rsquared
+        except Exception:
+            continue
+
+        results.append(
+            {
+                "product_a": prod_a,
+                "product_b": prod_b,
+                "own_elasticity": own_elasticity,
+                "own_elasticity_se": own_se,
+                "own_elasticity_p": own_p,
+                "cross_elasticity": cross_elasticity,
+                "cross_elasticity_se": cross_se,
+                "cross_elasticity_p": cross_p,
+                "r_squared": r2,
+                "n_obs": len(log_price_a),
+                "avg_price_a": weekly["avg_price_a"].mean(),
+                "avg_price_b": weekly["avg_price_b"].mean(),
+            }
+        )
+
+    if not results:
+        return pd.DataFrame()
+
+    return pd.DataFrame(results)
+
+
+def _bayesian_convergence_diagnostics(trace) -> Dict[str, Any]:
+    """Compute Bayesian convergence diagnostics: R-hat, ESS, divergences."""
+    diagnostics = {
+        "rhat_max": None,
+        "rhat_mean": None,
+        "ess_min": None,
+        "ess_mean": None,
+        "divergences": 0,
+        "divergence_rate": 0.0,
+    }
+
+    try:
+        import arviz as az
+
+        # R-hat (Gelman-Rubin)
+        rhat = az.rhat(trace)
+        if hasattr(rhat, "values"):
+            rhat_values = rhat.values.flatten()
+        else:
+            rhat_values = np.array(list(rhat.values())).flatten()
+        rhat_values = rhat_values[~np.isnan(rhat_values)]
+        if len(rhat_values) > 0:
+            diagnostics["rhat_max"] = float(np.max(rhat_values))
+            diagnostics["rhat_mean"] = float(np.mean(rhat_values))
+
+        # Effective Sample Size
+        ess = az.ess(trace)
+        if hasattr(ess, "values"):
+            ess_values = ess.values.flatten()
+        else:
+            ess_values = np.array(list(ess.values())).flatten()
+        ess_values = ess_values[~np.isnan(ess_values)]
+        if len(ess_values) > 0:
+            diagnostics["ess_min"] = float(np.min(ess_values))
+            diagnostics["ess_mean"] = float(np.mean(ess_values))
+
+        # Divergences
+        if hasattr(trace, "sample_stats") and "diverging" in trace.sample_stats:
+            diverging = trace.sample_stats["diverging"].values
+            diagnostics["divergences"] = int(np.sum(diverging))
+            diagnostics["divergence_rate"] = float(np.mean(diverging))
+
+        # Per-parameter summary
+        summary = az.summary(trace, hdi_prob=0.94)
+        diagnostics["summary"] = summary.to_dict()
+
+    except Exception as e:
+        diagnostics["error"] = str(e)
+
+    return diagnostics
 
 
 def estimate_bayesian_hierarchical_elasticity(
@@ -263,8 +516,6 @@ def estimate_bayesian_hierarchical_elasticity(
     # Encode indices
     categories = agg_df["category"].unique()
     cat_to_idx = {c: i for i, c in enumerate(categories)}
-    cat_idx = agg_df["category"].map(cat_to_idx).values
-
     stockcodes = agg_df["stockcode"].unique()
     sku_to_idx = {s: i for i, s in enumerate(stockcodes)}
     sku_idx = agg_df["stockcode"].map(sku_to_idx).values
@@ -298,12 +549,8 @@ def estimate_bayesian_hierarchical_elasticity(
 
         # Tier 3 — SKU (each SKU belongs to one category determined by sku_cat_idx)
         sigma_sku = pm.HalfNormal("sigma_sku", 1)
-        alpha_sku = pm.Normal(
-            "alpha_sku", alpha_cat[sku_cat_idx], sigma_sku, dims="sku"
-        )
-        beta_sku = pm.Normal(
-            "beta_sku", beta_cat[sku_cat_idx], sigma_sku, dims="sku"
-        )
+        alpha_sku = pm.Normal("alpha_sku", alpha_cat[sku_cat_idx], sigma_sku, dims="sku")
+        beta_sku = pm.Normal("beta_sku", beta_cat[sku_cat_idx], sigma_sku, dims="sku")
 
         mu = alpha_sku[sku_idx_data] + beta_sku[sku_idx_data] * log_price_data
         sigma = pm.HalfNormal("sigma", 1)
@@ -324,12 +571,25 @@ def estimate_bayesian_hierarchical_elasticity(
                 random_seed=42,
             )
 
+        # --- 3b. Convergence diagnostics ---
+        convergence_diagnostics = _bayesian_convergence_diagnostics(trace)
+        print(
+            f"Bayesian convergence: R-hat max={convergence_diagnostics.get('rhat_max', 'N/A'):.3f}, ESS min={convergence_diagnostics.get('ess_min', 'N/A'):.0f}"
+        )
+
     # --- 4. Extract SKU-level posterior ---
-    alpha_post = trace.posterior["alpha_sku"] if hasattr(trace, "posterior") else trace["alpha_sku"]
     beta_post = trace.posterior["beta_sku"] if hasattr(trace, "posterior") else trace["beta_sku"]
 
-    beta_mean = beta_post.mean(dim=("chain", "draw")).values if hasattr(beta_post, "mean") else beta_post.mean(axis=0)
-    beta_sd = beta_post.std(dim=("chain", "draw")).values if hasattr(beta_post, "std") else beta_post.std(axis=0)
+    beta_mean = (
+        beta_post.mean(dim=("chain", "draw")).values
+        if hasattr(beta_post, "mean")
+        else beta_post.mean(axis=0)
+    )
+    beta_sd = (
+        beta_post.std(dim=("chain", "draw")).values
+        if hasattr(beta_post, "std")
+        else beta_post.std(axis=0)
+    )
 
     # HDI (highest density interval)
     try:
@@ -343,11 +603,15 @@ def estimate_bayesian_hierarchical_elasticity(
         beta_hdi_upper = beta_mean + 1.96 * beta_sd
 
     # Per-SKU summary
-    sku_stats = agg_df.groupby("stockcode").agg(
-        category=("category", "first"),
-        n_obs=("total_qty", "size"),
-        avg_price=("avg_price", "mean"),
-    ).reset_index()
+    sku_stats = (
+        agg_df.groupby("stockcode")
+        .agg(
+            category=("category", "first"),
+            n_obs=("total_qty", "size"),
+            avg_price=("avg_price", "mean"),
+        )
+        .reset_index()
+    )
 
     sku_stats["elasticity_mean"] = beta_mean
     sku_stats["elasticity_sd"] = beta_sd
@@ -516,8 +780,9 @@ def _kvi_xgb(
     cost_col: Optional[str] = None,
     margin_pct: Optional[float] = None,
 ) -> pd.DataFrame:
-    """KVI scoring via XGBoost."""
+    """KVI scoring via XGBoost with cross-validated SHAP values (ALG-2 fix)."""
     try:
+        import shap
         import xgboost as xgb
     except ImportError:
         return _kvi_heuristic(kvi_features, cost_col, margin_pct)
@@ -554,19 +819,34 @@ def _kvi_xgb(
 
     X = kvi_features[feature_cols].replace([np.inf, -np.inf], 0).fillna(0)
 
-    # Train
+    # ALG-2: Use cross-validated OOF predictions as KVI score, not in-sample
+    from sklearn.model_selection import KFold, cross_val_predict
+
     model = xgb.XGBRegressor(
         n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42, verbosity=0
     )
+
+    # Out-of-fold predictions to prevent overfitting
+    cv = KFold(n_splits=5, shuffle=True, random_state=42)
+    oof_preds = cross_val_predict(model, X, y, cv=cv, n_jobs=-1)
+    kvi_features["kvi_score"] = oof_preds
+
+    # Fit on full data for SHAP explanations
     model.fit(X, y)
 
-    # Predictions as KVI score
-    kvi_features["kvi_score"] = model.predict(X)
-
-    # Feature importance
-    kvi_features["kvi_feature_importance"] = str(
-        dict(zip(feature_cols, model.feature_importances_))
-    )
+    # ALG-2: Use SHAP values for feature contributions (more reliable than built-in importance)
+    try:
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(X)
+        # Store mean absolute SHAP per feature
+        kvi_features["kvi_shap_importance"] = str(
+            dict(zip(feature_cols, np.mean(np.abs(shap_values), axis=0)))
+        )
+    except Exception:
+        # Fallback to built-in importance
+        kvi_features["kvi_feature_importance"] = str(
+            dict(zip(feature_cols, model.feature_importances_))
+        )
 
     return kvi_features
 
@@ -633,8 +913,6 @@ def diagnose_price_curves_1d(
     Cluster SKUs by price_per_unit only within category.
     Simple univariate clustering for basic price tier analysis.
     """
-    from src.analytics import compute_basket_penetration
-
     # Product median price and pack size
     product_info = (
         transactions_df.groupby("stockcode")
@@ -663,9 +941,7 @@ def diagnose_price_curves_1d(
         if match:
             val = float(match.group(1))
             unit = match.group(2)
-            if unit == "ML":
-                return val / 1000
-            elif unit == "G":
+            if unit in ("ML", "G"):
                 return val / 1000
             elif unit in ("PK", "PCS"):
                 return val
@@ -738,7 +1014,7 @@ def diagnose_price_curves_multivariate(
     Cluster SKUs by (price_per_unit, elasticity, basket_penetration, margin) within category.
     Multivariate clustering for advanced price tier analysis incorporating demand sensitivity and profitability.
     """
-    from src.analytics import compute_basket_penetration, compute_product_metrics
+    from src.analytics import compute_basket_penetration
 
     # Product median price and pack size
     product_info = (
@@ -768,9 +1044,7 @@ def diagnose_price_curves_multivariate(
         if match:
             val = float(match.group(1))
             unit = match.group(2)
-            if unit == "ML":
-                return val / 1000
-            elif unit == "G":
+            if unit in ("ML", "G"):
                 return val / 1000
             elif unit in ("PK", "PCS"):
                 return val
@@ -802,9 +1076,7 @@ def diagnose_price_curves_multivariate(
     # Add margin if cost column available
     if cost_col and cost_col in transactions_df.columns:
         cost_info = (
-            transactions_df.groupby("stockcode")
-            .agg(median_cost=(cost_col, "median"))
-            .reset_index()
+            transactions_df.groupby("stockcode").agg(median_cost=(cost_col, "median")).reset_index()
         )
         product_info = product_info.merge(cost_info, on="stockcode", how="left")
         product_info["margin_per_unit"] = (

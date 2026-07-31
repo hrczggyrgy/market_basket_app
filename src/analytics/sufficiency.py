@@ -48,9 +48,7 @@ def assess_data_sufficiency(
         Values: ``'robust'``, ``'directional'``, or ``'insufficient'``.
     """
     if required_cols is None:
-        required_cols = [
-            "date", "transaction_id", "stockcode", "customer_id", "price", "quantity"
-        ]
+        required_cols = ["date", "transaction_id", "stockcode", "customer_id", "price", "quantity"]
 
     result: Dict[str, str] = {}
 
@@ -100,9 +98,8 @@ def assess_data_sufficiency(
 
     # --- Price variation ---
     if "price" in transactions_df.columns and n_products > 0:
-        cv_by_product = (
-            transactions_df.groupby("stockcode")["price"]
-            .apply(lambda x: x.std() / x.mean() if x.mean() > 0 else 0.0)
+        cv_by_product = transactions_df.groupby("stockcode")["price"].apply(
+            lambda x: x.std() / x.mean() if x.mean() > 0 else 0.0
         )
         median_cv = cv_by_product.median()
         if median_cv < min_price_variation_cv:

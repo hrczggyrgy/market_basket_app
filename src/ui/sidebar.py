@@ -1,8 +1,8 @@
 """Sidebar UI components."""
 
+import hashlib
 from typing import Any, Dict
 
-import hashlib
 import pandas as pd
 import streamlit as st
 
@@ -13,16 +13,17 @@ from src.config import Config
 def _detect_columns_from_file(file_bytes: bytes) -> Dict[str, str]:
     """Detect columns from uploaded file (cached by file hash)."""
     import io
+
     df = pd.read_csv(io.BytesIO(file_bytes), nrows=5)
     cols = df.columns.tolist()
-    
+
     # Auto-detect common column names
     def find_col(candidates):
         for c in candidates:
             if c in cols:
                 return c
         return cols[0] if cols else ""
-    
+
     return {
         "date": find_col(["date", "transaction_date", "dt"]),
         "transaction_id": find_col(["transaction_id", "txn_id", "order_id", "basket_id"]),
@@ -56,62 +57,87 @@ def render_sidebar() -> Config:
         try:
             file_bytes = uploaded_file.read()
             uploaded_file.seek(0)
-            
+
             # Cache column detection by file hash
             file_hash = hashlib.md5(file_bytes).hexdigest()[:16]
-            
+
             if "cached_column_mapping" not in st.session_state:
                 st.session_state.cached_column_mapping = {}
-            
+
             if file_hash not in st.session_state.cached_column_mapping:
-                st.session_state.cached_column_mapping[file_hash] = _detect_columns_from_file(file_bytes)
-            
+                st.session_state.cached_column_mapping[file_hash] = _detect_columns_from_file(
+                    file_bytes
+                )
+
             detected_mapping = st.session_state.cached_column_mapping[file_hash]
             cols = list(detected_mapping.values())
-            
+
             # Show column mapping with detected values as defaults
-            with st.sidebar.expander(" Column Mapping", expanded=not st.session_state.column_mapping_confirmed):
+            with st.sidebar.expander(
+                " Column Mapping", expanded=not st.session_state.column_mapping_confirmed
+            ):
                 date_col = st.selectbox(
-                    "Date Column", cols, index=cols.index(detected_mapping["date"]) if detected_mapping["date"] in cols else 0
+                    "Date Column",
+                    cols,
+                    index=cols.index(detected_mapping["date"])
+                    if detected_mapping["date"] in cols
+                    else 0,
                 )
                 trans_col = st.selectbox(
                     "Transaction ID Column",
                     cols,
-                    index=cols.index(detected_mapping["transaction_id"]) if detected_mapping["transaction_id"] in cols else 0,
+                    index=cols.index(detected_mapping["transaction_id"])
+                    if detected_mapping["transaction_id"] in cols
+                    else 0,
                 )
                 item_col = st.selectbox(
                     "Item Column (Stock Code)",
                     cols,
-                    index=cols.index(detected_mapping["stockcode"]) if detected_mapping["stockcode"] in cols else 0,
+                    index=cols.index(detected_mapping["stockcode"])
+                    if detected_mapping["stockcode"] in cols
+                    else 0,
                 )
                 product_col = st.selectbox(
                     "Product Name Column",
                     cols,
-                    index=cols.index(detected_mapping["product"]) if detected_mapping["product"] in cols else 0,
+                    index=cols.index(detected_mapping["product"])
+                    if detected_mapping["product"] in cols
+                    else 0,
                 )
                 customer_col = st.selectbox(
                     "Customer ID Column",
                     cols,
-                    index=cols.index(detected_mapping["customer_id"]) if detected_mapping["customer_id"] in cols else 0,
+                    index=cols.index(detected_mapping["customer_id"])
+                    if detected_mapping["customer_id"] in cols
+                    else 0,
                 )
                 price_col = st.selectbox(
                     "Price Column",
                     cols,
-                    index=cols.index(detected_mapping["price"]) if detected_mapping["price"] in cols else 0,
+                    index=cols.index(detected_mapping["price"])
+                    if detected_mapping["price"] in cols
+                    else 0,
                 )
                 qty_col = st.selectbox(
                     "Quantity Column",
                     cols,
-                    index=cols.index(detected_mapping["quantity"]) if detected_mapping["quantity"] in cols else 0,
+                    index=cols.index(detected_mapping["quantity"])
+                    if detected_mapping["quantity"] in cols
+                    else 0,
                 )
-                
+
                 col_confirm, col_reset = st.columns(2)
                 with col_confirm:
                     if st.button(" Confirm Mapping", type="primary", use_container_width=True):
                         st.session_state.column_mapping_confirmed = True
                         st.session_state.cached_column_mapping[file_hash] = {
-                            "date": date_col, "transaction_id": trans_col, "stockcode": item_col,
-                            "product": product_col, "customer_id": customer_col, "price": price_col, "quantity": qty_col
+                            "date": date_col,
+                            "transaction_id": trans_col,
+                            "stockcode": item_col,
+                            "product": product_col,
+                            "customer_id": customer_col,
+                            "price": price_col,
+                            "quantity": qty_col,
                         }
                         st.rerun()
                 with col_reset:
@@ -123,7 +149,7 @@ def render_sidebar() -> Config:
                 column_mapping = st.session_state.cached_column_mapping[file_hash]
             else:
                 column_mapping = detected_mapping
-                
+
         except Exception as e:
             st.sidebar.error(f"Error reading file: {e}")
             column_mapping = {}
@@ -342,7 +368,7 @@ def render_sidebar() -> Config:
         # Dynamic SKU list for delist products
         loaded_df = st.session_state.get("loaded_df")
         sku_options = loaded_df["stockcode"].unique().tolist() if loaded_df is not None else []
-        
+
         analysis_params["substitution_source"] = st.sidebar.selectbox(
             "Substitution Source", ["switching", "cdt"], index=0, key="dt_sub_source"
         )
@@ -406,7 +432,7 @@ def render_sidebar() -> Config:
         analysis_params["show_shap"] = st.sidebar.checkbox(
             "Show SHAP Values", value=False, key="price_show_shap"
         )
-        
+
         # Bayesian sampling mode - ONLY shown when bayesian_hierarchical is selected
         if analysis_params["elasticity_method"] == "bayesian_hierarchical":
             analysis_params["bayesian_mode"] = st.sidebar.radio(
@@ -532,7 +558,9 @@ def render_sidebar() -> Config:
 
     elif analysis_mode == "Promotional Analytics":
         # Legacy mode banner
-        st.sidebar.info("⚠️ **Legacy Mode** — Use **Pricing & Promotions → Promo Uplift Modeling** for causal uplift estimation")
+        st.sidebar.info(
+            "⚠️ **Legacy Mode** — Use **Pricing & Promotions → Promo Uplift Modeling** for causal uplift estimation"
+        )
         analysis_params["price_change_threshold"] = st.sidebar.slider(
             "Price Drop Threshold (%)", 5, 50, 15, key="promo_price_drop"
         )
@@ -617,99 +645,123 @@ def render_data_info(df: pd.DataFrame):
         st.write(f"**Total Revenue:** ${(df['price'] * df['quantity']).sum():,.2f}")
 
 
-def validate_data_quality(
-    df: pd.DataFrame, analysis_mode: str, params: dict
-) -> list[dict]:
+def validate_data_quality(df: pd.DataFrame, analysis_mode: str, params: dict) -> list[dict]:
     """Validate data quality before running analysis.
-    
+
     Returns list of warning dicts with 'level' (error/warning/info) and 'message'.
     """
     if df is None or df.empty:
         return []
-    
+
     warnings = []
-    
+
     # Basic counts
     n_transactions = df["transaction_id"].nunique() if "transaction_id" in df.columns else 0
     n_customers = df["customer_id"].nunique() if "customer_id" in df.columns else 0
     n_products = df["stockcode"].nunique() if "stockcode" in df.columns else 0
-    
+
     # Null checks
-    customer_null_pct = df["customer_id"].isnull().mean() * 100 if "customer_id" in df.columns else 0
+    customer_null_pct = (
+        df["customer_id"].isnull().mean() * 100 if "customer_id" in df.columns else 0
+    )
     date_null_pct = df["date"].isnull().mean() * 100 if "date" in df.columns else 0
     price_null_pct = df["price"].isnull().mean() * 100 if "price" in df.columns else 0
-    
+
     # General checks
     if n_transactions < 100:
-        warnings.append({
-            "level": "error",
-            "message": f"Only {n_transactions} transactions — too few for reliable analysis"
-        })
+        warnings.append(
+            {
+                "level": "error",
+                "message": f"Only {n_transactions} transactions — too few for reliable analysis",
+            }
+        )
     elif n_transactions < 500:
-        warnings.append({
-            "level": "warning",
-            "message": f"Only {n_transactions} transactions — results may be directional"
-        })
-    
+        warnings.append(
+            {
+                "level": "warning",
+                "message": f"Only {n_transactions} transactions — results may be directional",
+            }
+        )
+
     if customer_null_pct > 20:
-        warnings.append({
-            "level": "error",
-            "message": f"{customer_null_pct:.0f}% null customer_id — segmentation will drop rows"
-        })
+        warnings.append(
+            {
+                "level": "error",
+                "message": f"{customer_null_pct:.0f}% null customer_id — segmentation will drop rows",
+            }
+        )
     elif customer_null_pct > 5:
-        warnings.append({
-            "level": "warning",
-            "message": f"{customer_null_pct:.0f}% null customer_id — some customers unassigned"
-        })
-    
+        warnings.append(
+            {
+                "level": "warning",
+                "message": f"{customer_null_pct:.0f}% null customer_id — some customers unassigned",
+            }
+        )
+
     if date_null_pct > 10:
-        warnings.append({
-            "level": "warning",
-            "message": f"{date_null_pct:.0f}% null dates — cohort/time-series analysis affected"
-        })
-    
+        warnings.append(
+            {
+                "level": "warning",
+                "message": f"{date_null_pct:.0f}% null dates — cohort/time-series analysis affected",
+            }
+        )
+
     if price_null_pct > 5:
-        warnings.append({
-            "level": "warning",
-            "message": f"{price_null_pct:.0f}% null prices — elasticity/KVI unreliable"
-        })
-    
+        warnings.append(
+            {
+                "level": "warning",
+                "message": f"{price_null_pct:.0f}% null prices — elasticity/KVI unreliable",
+            }
+        )
+
     # Mode-specific checks
     if analysis_mode in ["Promo Uplift Modeling", "Elasticity Analysis"]:
         if n_transactions < 1000:
-            warnings.append({
-                "level": "warning",
-                "message": f"{n_transactions} transactions — uplift/elasticity needs more data"
-            })
+            warnings.append(
+                {
+                    "level": "warning",
+                    "message": f"{n_transactions} transactions — uplift/elasticity needs more data",
+                }
+            )
         # Check price variation
         if "price" in df.columns and "stockcode" in df.columns:
-            price_cv = df.groupby("stockcode")["price"].apply(lambda x: x.std() / x.mean() if x.mean() > 0 else 0)
+            price_cv = df.groupby("stockcode")["price"].apply(
+                lambda x: x.std() / x.mean() if x.mean() > 0 else 0
+            )
             low_var_pct = (price_cv < 0.03).mean() * 100
             if low_var_pct > 50:
-                warnings.append({
-                    "level": "warning",
-                    "message": f"{low_var_pct:.0f}% of SKUs have low price variation (CV<3%) — elasticity estimates unreliable"
-                })
-    
+                warnings.append(
+                    {
+                        "level": "warning",
+                        "message": f"{low_var_pct:.0f}% of SKUs have low price variation (CV<3%) — elasticity estimates unreliable",
+                    }
+                )
+
     if analysis_mode in ["Customer Segmentation", "Promo Uplift Modeling"]:
         if n_customers < 50:
-            warnings.append({
-                "level": "error",
-                "message": f"Only {n_customers} customers — segmentation/uplift modeling unreliable"
-            })
+            warnings.append(
+                {
+                    "level": "error",
+                    "message": f"Only {n_customers} customers — segmentation/uplift modeling unreliable",
+                }
+            )
         elif n_customers < 200:
-            warnings.append({
-                "level": "warning",
-                "message": f"Only {n_customers} customers — consider fewer segments"
-            })
-    
+            warnings.append(
+                {
+                    "level": "warning",
+                    "message": f"Only {n_customers} customers — consider fewer segments",
+                }
+            )
+
     if analysis_mode == "Promo Uplift Modeling":
         # Check for promo detection feasibility
         baseline_window = params.get("promo_baseline_window", 28)
         if n_transactions < baseline_window * 10:
-            warnings.append({
-                "level": "warning",
-                "message": f"Baseline window ({baseline_window}d) may be too long for {n_transactions} transactions"
-            })
-    
+            warnings.append(
+                {
+                    "level": "warning",
+                    "message": f"Baseline window ({baseline_window}d) may be too long for {n_transactions} transactions",
+                }
+            )
+
     return warnings

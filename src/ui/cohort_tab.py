@@ -31,7 +31,9 @@ def _cached_cohort_comparison_summary(
     )
 
 
-def render_cohort_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
+def render_cohort_tab(
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None
+):
     """Render cohort analysis tab."""
     # product_lookup is available but not used in cohort analysis
     # Kept for consistency with other tab functions

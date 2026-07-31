@@ -17,7 +17,7 @@ from src.data.generator import generate_transactions
 from src.data.loader import get_data_summary, load_transactions
 from src.rules.generator import filter_rules, generate_rules
 from src.ui.addon_tab import render_addon_tab
-from src.ui.cdt_tab import render_cdt_tab
+from src.ui.cdt_unified_tab import render_cdt_tab
 from src.ui.cohort_tab import render_cohort_tab
 from src.ui.copurchase_tab import render_copurchase_tab
 from src.ui.export import render_export_buttons
@@ -28,7 +28,6 @@ from src.ui.segmentation_tab import render_segmentation_tab
 from src.ui.sidebar import render_sidebar
 from src.ui.switching_tab import render_switching_tab
 from src.ui.tree_tab import render_tree_tab
-from src.ui.cdt_assortment_tab import render_cdt_assortment_tab
 from src.ui.pricing_tab import render_pricing_tab
 from src.utils.pipeline import (
     clear_pipeline,
@@ -171,7 +170,7 @@ def run_analysis(config: Config):
         elif analysis_mode == "Choice Prediction Model":
             render_tree_tab(transactions_df, product_lookup, all_params, pipeline)
         elif analysis_mode == "Decision Tree & Patterns":
-            render_cdt_tab(transactions_df, product_lookup, all_params, pipeline)
+            render_cdt_tab(transactions_df, product_lookup, all_params, pipeline, mode="cdt")
         elif analysis_mode == "Customer Segmentation":
             render_segmentation_tab(transactions_df, product_lookup, all_params, pipeline)
         elif analysis_mode == "Product Performance":
@@ -181,11 +180,11 @@ def run_analysis(config: Config):
         elif analysis_mode == "Promotional Analytics":
             render_promotional_tab(transactions_df, product_lookup, all_params, pipeline)
         elif analysis_mode == "CDT Builder":
-            render_cdt_assortment_tab(transactions_df, product_lookup, all_params, pipeline, mode="cdt")
+            render_cdt_tab(transactions_df, product_lookup, all_params, pipeline, mode="cdt")
         elif analysis_mode == "Demand Transference":
-            render_cdt_assortment_tab(transactions_df, product_lookup, all_params, pipeline, mode="transference")
+            render_cdt_tab(transactions_df, product_lookup, all_params, pipeline, mode="transference")
         elif analysis_mode == "Assortment Optimizer":
-            render_cdt_assortment_tab(transactions_df, product_lookup, all_params, pipeline, mode="assortment")
+            render_cdt_tab(transactions_df, product_lookup, all_params, pipeline, mode="assortment")
         elif analysis_mode == "Elasticity Analysis":
             render_pricing_tab(transactions_df, product_lookup, all_params, pipeline, mode="elasticity")
         elif analysis_mode == "KVI Identification":
@@ -197,7 +196,7 @@ def run_analysis(config: Config):
         elif analysis_mode == "Elasticity Benchmark":
             render_pricing_tab(transactions_df, product_lookup, all_params, pipeline, mode="benchmark")
         elif analysis_mode == "CDT Benchmark":
-            render_cdt_tab(transactions_df, product_lookup, all_params, pipeline)
+            render_cdt_tab(transactions_df, product_lookup, all_params, pipeline, mode="cdt")
         else:
             st.warning(f"Unknown analysis mode: {analysis_mode}")
 

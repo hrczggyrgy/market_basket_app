@@ -330,7 +330,9 @@ def bootstrap_lift_ci(
 
     for i in range(n_bootstrap):
         # Resample customers with replacement
-        sample_ids = resample(customer_ids, replace=True, n_samples=n_customers, random_state=42 + i)
+        sample_ids = resample(
+            customer_ids, replace=True, n_samples=n_customers, random_state=42 + i
+        )
         basket_sample = basket.loc[sample_ids]
 
         # Compute probabilities on resampled data
@@ -365,14 +367,16 @@ def bootstrap_lift_ci(
             lower = np.nan
             upper = np.nan
             mean_boot = np.nan
-        results.append({
-            "product_a": row["product_a"],
-            "product_b": row["product_b"],
-            "lift_ci_lower": lower,
-            "lift_ci_upper": upper,
-            "lift_mean_boot": mean_boot,
-            "lift_n_boot": len(samples),
-        })
+        results.append(
+            {
+                "product_a": row["product_a"],
+                "product_b": row["product_b"],
+                "lift_ci_lower": lower,
+                "lift_ci_upper": upper,
+                "lift_mean_boot": mean_boot,
+                "lift_n_boot": len(samples),
+            }
+        )
 
     ci_df = pd.DataFrame(results)
     return rules_df.merge(ci_df, on=["product_a", "product_b"], how="left")
@@ -408,7 +412,9 @@ def bootstrap_lift_ci_fast(
     lift_samples = {idx: [] for idx in rules.index}
 
     for i in range(n_bootstrap):
-        sample_ids = resample(customer_ids, replace=True, n_samples=n_customers, random_state=42 + i)
+        sample_ids = resample(
+            customer_ids, replace=True, n_samples=n_customers, random_state=42 + i
+        )
         basket_sample = basket_matrix.loc[sample_ids]
 
         # Fast co-occurrence via matrix multiplication
@@ -438,14 +444,16 @@ def bootstrap_lift_ci_fast(
             lower = np.nan
             upper = np.nan
             mean_boot = np.nan
-        results.append({
-            "product_a": row["product_a"],
-            "product_b": row["product_b"],
-            "lift_ci_lower": lower,
-            "lift_ci_upper": upper,
-            "lift_mean_boot": mean_boot,
-            "lift_n_boot": len(samples),
-        })
+        results.append(
+            {
+                "product_a": row["product_a"],
+                "product_b": row["product_b"],
+                "lift_ci_lower": lower,
+                "lift_ci_upper": upper,
+                "lift_mean_boot": mean_boot,
+                "lift_n_boot": len(samples),
+            }
+        )
 
     ci_df = pd.DataFrame(results)
     return rules_df.merge(ci_df, on=["product_a", "product_b"], how="left")

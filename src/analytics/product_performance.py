@@ -571,7 +571,15 @@ def compute_price_positioning_index(
     df = transactions_df.copy()
     if "category" not in df.columns:
         # Return empty DataFrame with expected columns when category is not available
-        return pd.DataFrame(columns=["stockcode", "category", "product_price", "category_median_price", "price_index"])
+        return pd.DataFrame(
+            columns=[
+                "stockcode",
+                "category",
+                "product_price",
+                "category_median_price",
+                "price_index",
+            ]
+        )
 
     # Get median price per product
     product_prices = (

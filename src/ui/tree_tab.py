@@ -20,7 +20,9 @@ from src.viz.decision_tree import (
 )
 
 
-def render_tree_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
+def render_tree_tab(
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None
+):
     """Render customer choice modelling analysis tab with persistent sub-tabs."""
     st.header(" Customer Choice Modelling - Product Purchase Prediction")
 
@@ -108,9 +110,7 @@ def render_tree_tab(transactions_df: pd.DataFrame, product_lookup: dict, params:
             )
             shap_values = None
         else:
-            model, metrics = train_xgboost(
-                X, y, return_shap=use_shap, max_depth=max_depth
-            )
+            model, metrics = train_xgboost(X, y, return_shap=use_shap, max_depth=max_depth)
             shap_values = metrics.pop("shap_values", None)
 
     if model is None:
@@ -322,9 +322,7 @@ def _render_xgb_features_tab(metrics: dict, X: pd.DataFrame, model) -> None:
                 X_test = metrics["shap_test_data"]
                 if sv.ndim == 2 and sv.shape[0] == X_test.shape[0]:
                     fig, ax = plt.subplots(figsize=(10, 6))
-                    shap.summary_plot(
-                        sv, X_test, feature_names=X_test.columns.tolist(), show=False
-                    )
+                    shap.summary_plot(sv, X_test, feature_names=X_test.columns.tolist(), show=False)
                     st.pyplot(fig)
                     plt.close()
             except Exception as exc:

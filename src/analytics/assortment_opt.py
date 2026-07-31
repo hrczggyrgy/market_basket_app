@@ -68,7 +68,11 @@ def optimize_assortment_heuristic(
                 transfers = dt_matrix.loc[r]
                 for target, row in transfers.items():
                     if target in solution_set:
-                        recovered += float(row) if not isinstance(row, dict) else row.get("revenue_at_risk", 0)
+                        recovered += (
+                            float(row)
+                            if not isinstance(row, dict)
+                            else row.get("revenue_at_risk", 0)
+                        )
 
         # Unmet demand (revenue lost - recovered)
         lost = sum(revenue_per_product.get(p, 0) for p in removed)
@@ -245,7 +249,9 @@ def evaluate_solution(
         if r in dt_matrix.index:
             for target, row in dt_matrix.loc[r].items():
                 if target in solution_set:
-                    recovered += float(row) if not isinstance(row, dict) else row.get("revenue_at_risk", 0)
+                    recovered += (
+                        float(row) if not isinstance(row, dict) else row.get("revenue_at_risk", 0)
+                    )
 
     lost = sum(revenue_per_product.get(p, 0) for p in removed)
     covered_revenue = kept_revenue + recovered

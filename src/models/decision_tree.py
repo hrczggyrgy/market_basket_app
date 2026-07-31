@@ -138,10 +138,9 @@ def build_customer_features(
     # ------------------------------------------------------------
     # 2. PRODUCT PURCHASE HISTORY (Top N products one-hot)
     # ------------------------------------------------------------
-    top_products = history_df["stockcode"].value_counts().head(50).index.tolist()
-
-    if target_product in top_products:
-        top_products.remove(target_product)  # Don't leak target
+    # FIX: Remove target product BEFORE computing top products to prevent leakage
+    history_without_target = history_df[history_df["stockcode"] != target_product]
+    top_products = history_without_target["stockcode"].value_counts().head(50).index.tolist()
 
     product_purchases = pd.crosstab(history_df["customer_id"], history_df["stockcode"])
     product_purchases = product_purchases.reindex(columns=top_products, fill_value=0)
@@ -459,6 +458,11 @@ def build_customer_features(
     # Replace inf with large numbers
     features = features.replace([np.inf, -np.inf], 1e10)
 
+    # Add temporal sort key for proper temporal splitting
+    features["_temporal_sort_key"] = features.get(
+        "days_since_last_purchase", pd.Series(0, index=features.index)
+    ).fillna(0)
+
     # Ensure target aligns
     y = y.reindex(features.index).fillna(0).astype(int)
 
@@ -473,14 +477,33 @@ def train_decision_tree(
     min_samples_split: int = 20,
     class_weight: str = "balanced",
     random_state: int = 42,
+    temporal_split: bool = True,
 ) -> Tuple[DecisionTreeClassifier, Dict]:
-    """Train decision tree classifier with enhanced metrics."""
+    """Train decision tree classifier with enhanced metrics.
+
+    Args:
+        X: Feature DataFrame
+        y: Target Series
+        temporal_split: If True, use time-based split (last 20% by temporal order).
+                       Requires '_temporal_sort_key' column in X.
+    """
     if len(y.unique()) < 2:
         return None, {"error": "Only one class present in target"}
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=random_state, stratify=y
-    )
+    # Temporal split using sort key if available
+    if temporal_split and "_temporal_sort_key" in X.columns:
+        X_sorted = X.sort_values("_temporal_sort_key")
+        y_sorted = y.loc[X_sorted.index]
+        split_idx = int(len(X_sorted) * 0.8)
+        X_train = X_sorted.iloc[:split_idx].drop(columns=["_temporal_sort_key"])
+        X_test = X_sorted.iloc[split_idx:].drop(columns=["_temporal_sort_key"])
+        y_train = y_sorted.iloc[:split_idx]
+        y_test = y_sorted.iloc[split_idx:]
+    else:
+        # Random stratified split (fallback)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=random_state, stratify=y
+        )
 
     model = DecisionTreeClassifier(
         max_depth=max_depth,
@@ -524,8 +547,10 @@ def train_decision_tree(
 def extract_tree_rules(
     model: DecisionTreeClassifier,
     feature_names: List[str],
-    target_names: List[str] = ["Not Buy", "Buy"],
+    target_names: Optional[List[str]] = None,
 ) -> List[Dict]:
+    if target_names is None:
+        target_names = ["Not Buy", "Buy"]
     """Extract human-readable rules from decision tree paths."""
     if model is None:
         return []
@@ -844,6 +869,7 @@ def compare_models(
     y: pd.Series,
     tree_params: Optional[Dict] = None,
     xgb_params: Optional[Dict] = None,
+    temporal_split: bool = True,
 ) -> pd.DataFrame:
     """Compare decision tree vs XGBoost on the same train/test split.
 
@@ -851,9 +877,19 @@ def compare_models(
     """
     from sklearn.metrics import precision_recall_fscore_support
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
+    # Temporal split using sort key if available
+    if temporal_split and "_temporal_sort_key" in X.columns:
+        X_sorted = X.sort_values("_temporal_sort_key")
+        y_sorted = y.loc[X_sorted.index]
+        split_idx = int(len(X_sorted) * 0.8)
+        X_train = X_sorted.iloc[:split_idx].drop(columns=["_temporal_sort_key"])
+        X_test = X_sorted.iloc[split_idx:].drop(columns=["_temporal_sort_key"])
+        y_train = y_sorted.iloc[:split_idx]
+        y_test = y_sorted.iloc[split_idx:]
+    else:
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
 
     results = []
 
@@ -871,15 +907,19 @@ def compare_models(
         dt.fit(X_train, y_train)
         dt_pred = dt.predict(X_test)
         dt_prob = dt.predict_proba(X_test)[:, 1]
-        p, r, f, _ = precision_recall_fscore_support(y_test, dt_pred, average="binary", zero_division=0)
-        results.append({
-            "model": "Decision Tree (legacy)",
-            "accuracy": accuracy_score(y_test, dt_pred),
-            "precision": p,
-            "recall": r,
-            "f1": f,
-            "roc_auc": roc_auc_score(y_test, dt_prob) if len(y_test.unique()) > 1 else 0.5,
-        })
+        p, r, f, _ = precision_recall_fscore_support(
+            y_test, dt_pred, average="binary", zero_division=0
+        )
+        results.append(
+            {
+                "model": "Decision Tree (legacy)",
+                "accuracy": accuracy_score(y_test, dt_pred),
+                "precision": p,
+                "recall": r,
+                "f1": f,
+                "roc_auc": roc_auc_score(y_test, dt_prob) if len(y_test.unique()) > 1 else 0.5,
+            }
+        )
     except Exception as exc:
         results.append({"model": "Decision Tree (legacy)", "error": str(exc)})
 
@@ -902,15 +942,19 @@ def compare_models(
         xgb_model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
         xgb_pred = xgb_model.predict(X_test)
         xgb_prob = xgb_model.predict_proba(X_test)[:, 1]
-        p, r, f, _ = precision_recall_fscore_support(y_test, xgb_pred, average="binary", zero_division=0)
-        results.append({
-            "model": "XGBoost (Recommended)",
-            "accuracy": accuracy_score(y_test, xgb_pred),
-            "precision": p,
-            "recall": r,
-            "f1": f,
-            "roc_auc": roc_auc_score(y_test, xgb_prob) if len(y_test.unique()) > 1 else 0.5,
-        })
+        p, r, f, _ = precision_recall_fscore_support(
+            y_test, xgb_pred, average="binary", zero_division=0
+        )
+        results.append(
+            {
+                "model": "XGBoost (Recommended)",
+                "accuracy": accuracy_score(y_test, xgb_pred),
+                "precision": p,
+                "recall": r,
+                "f1": f,
+                "roc_auc": roc_auc_score(y_test, xgb_prob) if len(y_test.unique()) > 1 else 0.5,
+            }
+        )
     except Exception as exc:
         results.append({"model": "XGBoost (Recommended)", "error": str(exc)})
 

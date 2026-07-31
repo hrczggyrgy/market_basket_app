@@ -37,7 +37,7 @@ def generate_synthetic_promo_data(
     true_promo_weeks: Dict[str, List[int]] = {}
 
     for pid in range(n_products):
-        sku = f"PROD_{pid+1:03d}"
+        sku = f"PROD_{pid + 1:03d}"
         base_price = rng.uniform(5.0, 20.0)
         promo_weeks = set(
             rng.choice(n_weeks, size=max(1, int(n_weeks * promo_weeks_fraction)), replace=False)
@@ -54,15 +54,17 @@ def generate_synthetic_promo_data(
             price = max(0.1, round(price, 2))
             qty = max(1, int(rng.poisson(10 + (20 if w in promo_weeks else 0))))
             tid = f"{sku}_{w:03d}"
-            rows.append({
-                "date": dates[w],
-                "transaction_id": tid,
-                "stockcode": sku,
-                "product": f"Product {sku}",
-                "customer_id": f"CUST_{sku}_{w % 10}",
-                "price": price,
-                "quantity": qty,
-            })
+            rows.append(
+                {
+                    "date": dates[w],
+                    "transaction_id": tid,
+                    "stockcode": sku,
+                    "product": f"Product {sku}",
+                    "customer_id": f"CUST_{sku}_{w % 10}",
+                    "price": price,
+                    "quantity": qty,
+                }
+            )
 
     return pd.DataFrame(rows), true_promo_weeks
 
@@ -177,23 +179,27 @@ def run_promo_detection_validation(
             metrics = _promo_week_precision_recall(detected, true_promo_weeks)
             runtime = time.time() - t0
 
-            results.append({
-                "method": method,
-                **metrics,
-                "runtime_seconds": round(runtime, 3),
-            })
+            results.append(
+                {
+                    "method": method,
+                    **metrics,
+                    "runtime_seconds": round(runtime, 3),
+                }
+            )
         except Exception as exc:
             runtime = time.time() - t0
-            results.append({
-                "method": method,
-                "precision": -1.0,
-                "recall": -1.0,
-                "f1": -1.0,
-                "true_positives": 0,
-                "false_positives": 0,
-                "false_negatives": 0,
-                "runtime_seconds": round(runtime, 3),
-                "error": str(exc),
-            })
+            results.append(
+                {
+                    "method": method,
+                    "precision": -1.0,
+                    "recall": -1.0,
+                    "f1": -1.0,
+                    "true_positives": 0,
+                    "false_positives": 0,
+                    "false_negatives": 0,
+                    "runtime_seconds": round(runtime, 3),
+                    "error": str(exc),
+                }
+            )
 
     return pd.DataFrame(results)

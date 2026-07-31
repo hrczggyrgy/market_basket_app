@@ -25,13 +25,13 @@ from src.analytics import (
     get_top_substitution_pairs,
     perform_hierarchical_clustering,
 )
-from src.analytics.cdt_behavioral import compute_switching_matrix
 from src.analytics.assortment_opt import (
     generate_assortment_scenarios,
     optimize_assortment_heuristic,
     optimize_assortment_milp,
 )
 from src.analytics.cdt_attributes import build_transaction_derived_attributes
+from src.analytics.cdt_behavioral import compute_switching_matrix
 from src.analytics.cdt_community import (
     build_product_graph,
     detect_communities,
@@ -86,17 +86,23 @@ def _invalidate_data_cache_if_changed(transactions_df: pd.DataFrame) -> None:
     """
     if transactions_df.empty:
         return
-    
+
     # Create a fingerprint of the current dataset
-    data_fingerprint = hash((
-        len(transactions_df),
-        transactions_df["transaction_id"].nunique() if "transaction_id" in transactions_df.columns else 0,
-        transactions_df["customer_id"].nunique() if "customer_id" in transactions_df.columns else 0,
-        transactions_df["stockcode"].nunique() if "stockcode" in transactions_df.columns else 0,
-        str(transactions_df["date"].min()) if "date" in transactions_df.columns else "",
-        str(transactions_df["date"].max()) if "date" in transactions_df.columns else "",
-    ))
-    
+    data_fingerprint = hash(
+        (
+            len(transactions_df),
+            transactions_df["transaction_id"].nunique()
+            if "transaction_id" in transactions_df.columns
+            else 0,
+            transactions_df["customer_id"].nunique()
+            if "customer_id" in transactions_df.columns
+            else 0,
+            transactions_df["stockcode"].nunique() if "stockcode" in transactions_df.columns else 0,
+            str(transactions_df["date"].min()) if "date" in transactions_df.columns else "",
+            str(transactions_df["date"].max()) if "date" in transactions_df.columns else "",
+        )
+    )
+
     # Check if fingerprint matches cached one
     cached_fingerprint = st.session_state.get("cdt_assortment_data_fingerprint")
     if cached_fingerprint is not None and cached_fingerprint != data_fingerprint:
@@ -104,7 +110,7 @@ def _invalidate_data_cache_if_changed(transactions_df: pd.DataFrame) -> None:
         keys_to_delete = [k for k in st.session_state.keys() if k.startswith("cdt_assortment_")]
         for key in keys_to_delete:
             del st.session_state[key]
-    
+
     # Store/update fingerprint
     st.session_state["cdt_assortment_data_fingerprint"] = data_fingerprint
 
@@ -215,7 +221,9 @@ def _render_cdt_builder(transactions_df: pd.DataFrame, product_lookup: dict, par
         with st.expander("📈 Silhouette Analysis", expanded=False):
             _render_silhouette_plot(silhouette_scores, optimal_k)
 
-        cluster_assignments = get_cluster_assignments(linkage_matrix, sim_matrix, n_clusters=optimal_k)
+        cluster_assignments = get_cluster_assignments(
+            linkage_matrix, sim_matrix, n_clusters=optimal_k
+        )
 
     with st.spinner("Building Customer Decision Tree..."):
         # Extract attributes
@@ -255,7 +263,17 @@ def _render_cdt_builder(transactions_df: pd.DataFrame, product_lookup: dict, par
         )
 
     # Display CDT results
-    _render_cdt_results(root, metadata, sim_matrix, cluster_assignments, product_lookup, transactions_df, params, linkage_matrix, ordered_labels)
+    _render_cdt_results(
+        root,
+        metadata,
+        sim_matrix,
+        cluster_assignments,
+        product_lookup,
+        transactions_df,
+        params,
+        linkage_matrix,
+        ordered_labels,
+    )
 
 
 def _render_similarity_comparison(similarity_matrices: Dict[str, pd.DataFrame]):
@@ -383,10 +401,14 @@ def _render_cdt_results(
     with st.expander(
         "🔄 Behavioral Matrices (Switching / Substitution / Bundling)", expanded=False
     ):
-        _render_behavioral_matrices(sim_matrix, cluster_assignments, product_lookup, params, transactions_df)
+        _render_behavioral_matrices(
+            sim_matrix, cluster_assignments, product_lookup, params, transactions_df
+        )
 
 
-def _render_behavioral_matrices(sim_matrix, cluster_assignments, product_lookup, params, transactions_df):
+def _render_behavioral_matrices(
+    sim_matrix, cluster_assignments, product_lookup, params, transactions_df
+):
     """Render switching, substitution, and bundling matrices."""
     switching_df = compute_switching_matrix(
         transactions_df,
@@ -408,7 +430,9 @@ def _render_behavioral_matrices(sim_matrix, cluster_assignments, product_lookup,
         )
 
     if affinity_matrix.empty:
-        bundling_df = pd.DataFrame(columns=["product_a", "product_b", "lift", "substitution", "bundle_score"])
+        bundling_df = pd.DataFrame(
+            columns=["product_a", "product_b", "lift", "substitution", "bundle_score"]
+        )
     else:
         bundling_df = compute_bundling_matrix(
             affinity_matrix=affinity_matrix,

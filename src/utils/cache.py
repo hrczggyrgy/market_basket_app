@@ -14,6 +14,7 @@ def _get_pymc_version() -> str:
     """Get PyMC version string for cache invalidation."""
     try:
         import pymc
+
         return pymc.__version__
     except ImportError:
         return "no_pymc"

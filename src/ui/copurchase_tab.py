@@ -43,7 +43,9 @@ def _cached_get_product_affinity_profile(transactions_df, target_product, min_li
     )
 
 
-def render_copurchase_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
+def render_copurchase_tab(
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None
+):
     """Render co-purchase/affinity analysis tab with persistent sub-tabs."""
     st.header("🛒 Co-purchase / Affinity Analysis")
     st.caption(

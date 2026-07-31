@@ -524,9 +524,11 @@ def compare_models(
 def extract_tree_rules(
     model: Any,
     feature_names: List[str],
-    target_names: List[str] = ["Not Buy", "Buy"],
-    max_depth: int = None,
+    target_names: Optional[List[str]] = None,
+    max_depth: Optional[int] = None,
 ) -> List[Dict]:
+    if target_names is None:
+        target_names = ["Not Buy", "Buy"]
     """Extract rules from tree-based models (supports DecisionTree, RF, GB, XGB, LGBM)."""
     if model is None:
         return []

@@ -210,6 +210,229 @@ def add_extended_metrics(rules: pd.DataFrame) -> pd.DataFrame:
     return rules
 
 
+def add_extended_metrics(rules: pd.DataFrame) -> pd.DataFrame:
+    """Add extended association rule metrics."""
+    rules = rules.copy()
+
+    # Leverage: P(A,B) - P(A)P(B)
+    rules["leverage"] = rules["support"] - (
+        rules["antecedent support"] * rules["consequent support"]
+    )
+
+    # Conviction: (1 - P(B)) / (1 - P(B|A)) = (1 - P(B)) / (1 - confidence)
+    # Handle division by zero
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rules["conviction"] = np.where(
+            rules["confidence"] < 1,
+            (1 - rules["consequent support"]) / (1 - rules["confidence"]),
+            np.inf,
+        )
+
+    # Zhang's Metric: (P(A,B) - P(A)P(B)) / max(P(A,B) - P(A)P(B), P(A)P(not B))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        numerator = rules["support"] - (rules["antecedent support"] * rules["consequent support"])
+        denominator = np.maximum(
+            numerator, rules["antecedent support"] * (1 - rules["consequent support"])
+        )
+        rules["zhangs_metric"] = np.where(denominator != 0, numerator / denominator, 0)
+
+    # Collective Strength
+    with np.errstate(divide="ignore", invalid="ignore"):
+        p_a = rules["antecedent support"]
+        p_b = rules["consequent support"]
+        p_ab = rules["support"]
+        p_not_a = 1 - p_a
+        p_not_b = 1 - p_b
+        p_not_a_not_b = 1 - p_a - p_b + p_ab
+
+        numerator_cs = p_ab + p_not_a_not_b
+        denominator_cs = p_a * p_b + p_not_a * p_not_b
+
+        second_num = 1 - p_a * p_b - p_not_a * p_not_b
+        second_den = 1 - p_ab - p_not_a_not_b
+
+        rules["collective_strength"] = np.where(
+            (denominator_cs != 0) & (second_den != 0),
+            (numerator_cs / denominator_cs) * (second_num / second_den),
+            1.0,
+        )
+
+    # ============ NEW METRICS ============
+
+    # Chi-squared statistic
+    with np.errstate(divide="ignore", invalid="ignore"):
+        # Build contingency table values
+        a = p_ab  # P(A,B)
+        b = p_a - p_ab  # P(A, not B)
+        c = p_b - p_ab  # P(not A, B)
+        d = p_not_a_not_b  # P(not A, not B)
+
+        # Expected values under independence
+        e_a = p_a * p_b
+        e_b = p_a * p_not_b
+        e_c = p_not_a * p_b
+        e_d = p_not_a * p_not_b
+
+        # Chi-squared
+        chi2 = np.where(
+            (e_a > 0) & (e_b > 0) & (e_c > 0) & (e_d > 0),
+            (a - e_a) ** 2 / e_a
+            + (b - e_b) ** 2 / e_b
+            + (c - e_c) ** 2 / e_c
+            + (d - e_d) ** 2 / e_d,
+            0,
+        )
+        rules["chi_squared"] = chi2
+
+        # Phi coefficient (correlation for binary variables)
+        # phi = (ad - bc) / sqrt((a+b)(c+d)(a+c)(b+d))
+        numerator_phi = a * d - b * c
+        denominator_phi = np.sqrt((a + b) * (c + d) * (a + c) * (b + d))
+        rules["phi_coefficient"] = np.where(
+            denominator_phi != 0, numerator_phi / denominator_phi, 0
+        )
+
+        # Cosine similarity: P(A,B) / sqrt(P(A)P(B))
+        rules["cosine"] = np.where((p_a > 0) & (p_b > 0), p_ab / np.sqrt(p_a * p_b), 0)
+
+        # Kulczynski: 0.5 * (P(B|A) + P(A|B)) = 0.5 * (confidence + P(A|B))
+        p_a_given_b = np.where(p_b > 0, p_ab / p_b, 0)
+        rules["kulczynski"] = 0.5 * (rules["confidence"] + p_a_given_b)
+
+        # Imbalance Ratio: |P(B|A) - P(A|B)| / (P(B|A) + P(A|B))
+        rules["imbalance_ratio"] = np.where(
+            (rules["confidence"] + p_a_given_b) > 0,
+            np.abs(rules["confidence"] - p_a_given_b) / (rules["confidence"] + p_a_given_b),
+            0,
+        )
+
+        # Odds Ratio: (a*d) / (b*c)
+        rules["odds_ratio"] = np.where((b * c) > 0, (a * d) / (b * c), np.inf)
+
+        # Certainty Factor: (P(B|A) - P(B)) / (1 - P(B)) if P(B|A) > P(B)
+        rules["certainty_factor"] = np.where(
+            rules["confidence"] > p_b,
+            (rules["confidence"] - p_b) / (1 - p_b),
+            np.where(rules["confidence"] < p_b, (rules["confidence"] - p_b) / p_b, 0),
+        )
+
+        # Added Value: P(B|A) - P(B)
+        rules["added_value"] = rules["confidence"] - p_b
+
+        # Sebag-Schoenauer: P(A,B) / P(A, not B)
+        rules["sebag_schoenauer"] = np.where(b > 0, a / b, np.inf)
+
+        # Jaccard: P(A,B) / P(A or B)
+        rules["jaccard"] = np.where((p_a + p_b - p_ab) > 0, p_ab / (p_a + p_b - p_ab), 0)
+
+        # Gini Index: 1 - sum(P(class|rule)^2)
+        # For binary: 2 * P(B|A) * (1 - P(B|A))
+        rules["gini_index"] = 2 * rules["confidence"] * (1 - rules["confidence"])
+
+        # Laplace correction: (support + 1) / (antecedent_support + 2)
+        # Not directly applicable without counts, approximate:
+        rules["laplace"] = (p_ab + 1 / p_a) / (p_a + 2 / p_a) if p_a.all() > 0 else 0
+
+    return rules
+
+
+def _benjamini_hochberg_correction(p_values: np.ndarray, alpha: float = 0.05) -> np.ndarray:
+    """
+    Apply Benjamini-Hochberg procedure for FDR control.
+
+    Args:
+        p_values: Array of p-values
+        alpha: Significance level (default 0.05)
+
+    Returns:
+        Boolean array indicating which hypotheses are rejected (True = significant)
+    """
+    n = len(p_values)
+    if n == 0:
+        return np.array([], dtype=bool)
+
+    # Sort p-values and keep track of original indices
+    sorted_indices = np.argsort(p_values)
+    sorted_p = p_values[sorted_indices]
+
+    # Find the largest k such that p_(k) <= (k/n) * alpha
+    k = np.where(sorted_p <= (np.arange(1, n + 1) / n) * alpha)[0]
+
+    if len(k) == 0:
+        return np.zeros(n, dtype=bool)
+
+    max_k = k[-1] + 1  # +1 because k is 0-indexed
+
+    # Create boolean mask
+    rejected = np.zeros(n, dtype=bool)
+    rejected[sorted_indices[:max_k]] = True
+
+    return rejected
+
+
+def apply_multiple_testing_correction(
+    rules: pd.DataFrame,
+    alpha: float = 0.05,
+    method: str = "benjamini_hochberg",
+    p_value_col: str = "p_value",
+) -> pd.DataFrame:
+    """
+    Apply multiple testing correction to association rules.
+
+    Adds columns:
+        - p_value_adjusted: Adjusted p-values
+        - significant: Boolean indicating significance after correction
+
+    Args:
+        rules: DataFrame with rules including a p-value column
+        alpha: Significance level
+        method: Correction method ('benjamini_hochberg', 'bonferroni', 'holm')
+        p_value_col: Column name containing p-values
+
+    Returns:
+        Rules DataFrame with added correction columns
+    """
+    if rules.empty or p_value_col not in rules.columns:
+        return rules
+
+    rules = rules.copy()
+    p_values = rules[p_value_col].values
+
+    if method == "benjamini_hochberg":
+        rejected = _benjamini_hochberg_correction(p_values, alpha)
+        # Adjusted p-values (BH procedure)
+        n = len(p_values)
+        sorted_indices = np.argsort(p_values)
+        sorted_p = p_values[sorted_indices]
+        adjusted = np.minimum.accumulate(sorted_p * n / (np.arange(n) + 1))[::-1]
+        adjusted = adjusted[np.argsort(sorted_indices)]
+        adjusted = np.minimum(adjusted, 1.0)
+    elif method == "bonferroni":
+        adjusted = np.minimum(p_values * len(p_values), 1.0)
+        rejected = adjusted < alpha
+    elif method == "holm":
+        # Holm-Bonferroni step-down procedure
+        n = len(p_values)
+        sorted_indices = np.argsort(p_values)
+        sorted_p = p_values[sorted_indices]
+        adjusted = np.zeros_like(p_values)
+        for i, idx in enumerate(sorted_indices):
+            adjusted[idx] = min(sorted_p[i] * (n - i), 1.0)
+        # Ensure monotonicity
+        for i in range(1, n):
+            adjusted[sorted_indices[i]] = max(
+                adjusted[sorted_indices[i]], adjusted[sorted_indices[i - 1]]
+            )
+        rejected = adjusted < alpha
+    else:
+        raise ValueError(f"Unknown method: {method}")
+
+    rules["p_value_adjusted"] = adjusted
+    rules["significant"] = rejected
+
+    return rules
+
+
 def filter_rules(
     rules: pd.DataFrame,
     min_support: float = 0.0,

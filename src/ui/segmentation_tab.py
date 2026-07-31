@@ -162,7 +162,9 @@ def _cached_compute_cluster_stability(
     )
 
 
-def render_segmentation_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
+def render_segmentation_tab(
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None
+):
     """Render customer segmentation analysis tab with enhanced features."""
     st.header(" Customer Segmentation")
 
@@ -197,23 +199,23 @@ def render_segmentation_tab(transactions_df: pd.DataFrame, product_lookup: dict,
     if selected == 0:
         render_overview(transactions_df)
     elif selected == 1:
-        render_rfm_segmentation(transactions_df, params)
+        render_rfm_segmentation(transactions_df, params, pipeline)
     elif selected == 2:
-        render_behavioral_segmentation(transactions_df, params)
+        render_behavioral_segmentation(transactions_df, params, pipeline)
     elif selected == 3:
-        render_value_segmentation(transactions_df, params)
+        render_value_segmentation(transactions_df, params, pipeline)
     elif selected == 4:
-        render_enhanced_features(transactions_df)
+        render_enhanced_features(transactions_df, pipeline)
     elif selected == 5:
-        render_cluster_map(transactions_df)
+        render_cluster_map(transactions_df, pipeline)
     elif selected == 6:
-        render_validation(transactions_df)
+        render_validation(transactions_df, pipeline)
     elif selected == 7:
-        render_migration(transactions_df)
+        render_migration(transactions_df, pipeline)
     elif selected == 8:
-        render_retention(transactions_df)
+        render_retention(transactions_df, pipeline)
     elif selected == 9:
-        render_segment_cards(transactions_df)
+        render_segment_cards(transactions_df, pipeline)
 
 
 def render_overview(transactions_df: pd.DataFrame):
@@ -254,7 +256,7 @@ def render_overview(transactions_df: pd.DataFrame):
     """)
 
 
-def render_rfm_segmentation(transactions_df: pd.DataFrame, params: dict):
+def render_rfm_segmentation(transactions_df: pd.DataFrame, params: dict, pipeline: dict = None):
     """Render RFM / Behavioral segmentation analysis."""
     st.subheader("Customer Segmentation")
 
@@ -580,7 +582,9 @@ def _render_kmeans_segment_details(rfm_clustered: pd.DataFrame):
         )
 
 
-def render_behavioral_segmentation(transactions_df: pd.DataFrame, params: dict):
+def render_behavioral_segmentation(
+    transactions_df: pd.DataFrame, params: dict, pipeline: dict = None
+):
     st.subheader("Behavioral Segmentation")
 
     n_clusters = st.slider("Number of Clusters", 3, 10, 6, key="seg_tab_behav_n_clusters")
@@ -758,7 +762,7 @@ def _render_behavioral_switching(transactions_df: pd.DataFrame, behavioral: pd.D
                     st.dataframe(seg_switches.head(10), width="stretch")
 
 
-def render_value_segmentation(transactions_df: pd.DataFrame, params: dict):
+def render_value_segmentation(transactions_df: pd.DataFrame, params: dict, pipeline: dict = None):
     st.subheader("Value-Based Segmentation (Predicted CLV)")
 
     horizon = st.slider("Prediction Horizon (days)", 30, 365, 90, key="seg_tab_value_horizon")
@@ -782,7 +786,11 @@ def render_value_segmentation(transactions_df: pd.DataFrame, params: dict):
 
     # Store segment assignments in session_state for cross-tab usage
     # value_segment column is the segment column for value-based
-    st.session_state["segment_assignments"] = value_segments[["customer_id", "value_segment"]].rename(columns={"value_segment": "segment"}).copy()
+    st.session_state["segment_assignments"] = (
+        value_segments[["customer_id", "value_segment"]]
+        .rename(columns={"value_segment": "segment"})
+        .copy()
+    )
 
 
 def _render_value_distribution(value_segments: pd.DataFrame):
@@ -922,7 +930,7 @@ def _render_value_clv_accuracy(value_segments: pd.DataFrame):
             col2.metric("RMSE", f"${rmse:,.2f}")
 
 
-def render_enhanced_features(transactions_df: pd.DataFrame):
+def render_enhanced_features(transactions_df: pd.DataFrame, pipeline: dict = None):
     """Render enhanced behavioral features beyond classic RFM."""
     st.subheader("Enhanced Behavioral Features")
     st.caption("20+ transaction-derived features beyond classic RFM")
@@ -1015,7 +1023,7 @@ def render_enhanced_features(transactions_df: pd.DataFrame):
         st.plotly_chart(fig, width="stretch")
 
 
-def render_cluster_map(transactions_df: pd.DataFrame):
+def render_cluster_map(transactions_df: pd.DataFrame, pipeline: dict = None):
     """Render 2D cluster map using UMAP/PCA projection."""
     st.subheader("Cluster Map (UMAP/PCA Projection)")
     st.caption("2D visualization of customer segments in feature space")
@@ -1150,7 +1158,7 @@ def render_cluster_map(transactions_df: pd.DataFrame):
     )
 
 
-def render_validation(transactions_df: pd.DataFrame):
+def render_validation(transactions_df: pd.DataFrame, pipeline: dict = None):
     """Render cluster validation metrics."""
     st.subheader("Cluster Validation Metrics")
     st.caption("Quality assessment for different clustering configurations")
@@ -1311,7 +1319,7 @@ def render_validation(transactions_df: pd.DataFrame):
                 st.error("Low stability - clusters may not be reliable")
 
 
-def render_migration(transactions_df: pd.DataFrame):
+def render_migration(transactions_df: pd.DataFrame, pipeline: dict = None):
     """Render segment migration analysis over time."""
     st.subheader("Segment Migration Analysis")
     st.caption("Track how customers move between segments over time")
@@ -1395,7 +1403,7 @@ def render_migration(transactions_df: pd.DataFrame):
     )
 
 
-def render_retention(transactions_df: pd.DataFrame):
+def render_retention(transactions_df: pd.DataFrame, pipeline: dict = None):
     """Render segment retention curves."""
     st.subheader("Segment Retention Curves")
     st.caption("Cohort-based retention by segment")
@@ -1445,7 +1453,7 @@ def render_retention(transactions_df: pd.DataFrame):
     )
 
 
-def render_segment_cards(transactions_df: pd.DataFrame):
+def render_segment_cards(transactions_df: pd.DataFrame, pipeline: dict = None):
     """Render actionable segment cards with business labels, traits, and actions."""
     st.subheader("Actionable Segment Cards")
     st.caption(

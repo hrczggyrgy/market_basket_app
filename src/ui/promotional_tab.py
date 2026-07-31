@@ -11,7 +11,9 @@ from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
 
 
-def render_promotional_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
+def render_promotional_tab(
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None
+):
     """Render promotional analytics tab with persistent sub-tabs."""
     st.header(" Promotional Analytics")
 

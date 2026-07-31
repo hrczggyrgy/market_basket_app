@@ -61,7 +61,9 @@ def render_pricing_tab(
 # ============================================================================
 
 
-def _render_elasticity_analysis(transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None):
+def _render_elasticity_analysis(
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None
+):
     """Render price elasticity estimation using log-log regression."""
 
     st.header("📈 Price Elasticity Analysis")
@@ -172,9 +174,13 @@ def _render_single_product_elasticity(
         if row["elasticity_hdi_lower"] < 0 and row["elasticity_hdi_upper"] < 0:
             st.info("🔴 **Elastic** — 94% HDI entirely below zero (demand sensitive to price).")
         elif row["elasticity_hdi_lower"] < 0 < row["elasticity_hdi_upper"]:
-            st.warning("🟡 **Uncertain** — HDI crosses zero (insufficient evidence of price effect).")
+            st.warning(
+                "🟡 **Uncertain** — HDI crosses zero (insufficient evidence of price effect)."
+            )
         else:
-            st.info("🟢 **Positive** — HDI above zero (possible promo effect or omitted variable bias).")
+            st.info(
+                "🟢 **Positive** — HDI above zero (possible promo effect or omitted variable bias)."
+            )
 
         # Trace diagnostics (only for NUTS)
         if params.get("bayesian_mode", "").startswith("full"):
@@ -394,7 +400,7 @@ def _estimate_all_elasticities_vectorized(
     min_price_variation: float,
 ) -> pd.DataFrame:
     """Vectorized elasticity estimation using matrix solve (10-50x speedup).
-    
+
     Stacks all SKU weekly data into a single block-diagonal design matrix
     and solves via np.linalg.lstsq in one call.
     """
@@ -414,69 +420,71 @@ def _estimate_all_elasticities_vectorized(
     # Filter by min_periods and price variation per SKU
     sku_counts = weekly_all.groupby("stockcode").size()
     valid_skus_count = sku_counts[sku_counts >= min_periods].index
-    
+
     price_cv = weekly_all.groupby("stockcode").apply(
         lambda x: x["avg_price"].std() / x["avg_price"].mean()
     )
     valid_skus_cv = price_cv[price_cv >= min_price_variation].index
-    
+
     valid_skus = set(valid_skus_count) & set(valid_skus_cv)
     if not valid_skus:
         return pd.DataFrame()
 
     weekly_all = weekly_all[weekly_all["stockcode"].isin(valid_skus)]
-    
+
     # Prepare log-transformed data
     weekly_all["log_price"] = np.log(weekly_all["avg_price"].clip(lower=1e-6))
     weekly_all["log_qty"] = np.log(weekly_all["total_qty"].clip(lower=1e-6))
-    
+
     # Build block-diagonal design matrix and solve all at once
     results = []
     sku_to_idx = {sku: i for i, sku in enumerate(valid_skus)}
     n_valid = len(valid_skus)
-    
+
     # Group by SKU to get slice indices
     sku_groups = weekly_all.groupby("stockcode")
-    
+
     # Build block-diagonal matrix
     total_obs = len(weekly_all)
     X = np.zeros((total_obs, n_valid + 1))  # +1 for intercept per SKU
     y = weekly_all["log_qty"].values
-    
+
     row_offset = 0
     sku_stats = {}
-    
+
     for sku, group in sku_groups:
         if sku not in valid_skus:
             continue
         idx = sku_to_idx[sku]
         n = len(group)
-        
+
         # Design matrix: [1, log_price] for this SKU's block
-        X[row_offset:row_offset+n, idx] = 1.0  # intercept column for this SKU
-        X[row_offset:row_offset+n, n_valid + idx] = group["log_price"].values  # slope column for this SKU
-        
+        X[row_offset : row_offset + n, idx] = 1.0  # intercept column for this SKU
+        X[row_offset : row_offset + n, n_valid + idx] = group[
+            "log_price"
+        ].values  # slope column for this SKU
+
         sku_stats[sku] = {
             "n_obs": n,
             "avg_price": group["avg_price"].mean(),
             "avg_weekly_qty": group["total_qty"].mean(),
             "price_cv": group["avg_price"].std() / group["avg_price"].mean(),
         }
-        
+
         row_offset += n
-    
+
     # Trim unused rows
     X = X[:row_offset]
     y = y[:row_offset]
-    
+
     # Solve via least squares: (X^T X) beta = X^T y
     # This is much faster than per-SKU loop
     beta, residuals, rank, s = np.linalg.lstsq(X, y, rcond=None)
-    
+
     # Extract results
     intercepts = beta[:n_valid]
     slopes = beta[n_valid:]
-    
+
     for i, sku in enumerate(valid_skus):
         stats = sku_stats[sku]
         slope = slopes[i]
@@ -487,19 +495,21 @@ def _estimate_all_elasticities_vectorized(
         ss_res = np.sum((y_true - y_pred) ** 2)
         ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
         r_squared = 1 - ss_res / ss_tot if ss_tot > 0 else 0
-        
-        results.append({
-            "stockcode": sku,
-            "elasticity": float(slope),
-            "r_squared": float(r_squared),
-            "p_value": 1.0,  # Not computed in vectorized version
-            "std_err": 0.0,   # Not computed in vectorized version
-            "n_obs": stats["n_obs"],
-            "avg_price": stats["avg_price"],
-            "avg_weekly_qty": stats["avg_weekly_qty"],
-            "price_cv": stats["price_cv"],
-        })
-    
+
+        results.append(
+            {
+                "stockcode": sku,
+                "elasticity": float(slope),
+                "r_squared": float(r_squared),
+                "p_value": 1.0,  # Not computed in vectorized version
+                "std_err": 0.0,  # Not computed in vectorized version
+                "n_obs": stats["n_obs"],
+                "avg_price": stats["avg_price"],
+                "avg_weekly_qty": stats["avg_weekly_qty"],
+                "price_cv": stats["price_cv"],
+            }
+        )
+
     return pd.DataFrame(results)
 
 
@@ -540,9 +550,15 @@ def _render_elasticity_batch_results(elasticity_df: pd.DataFrame, product_lookup
         with col_sd1:
             st.metric("Mean Posterior SD", f"{elasticity_df['elasticity_sd'].mean():.3f}")
         with col_sd2:
-            st.metric("Mean HDI Width (94%)", f"{(elasticity_df['elasticity_hdi_upper'] - elasticity_df['elasticity_hdi_lower']).mean():.3f}")
+            st.metric(
+                "Mean HDI Width (94%)",
+                f"{(elasticity_df['elasticity_hdi_upper'] - elasticity_df['elasticity_hdi_lower']).mean():.3f}",
+            )
         with col_sd3:
-            cross_zero = ((elasticity_df['elasticity_hdi_lower'] < 0) & (elasticity_df['elasticity_hdi_upper'] > 0)).mean() * 100
+            cross_zero = (
+                (elasticity_df["elasticity_hdi_lower"] < 0)
+                & (elasticity_df["elasticity_hdi_upper"] > 0)
+            ).mean() * 100
             st.metric("% HDI Crosses Zero", f"{cross_zero:.1f}%")
         hdi_fig = px.scatter(
             elasticity_df,
@@ -736,7 +752,9 @@ def _render_elasticity_benchmark(params: dict):
 # ============================================================================
 
 
-def _render_kvi_identification(transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None):
+def _render_kvi_identification(
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None
+):
     """Render Key Value Item (KVI) identification and scoring."""
 
     st.header("🏷️ KVI (Key Value Item) Identification")
@@ -955,9 +973,7 @@ def _render_price_curve_diagnostics(
             if c in transactions_df.columns
         ]
         if cost_cols:
-            cost_col = st.sidebar.selectbox(
-                "Cost Column", cost_cols, key="price_curve_cost_col"
-            )
+            cost_col = st.sidebar.selectbox("Cost Column", cost_cols, key="price_curve_cost_col")
         else:
             st.sidebar.info("No cost column found — margin not included in clustering.")
 
@@ -1275,7 +1291,9 @@ def _render_promo_uplift_modeling(
     with col3:
         st.metric("Uplift @ Top 10%", f"{uplift_results.get('uplift_at_10', 0):.4f}")
 
-    st.caption("ℹ️ Qini and AUUC are not normalized — compare relative model performance on THIS dataset, not absolute values across different datasets or reports.")
+    st.caption(
+        "ℹ️ Qini and AUUC are not normalized — compare relative model performance on THIS dataset, not absolute values across different datasets or reports."
+    )
 
     # Qini curve
     if "qini_curve" in uplift_results:
@@ -1347,14 +1365,18 @@ def _train_uplift_model(
         # Train model based on method
         if method == "t_learner":
             model_treated, model_control, uplift = train_t_learner_uplift(
-                X, treatment, y,
+                X,
+                treatment,
+                y,
                 base_learner="xgb",
                 n_estimators=n_estimators,
                 max_depth=max_depth,
             )
         elif method == "s_learner":
             model, uplift = train_s_learner_uplift(
-                X, treatment, y,
+                X,
+                treatment,
+                y,
                 base_learner="xgb",
                 n_estimators=n_estimators,
                 max_depth=max_depth,
@@ -1391,14 +1413,18 @@ def _train_uplift_model(
                 promo_df_copy = promo_df.copy()
                 promo_df_copy["date"] = pd.to_datetime(promo_df_copy["date"])
                 promo_df_copy["week"] = promo_df_copy["date"].dt.to_period("W")
-                promo_weekly = promo_df_copy.groupby(["stockcode", "week"])["is_promo"].any().reset_index()
+                promo_weekly = (
+                    promo_df_copy.groupby(["stockcode", "week"])["is_promo"].any().reset_index()
+                )
 
                 weekly_agg = weekly_agg.merge(promo_weekly, on=["stockcode", "week"], how="left")
                 weekly_agg["treatment"] = weekly_agg["is_promo"].fillna(False).astype(int)
 
                 # Target: quantity in next week
                 weekly_agg = weekly_agg.sort_values(["customer_id", "stockcode", "week"])
-                weekly_agg["next_week_qty"] = weekly_agg.groupby(["customer_id", "stockcode"])["total_qty"].shift(-1)
+                weekly_agg["next_week_qty"] = weekly_agg.groupby(["customer_id", "stockcode"])[
+                    "total_qty"
+                ].shift(-1)
                 weekly_agg = weekly_agg.dropna(subset=["next_week_qty"])
 
                 # The weekly_agg rows should correspond to the rows in X from build_uplift_dataset
@@ -1411,16 +1437,17 @@ def _train_uplift_model(
                     merged = weekly_agg.merge(
                         segment_assignments[["customer_id", "segment"]],
                         on="customer_id",
-                        how="left"
+                        how="left",
                     )
 
                     # Compute mean uplift per segment (only for treated)
                     treated_merged = merged[merged["treatment"] == 1]
                     if not treated_merged.empty:
-                        segment_uplift = treated_merged.groupby("segment").agg(
-                            uplift=("uplift", "mean"),
-                            size=("customer_id", "count")
-                        ).reset_index()
+                        segment_uplift = (
+                            treated_merged.groupby("segment")
+                            .agg(uplift=("uplift", "mean"), size=("customer_id", "count"))
+                            .reset_index()
+                        )
                         segment_uplift = segment_uplift[segment_uplift["segment"].notna()]
 
         return {
@@ -1468,7 +1495,9 @@ def _render_uplift_by_segment(segment_uplift: Optional[pd.DataFrame]):
         )
         return
 
-    st.caption("🟢 Live model output — segments from Customer Segmentation tab, uplift from T-learner/S-learner on your uploaded data.")
+    st.caption(
+        "🟢 Live model output — segments from Customer Segmentation tab, uplift from T-learner/S-learner on your uploaded data."
+    )
 
     fig = px.bar(
         segment_uplift,

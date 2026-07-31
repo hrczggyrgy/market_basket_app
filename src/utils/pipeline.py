@@ -5,7 +5,6 @@ from typing import Any, Dict, Optional
 import pandas as pd
 import streamlit as st
 
-
 PIPELINE_KEY = "pipeline_store"
 
 
@@ -17,12 +16,10 @@ def init_pipeline():
             "transactions_df": None,
             "product_lookup": None,
             "basket_matrix": None,
-            
             # Association rules layer
             "frequent_itemsets": None,
             "rules": None,
             "filtered_rules": None,
-            
             # CDT layer
             "similarity_matrix": None,
             "linkage_matrix": None,
@@ -33,27 +30,22 @@ def init_pipeline():
             "switching_matrix": None,
             "substitution_matrix": None,
             "bundling_matrix": None,
-            
             # Segmentation layer
             "customer_features": None,
             "rfm_features": None,
             "segment_assignments": None,
             "segment_profiles": None,
             "clv_predictions": None,
-            
             # Elasticity/Pricing layer
             "elasticity_results": None,
             "kvi_scores": None,
             "price_curves": None,
-            
             # Promo Uplift layer
             "promo_flags": None,
             "uplift_model": None,
             "uplift_results": None,
-            
             # Demand Transference layer
             "demand_transference_matrix": None,
-            
             # Assortment layer
             "assortment_scenarios": None,
             "assortment_evaluation": None,
@@ -99,7 +91,7 @@ def clear_pipeline(keys: Optional[list] = None):
 
 def invalidate_downstream(from_stage: str):
     """Invalidate pipeline stages that depend on a given stage.
-    
+
     Stage dependency order:
     data -> basket -> (rules, cdt, segmentation, elasticity, promo)
     cdt -> demand_transference -> assortment
@@ -107,13 +99,13 @@ def invalidate_downstream(from_stage: str):
     """
     stage_order = [
         "transactions_df",
-        "product_lookup", 
+        "product_lookup",
         "basket_matrix",
         "frequent_itemsets",
         "rules",
         "filtered_rules",
         "similarity_matrix",
-        "linkage_matrix", 
+        "linkage_matrix",
         "cluster_assignments",
         "cdt_tree",
         "cdt_metadata",
@@ -136,11 +128,11 @@ def invalidate_downstream(from_stage: str):
         "assortment_scenarios",
         "assortment_evaluation",
     ]
-    
+
     try:
         idx = stage_order.index(from_stage)
         # Clear all stages after this one
-        for stage in stage_order[idx + 1:]:
+        for stage in stage_order[idx + 1 :]:
             st.session_state[PIPELINE_KEY][stage] = None
     except ValueError:
         pass

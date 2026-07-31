@@ -624,7 +624,9 @@ def detect_promotions_adaptive(
     daily["is_promo"] = daily["z_score"] < z_score_threshold
 
     # Merge back
-    df = df.merge(daily[["stockcode", "date", "is_promo", "z_score"]], on=["stockcode", "date"], how="left")
+    df = df.merge(
+        daily[["stockcode", "date", "is_promo", "z_score"]], on=["stockcode", "date"], how="left"
+    )
     df["is_promo"] = df["is_promo"].fillna(False)
 
     # Baseline price (90th percentile for reporting)
@@ -686,30 +688,32 @@ def detect_promotions_adaptive(
                 else:
                     revenue_lift = 0
 
-                promotions.append({
-                    "stockcode": product,
-                    "product_name": (
-                        promo_sales["product"].iloc[0]
-                        if "product" in promo_sales.columns
-                        else product
-                    ),
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "duration_days": duration,
-                    "avg_discount_pct": avg_promo_discount * 100,
-                    "promo_revenue": promo_revenue,
-                    "baseline_revenue": baseline_revenue,
-                    "promo_qty": promo_qty,
-                    "baseline_qty": baseline_qty,
-                    "promo_orders": promo_orders,
-                    "baseline_orders": baseline_orders,
-                    "promo_customers": promo_customers,
-                    "baseline_customers": baseline_customers,
-                    "qty_lift": qty_lift,
-                    "revenue_lift": revenue_lift,
-                    "avg_promo_price": avg_promo_price,
-                    "avg_baseline_price": avg_baseline_price,
-                    "detection_method": "adaptive_zscore",
-                })
+                promotions.append(
+                    {
+                        "stockcode": product,
+                        "product_name": (
+                            promo_sales["product"].iloc[0]
+                            if "product" in promo_sales.columns
+                            else product
+                        ),
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "duration_days": duration,
+                        "avg_discount_pct": avg_promo_discount * 100,
+                        "promo_revenue": promo_revenue,
+                        "baseline_revenue": baseline_revenue,
+                        "promo_qty": promo_qty,
+                        "baseline_qty": baseline_qty,
+                        "promo_orders": promo_orders,
+                        "baseline_orders": baseline_orders,
+                        "promo_customers": promo_customers,
+                        "baseline_customers": baseline_customers,
+                        "qty_lift": qty_lift,
+                        "revenue_lift": revenue_lift,
+                        "avg_promo_price": avg_promo_price,
+                        "avg_baseline_price": avg_baseline_price,
+                        "detection_method": "adaptive_zscore",
+                    }
+                )
 
     return pd.DataFrame(promotions)
