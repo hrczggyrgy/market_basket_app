@@ -1359,6 +1359,13 @@ def render_migration(transactions_df: pd.DataFrame, pipeline: dict = None):
     st.subheader("Migration Flows")
     if not migrations.empty:
         agg = migrations.groupby(["segment_from", "segment_to"])["count"].sum().reset_index()
+        
+        # Create a complete list of all unique segments
+        all_segments = list(agg["segment_from"].unique()) + [
+            s for s in agg["segment_to"].unique() if s not in agg["segment_from"].unique()
+        ]
+        segment_to_idx = {s: i for i, s in enumerate(all_segments)}
+        
         fig = go.Figure(
             data=[
                 go.Sankey(
@@ -1366,29 +1373,18 @@ def render_migration(transactions_df: pd.DataFrame, pipeline: dict = None):
                         pad=15,
                         thickness=20,
                         line=dict(color="black", width=0.5),
-                        label=agg["segment_from"].unique().tolist()
-                        + [
-                            s
-                            for s in agg["segment_to"].unique()
-                            if s not in agg["segment_from"].unique()
-                        ],
+                        label=all_segments,
                     ),
                     link=dict(
-                        source=[
-                            agg["segment_from"].unique().tolist().index(s)
-                            for s in agg["segment_from"]
-                        ],
-                        target=[
-                            agg["segment_from"].unique().tolist().index(s)
-                            for s in agg["segment_to"]
-                        ],
+                        source=[segment_to_idx[s] for s in agg["segment_from"]],
+                        target=[segment_to_idx[s] for s in agg["segment_to"]],
                         value=agg["count"],
                     ),
                 )
             ]
         )
-    fig.update_layout(title_text="Segment Migration Flows", height=500)
-    st.plotly_chart(fig, width="stretch")
+        fig.update_layout(title_text="Segment Migration Flows", height=500)
+        st.plotly_chart(fig, width="stretch")
 
     # Migration table
     st.subheader("Detailed Transitions")
