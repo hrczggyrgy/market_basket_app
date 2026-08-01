@@ -13,13 +13,16 @@ import pandas as pd
 import streamlit as st
 
 
-def _hash_dataframe(df: pd.DataFrame) -> str:
-    """Create hash of dataframe for caching.
-    
-    Uses all columns for hashing. For large DataFrames, this may be slow.
+def _hash_dataframe(df: pd.DataFrame, cols: list | None = None) -> str:
+    """Create a short MD5 hash of a DataFrame for cache-key generation.
+
+    Args:
+        df: DataFrame to hash.
+        cols: Optional list of column names to include. If None, all columns
+              are used. Providing a subset is faster for large DataFrames.
     """
-    # Use a sample of columns for faster hashing if DataFrame is large
-    cols = df.columns.tolist()
+    if cols is None:
+        cols = df.columns.tolist()
     subset = df[cols].copy()
     subset = subset.sort_values(cols).reset_index(drop=True)
     return hashlib.md5(subset.to_json().encode()).hexdigest()[:16]
@@ -653,19 +656,23 @@ def build_similarity_matrix_ensemble(
     min_product_support: int = 2,
 ) -> Dict[str, pd.DataFrame]:
     """
-    Build multiple similarity matrices and optionally return weighted ensemble.
+    Build multiple similarity matrices and return a weighted ensemble.
+
+    When weights is None, equal weights are used so that the 'ensemble' key
+    is always populated. Callers that relied on weights=None returning only
+    individual matrices can still access them by their method keys.
 
     Args:
         transactions_df: Transaction DataFrame
         customer_col: Customer identifier column
         product_col: Product identifier column
         methods: List of methods to compute (default: ['phi', 'jaccard', 'pmi', 'cosine_tfidf'])
-        weights: Dict mapping method -> weight for ensemble (default: equal)
+        weights: Dict mapping method -> weight for ensemble (default: equal weights)
         min_cooccurrence: Minimum co-purchase count
         min_product_support: Minimum product support
 
     Returns:
-        Dict with individual matrices + 'ensemble' key if weights provided
+        Dict with individual matrices keyed by method name plus an 'ensemble' key.
     """
     if methods is None:
         methods = ["phi", "jaccard", "pmi", "cosine_tfidf"]
@@ -681,26 +688,29 @@ def build_similarity_matrix_ensemble(
             min_product_support,
         )
 
-    if weights:
-        # Align on common products
-        common_products = set(matrices[methods[0]].index)
-        for m in methods[1:]:
-            common_products &= set(matrices[m].index)
-        common_products = sorted(common_products)
+    # Always build the ensemble — use equal weights when weights is None
+    if weights is None:
+        weights = {m: 1.0 for m in methods}
 
-        ensemble = pd.DataFrame(0.0, index=common_products, columns=common_products)
-        total_weight = sum(weights.get(m, 1.0) for m in methods)
+    # Align on common products
+    common_products = set(matrices[methods[0]].index)
+    for m in methods[1:]:
+        common_products &= set(matrices[m].index)
+    common_products = sorted(common_products)
 
-        for method in methods:
-            weight = weights.get(method, 1.0)
-            mat = matrices[method].loc[common_products, common_products]
-            ensemble += weight * mat
+    ensemble = pd.DataFrame(0.0, index=common_products, columns=common_products)
+    total_weight = sum(weights.get(m, 1.0) for m in methods)
 
-        ensemble /= total_weight
-        ens_np = ensemble.to_numpy(copy=True)
-        np.fill_diagonal(ens_np, 1.0)
-        ensemble[:] = ens_np
-        matrices["ensemble"] = ensemble
+    for method in methods:
+        weight = weights.get(method, 1.0)
+        mat = matrices[method].loc[common_products, common_products]
+        ensemble += weight * mat
+
+    ensemble /= total_weight
+    ens_np = ensemble.to_numpy(copy=True)
+    np.fill_diagonal(ens_np, 1.0)
+    ensemble[:] = ens_np
+    matrices["ensemble"] = ensemble
 
     return matrices
 
