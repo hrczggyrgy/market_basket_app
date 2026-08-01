@@ -87,6 +87,9 @@ def compute_category_kpis(
 
     # Merge category info
     df = df.merge(categories_df[["stockcode", "category"]], on="stockcode", how="left")
+    
+    # Fill missing categories with "Unknown" to avoid KeyError in groupby
+    df["category"] = df["category"].fillna("Unknown")
 
     total_revenue = df["revenue"].sum()
     total_baskets = df.groupby(["customer_id", "date"]).ngroups
