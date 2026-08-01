@@ -130,10 +130,20 @@ class CDTService:
                 cdt_config.min_cooccurrence,
             )
 
-            if not sim_result.success or sim_result.data.empty:
+            if not sim_result.success:
+                error_msg = sim_result.error or "Failed to build similarity matrix"
+                self.logger.error("Similarity matrix stage failed", error=error_msg)
                 return {
                     "success": False,
-                    "error": "Failed to build similarity matrix",
+                    "error": error_msg,
+                    "warnings": warnings,
+                }
+            if sim_result.data.empty or all(df.empty for df in sim_result.data.values()):
+                error_msg = "Similarity matrices are empty - check min_cooccurrence and min_product_support settings"
+                self.logger.error("Similarity matrices empty", methods=cdt_config.similarity_methods)
+                return {
+                    "success": False,
+                    "error": error_msg,
                     "warnings": warnings,
                 }
 
@@ -214,11 +224,30 @@ class CDTService:
         """Build similarity matrices using ensemble or single method."""
         from src.analytics.cdt_similarity import build_similarity_matrix_ensemble
 
-        return build_similarity_matrix_ensemble(
-            transactions_df,
-            methods=methods,
-            min_cooccurrence=min_cooccurrence,
-        )
+        try:
+            result = build_similarity_matrix_ensemble(
+                transactions_df,
+                methods=methods,
+                min_cooccurrence=min_cooccurrence,
+            )
+            if not result or all(df.empty for df in result.values()):
+                self.logger.warning(
+                    "Similarity matrices empty - check min_cooccurrence and min_product_support",
+                    methods=methods,
+                    min_cooccurrence=min_cooccurrence,
+                    n_transactions=len(transactions_df),
+                    n_products=transactions_df["stockcode"].nunique(),
+                    n_customers=transactions_df["customer_id"].nunique(),
+                )
+            return result
+        except Exception as e:
+            self.logger.error(
+                "Failed to build similarity matrices",
+                error=str(e),
+                methods=methods,
+                min_cooccurrence=min_cooccurrence,
+            )
+            raise
 
     def _detect_communities(
         self,
