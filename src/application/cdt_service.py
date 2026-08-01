@@ -138,7 +138,8 @@ class CDTService:
                     "error": error_msg,
                     "warnings": warnings,
                 }
-            if sim_result.data.empty or all(df.empty for df in sim_result.data.values()):
+            # Bug 1 fix: sim_result.data is a dict, not a DataFrame
+            if not sim_result.data or all(df.empty for df in sim_result.data.values()):
                 error_msg = "Similarity matrices are empty - check min_cooccurrence and min_product_support settings"
                 self.logger.error("Similarity matrices empty", methods=cdt_config.similarity_methods)
                 return {
@@ -175,10 +176,11 @@ class CDTService:
             )
 
             # Stage 4: CDT Tree Build
+            # Bug 3 fix: pass only cluster_assignments (data[2]), not the full 5-tuple
             tree_result = self._run_with_logging(
                 PipelineStage.CDT_TREE_BUILD,
                 self._build_tree,
-                cluster_result.data if cluster_result.success else None,
+                cluster_result.data[2] if cluster_result.success else None,
                 sim_matrix,
                 cdt_config,
                 transactions_df,
@@ -371,26 +373,26 @@ class CDTService:
 
         return root, metadata
 
+    # Bug 2 fix: re-indented into CDTService class (was erroneously at module level)
+    def _build_behavioral_matrices(
+        self,
+        transactions_df: pd.DataFrame,
+        sim_matrix: pd.DataFrame,
+        tree_root,
+        cdt_config: CDTConfig,
+    ):
+        """Build switching, substitution, and bundling matrices."""
+        # Compute affinity matrix first
+        affinity_matrix = compute_affinity_matrix(sim_matrix, tree_root)
+        # Build behavioral matrices (switching, substitution, bundling)
+        switching_df, substitution_df, bundling_df = build_behavioral_matrices(
+            transactions_df,
+            sim_matrix,
+            affinity_matrix,
+            top_n_products=cdt_config.top_n_products,
+        )
 
-def _build_behavioral_matrices(
-    self,
-    transactions_df: pd.DataFrame,
-    sim_matrix: pd.DataFrame,
-    tree_root,
-    cdt_config: CDTConfig,
-):
-    """Build switching, substitution, and bundling matrices."""
-    # Compute affinity matrix first
-    affinity_matrix = compute_affinity_matrix(sim_matrix, tree_root)
-    # Build behavioral matrices (switching, substitution, bundling)
-    switching_df, substitution_df, bundling_df = build_behavioral_matrices(
-        transactions_df,
-        sim_matrix,
-        affinity_matrix,
-        top_n_products=cdt_config.top_n_products,
-    )
-
-    return switching_df, substitution_df, bundling_df
+        return switching_df, substitution_df, bundling_df
 
 
 def get_cdt_service(config: Optional[AppConfig] = None) -> CDTService:
