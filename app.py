@@ -193,6 +193,14 @@ def run_analysis(config: Config):
             )
         elif analysis_mode == "KVI Identification":
             render_pricing_tab(transactions_df, product_lookup, all_params, pipeline, mode="kvi")
+        elif analysis_mode == "KVI Composite":
+            render_pricing_tab(
+                transactions_df, product_lookup, all_params, pipeline, mode="kvi_composite"
+            )
+        elif analysis_mode == "Price Ladder":
+            render_pricing_tab(
+                transactions_df, product_lookup, all_params, pipeline, mode="price_ladder"
+            )
         elif analysis_mode == "Price Curve Diagnostics":
             render_pricing_tab(
                 transactions_df, product_lookup, all_params, pipeline, mode="price_curves"
