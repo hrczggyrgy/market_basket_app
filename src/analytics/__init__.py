@@ -23,6 +23,15 @@ from .bootstrap import (
     bootstrap_ci_customer,
     bootstrap_transaction_samples,
 )
+from .attribute_extraction import (
+    extract_brand,
+    extract_pack_size,
+    extract_unit,
+    extract_flavor_variant,
+    extract_attributes_from_product_text,
+    enrich_products_df,
+    get_attribute_coverage,
+)
 from .cdt_attributes import (
     FUNCTIONAL_FIT_ATTRIBUTES,
     build_transaction_derived_attributes,
@@ -114,6 +123,7 @@ from .demand_transference import (
     compute_substitutable_demand_percentage,
     delist_impact_analysis,
     node_delist_impact,
+    bootstrap_demand_transference_ci,
 )
 from .pricing import (
     compute_kvi_composite_df,

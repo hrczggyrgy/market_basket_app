@@ -1923,9 +1923,11 @@ def compute_occasion_segments(
     ).reset_index()
 
     # IPT-CV
-    from src.analytics.basket_metrics import compute_ipt_cv
+    from src.analytics.basket_metrics import compute_ipt_cv, compute_customer_entropy
     ipt = compute_ipt_cv(transactions_df)
+    entropy_df = compute_customer_entropy(transactions_df)
     customer_features = customer_features.merge(ipt[["customer_id", "ipt_cv"]], on="customer_id", how="left")
+    customer_features = customer_features.merge(entropy_df[["customer_id", "entropy", "normalized_entropy"]], on="customer_id", how="left")
 
     # Modal day of week
     dow = df.groupby("customer_id")["date"].apply(
@@ -1957,7 +1959,7 @@ def compute_occasion_segments(
 
     # Features for clustering
     feature_cols = [
-        "median_basket_value", "ipt_cv", "modal_day_of_week",
+        "median_basket_value", "ipt_cv", "entropy", "normalized_entropy", "modal_day_of_week",
         "solo_trip_rate", "avg_basket_depth", "dominant_category_share",
     ]
 

@@ -10,6 +10,8 @@ from src.analytics import build_customer_sequences
 from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 from src.application.cdt_service import CDTConfig, get_cdt_service
 from src.ui.export import render_analytics_export
+from src.ui.insight_header import render_result_context
+from src.ui.data_quality import render_data_quality_expander
 from src.viz.cdt_viz import (
     plot_behavioral_heatmap,
     plot_dendrogram,
@@ -21,6 +23,7 @@ from src.viz.cdt_viz import (
 
 # CDT result tab labels
 _CDT_TABS = [
+    "📋 CDT Summary",
     "🌞 CDT Sunburst",
     "📦 CDT Treemap",
     "🌲 Dendrogram & Clusters",
@@ -51,6 +54,9 @@ def render_cdt_tab(
                 st.warning("Dataset may be too small for reliable analysis.")
             elif sufficiency["overall"] == "directional":
                 st.info("Results should be treated as directional.")
+
+    # Data quality & readiness at top
+    render_data_quality_expander(transactions_df, "cdt", params, expanded=False)
 
     # Invalidate cached results when the data changes
     _invalidate_data_cache_if_changed(transactions_df)
@@ -176,6 +182,7 @@ def _render_cdt_builder(transactions_df: pd.DataFrame, product_lookup: dict, par
             optimal_k,
             product_lookup,
             similarity_method,
+            params,
         )
         return
 
@@ -423,6 +430,19 @@ def _render_cdt_results_tabs(
 ):
     """Render CDT results with lazy per-tab rendering."""
     render_quality_summary(metadata)
+    
+    # Insight header for CDT overview
+    render_result_context(
+        title="Customer Decision Tree Overview",
+        finding=(
+            f"CDT built with {metadata['n_leaves']} leaf clusters, {metadata['max_depth']} levels. "
+            f"Quality ratio: {metadata['quality_ratio']:.1%} "
+            f"({'Pass' if metadata['passed_threshold'] else 'Fail'})"
+        ),
+        evidence=f"Similarity: {similarity_method.upper()} | Min co-occurrence: {metadata.get('min_cooccurrence', 'N/A')}",
+        confidence="Directional",
+        limitation="CDT is an observed co-purchase structure, not a causal decision tree. Attribute splits are descriptive, not prescriptive.",
+    )
 
     st.markdown("#### Explore Results")
     btn_cols = st.columns(len(_CDT_TABS))
@@ -439,28 +459,103 @@ def _render_cdt_results_tabs(
     st.divider()
 
     if active == 0:
-        _tab_sunburst(root, metadata)
+        _tab_summary(root, metadata, similarity_matrix, product_lookup)
     elif active == 1:
-        _tab_treemap(root)
+        _tab_sunburst(root, metadata)
     elif active == 2:
-        _tab_dendrogram(linkage_matrix, ordered_labels, silhouette_scores, optimal_k)
+        _tab_treemap(root)
     elif active == 3:
-        _tab_similarity(similarity_matrix, similarity_method)
+        _tab_dendrogram(linkage_matrix, ordered_labels, silhouette_scores, optimal_k)
     elif active == 4:
-        _tab_switching(switching_df, product_lookup)
+        _tab_similarity(similarity_matrix, similarity_method)
     elif active == 5:
-        _tab_substitution(substitution_df, product_lookup)
+        _tab_switching(switching_df, product_lookup)
     elif active == 6:
-        _tab_bundling(bundling_df, product_lookup)
+        _tab_substitution(substitution_df, product_lookup)
     elif active == 7:
-        _tab_cdt_benchmark()
+        _tab_bundling(bundling_df, product_lookup)
     elif active == 8:
+        _tab_cdt_benchmark()
+    elif active == 9:
         _tab_export(root, switching_df, substitution_df, bundling_df)
 
 
 # ============================================================================
 # Individual lazy tab renderers
 # ============================================================================
+
+
+def _tab_summary(root, metadata: dict, similarity_matrix: pd.DataFrame, product_lookup: dict):
+    """Render CDT Summary table as the primary view."""
+    st.subheader("CDT Summary")
+    st.caption(
+        "Summary of Customer Decision Tree structure and quality metrics. "
+        "Use the tabs above to explore visualizations."
+    )
+
+    # Key metrics
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Nodes", metadata["n_nodes"])
+    col2.metric("Leaf Clusters", metadata["n_leaves"])
+    col3.metric("Max Depth", metadata["max_depth"])
+    col4.metric("Quality Ratio", f"{metadata['quality_ratio']:.1%}")
+
+    st.divider()
+
+    # Quality metrics
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Tree Quality Score", f"{metadata['tree_quality']:.3f}")
+    col2.metric("Unconstrained Baseline", f"{metadata['unconstrained_baseline']:.3f}")
+    col3.metric("Quality Ratio", f"{metadata['quality_ratio']:.1%}")
+    col4.metric("Threshold", f"{metadata['quality_threshold']:.0%}")
+
+    if not metadata["passed_threshold"]:
+        st.warning(
+            f"Tree quality ({metadata['quality_ratio']:.1%}) is below the "
+            f"{metadata['quality_threshold']:.0%} threshold. "
+            "Consider: lowering min_cluster_size, adding more attributes, "
+            "or using a different similarity method."
+        )
+
+    st.divider()
+
+    # Cluster summary table
+    st.subheader("Cluster Summary")
+    st.caption("Leaf clusters from CDT (each row = one terminal node)")
+
+    # Show similarity matrix stats
+    st.subheader("Similarity Matrix Statistics")
+    n_products = len(similarity_matrix)
+    sim_values = similarity_matrix.values[np.triu_indices_from(similarity_matrix.values, k=1)]
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Products in Matrix", n_products)
+    col2.metric("Avg Similarity", f"{np.nanmean(sim_values):.3f}")
+    col3.metric("Max Similarity", f"{np.nanmax(sim_values):.3f}")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Min Similarity", f"{np.nanmin(sim_values):.3f}")
+    with col2:
+        st.metric("Std Dev", f"{np.nanstd(sim_values):.3f}")
+
+    # Export option
+    st.divider()
+    st.caption("Use the tabs above to explore visualizations, or export the CDT structure below.")
+    if st.button("Export CDT Summary (CSV)", key="cdt_unified_export_summary"):
+        summary_df = pd.DataFrame({
+            "Metric": ["Total Nodes", "Leaf Clusters", "Max Depth", "Quality Score", "Quality Ratio", "Passed Threshold"],
+            "Value": [metadata["n_nodes"], metadata["n_leaves"], metadata["max_depth"], 
+                     metadata["tree_quality"], f"{metadata['quality_ratio']:.1%}", 
+                     "Yes" if metadata["passed_threshold"] else "No"]
+        })
+        csv = summary_df.to_csv(index=False)
+        st.download_button(
+            "Download CDT Summary",
+            csv,
+            "cdt_summary.csv",
+            "text/csv",
+            key="cdt_unified_summary_export"
+        )
 
 
 def _tab_sunburst(root, metadata: dict):

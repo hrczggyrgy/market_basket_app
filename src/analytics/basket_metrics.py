@@ -244,36 +244,110 @@ def compute_basket_value_uplift(
     )
 
 
-def compute_cross_category_basket_rate(
+# ---------------------------------------------------------------------------
+# 8. Basket-size segment analysis
+# ---------------------------------------------------------------------------
+
+def compute_basket_size_segments(
     transactions_df: pd.DataFrame,
+    thresholds: tuple = (3, 8),
 ) -> pd.DataFrame:
-    """Cross-category basket co-occurrence rate.
-
-    Returns a square DataFrame (categories x categories) where each cell
-    = % of baskets containing BOTH cat_A and cat_B.
-    Diagonal = category basket penetration (single-category).
-    Requires 'category' column.
+    """Classify baskets into size segments and return per-basket segment labels.
+    
+    Segments:
+    - Small: 1-2 distinct SKUs
+    - Medium: 3-7 distinct SKUs  
+    - Large: 8+ distinct SKUs
+    
+    Returns DataFrame with basket_id, segment, depth, value, units, segment_name.
     """
-    if "category" not in transactions_df.columns:
-        return pd.DataFrame()
-
     df = transactions_df.copy()
     df["_basket"] = _basket_ids(df)
+    df["revenue"] = df["price"] * df["quantity"]
+    
+    basket_stats = df.groupby("_basket").agg(
+        basket_value=("revenue", "sum"),
+        basket_units=("quantity", "sum"),
+        basket_depth=("stockcode", "nunique"),
+    ).reset_index()
+    
+    small_thresh, large_thresh = thresholds
+    conditions = [
+        basket_stats["basket_depth"] <= small_thresh,
+        (basket_stats["basket_depth"] > small_thresh) & (basket_stats["basket_depth"] < large_thresh),
+        basket_stats["basket_depth"] >= large_thresh,
+    ]
+    choices = ["Small", "Medium", "Large"]
+    basket_stats["basket_segment"] = np.select(conditions, choices, default="Unknown")
+    
+    return basket_stats
 
-    basket_cats = df.groupby("_basket")["category"].apply(set)
-    categories = sorted({c for cats in basket_cats for c in cats})
-    total_baskets = len(basket_cats)
 
-    matrix = pd.DataFrame(0.0, index=categories, columns=categories)
-    for cats in basket_cats:
-        cats_list = list(cats)
-        for i, ca in enumerate(cats_list):
-            for cb in cats_list[i:]:
-                matrix.loc[ca, cb] += 1
-                if ca != cb:
-                    matrix.loc[cb, ca] += 1
+def compute_basket_segment_profile(
+    transactions_df: pd.DataFrame,
+    thresholds: tuple = (3, 8),
+) -> pd.DataFrame:
+    """Compute summary statistics per basket size segment.
+    
+    Returns DataFrame with segment-level metrics:
+    - segment: Small/Medium/Large
+    - n_baskets, n_customers, total_revenue
+    - avg_basket_value, avg_basket_depth, avg_basket_units
+    - pct_baskets, pct_revenue, pct_customers
+    """
+    basket_segments = compute_basket_size_segments(transactions_df, thresholds)
+    
+    # Get customer per basket
+    df = transactions_df.copy()
+    df["_basket"] = _basket_ids(df)
+    basket_customer = df.groupby("_basket")["customer_id"].first().reset_index()
+    basket_segments = basket_segments.merge(basket_customer, on="_basket", how="left")
+    
+    profile = basket_segments.groupby("basket_segment").agg(
+        n_baskets=("_basket", "count"),
+        n_customers=("customer_id", "nunique"),
+        total_revenue=("basket_value", "sum"),
+        avg_basket_value=("basket_value", "mean"),
+        avg_basket_depth=("basket_depth", "mean"),
+        avg_basket_units=("basket_units", "mean"),
+    ).reset_index()
+    
+    total_baskets = len(basket_segments)
+    total_revenue = basket_segments["basket_value"].sum()
+    total_customers = basket_segments["customer_id"].nunique()
+    
+    profile["pct_baskets"] = profile["n_baskets"] / total_baskets * 100
+    profile["pct_revenue"] = profile["total_revenue"] / total_revenue * 100
+    profile["pct_customers"] = profile["n_customers"] / total_customers * 100
+    
+    return profile
 
-    return (matrix / total_baskets).round(4)
+
+def get_basket_segment_for_product(
+    transactions_df: pd.DataFrame,
+    product_col: str = "stockcode",
+) -> pd.DataFrame:
+    """Get basket segment distribution for each product.
+    
+    Returns DataFrame: stockcode | segment | n_baskets | pct_baskets
+    """
+    df = transactions_df.copy()
+    df["_basket"] = _basket_ids(df)
+    df["revenue"] = df["price"] * df["quantity"]
+    
+    basket_segments = compute_basket_size_segments(transactions_df)
+    basket_segments = basket_segments[["_basket", "basket_segment"]]
+    
+    df = df.merge(basket_segments, on="_basket", how="left")
+    
+    result = df.groupby([product_col, "basket_segment"]).agg(
+        n_baskets=("_basket", "nunique"),
+    ).reset_index()
+    
+    total_per_product = result.groupby(product_col)["n_baskets"].transform("sum")
+    result["pct_baskets"] = result["n_baskets"] / total_per_product * 100
+    
+    return result
 
 
 # ---------------------------------------------------------------------------

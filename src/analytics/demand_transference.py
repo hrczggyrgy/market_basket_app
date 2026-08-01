@@ -589,3 +589,76 @@ def compute_recovery_hhi(
         )
 
     return pd.DataFrame(rows).sort_values("recovery_hhi")
+
+
+def bootstrap_demand_transference_ci(
+    transactions_df: pd.DataFrame,
+    switching_df: pd.DataFrame,
+    top_n: Optional[int] = None,
+    n_resamples: int = 300,
+    ci_level: float = 0.95,
+    random_seed: Optional[int] = None,
+) -> Dict[str, Dict[str, float]]:
+    """Compute bootstrap CI for demand transference estimates.
+    
+    Parameters
+    ----------
+    transactions_df : pd.DataFrame
+        Transaction data.
+    switching_df : pd.DataFrame
+        Switching matrix from compute_switching_matrix().
+    top_n : int, optional
+        Limit to top-N products by revenue.
+    n_resamples : int
+        Number of bootstrap resamples (default 300 for Cloud performance).
+    ci_level : float
+        Confidence level (default 0.95).
+    random_seed : int, optional
+        Random seed for reproducibility.
+    
+    Returns
+    -------
+    dict
+        Dict mapping "from_product->to_product" to CI dict with keys:
+        estimate, lower, upper, std_error, n_resamples.
+    """
+    from src.analytics.bootstrap import bootstrap_ci_customer
+    
+    def _build_dt_stat(d):
+        sw = compute_switching_matrix(d)
+        dt = compute_demand_transference_matrix(d, sw, top_n=top_n)
+        return dt
+    
+    # Get point estimates
+    dt_point = _build_dt_stat(transactions_df)
+    
+    if dt_point.empty:
+        return {}
+    
+    # Build a dict of point estimates
+    point_estimates = {}
+    for _, row in dt_point.iterrows():
+        key = f"{row['from_product']}->{row['to_product']}"
+        point_estimates[key] = row["demand_transference"]
+    
+    # Bootstrap CIs
+    ci_results = {}
+    for key, point in point_estimates.items():
+        def _stat_fn(d):
+            dt = _build_dt_stat(d)
+            row = dt[(dt["from_product"] == key.split("->")[0]) & (dt["to_product"] == key.split("->")[1])]
+            return row["demand_transference"].iloc[0] if not row.empty else 0.0
+        
+        ci = bootstrap_ci_customer(
+            transactions_df, _stat_fn, 
+            n_resamples=n_resamples, ci_level=ci_level, random_seed=random_seed
+        )
+        ci_results[key] = {
+            "estimate": point,
+            "lower": ci["lower"],
+            "upper": ci["upper"],
+            "std_error": ci["std_error"],
+            "n_resamples": ci["n_resamples"],
+        }
+    
+    return ci_results

@@ -249,6 +249,34 @@ def _render_rules_table_tab(display_rules: pd.DataFrame, filtered: pd.DataFrame)
     render_analytics_export(filtered, "Association_Rules")
 
 
+def _add_commercial_labels(rules_df: pd.DataFrame) -> pd.DataFrame:
+    """Add commercial use case labels to rules."""
+    df = rules_df.copy()
+    
+    def _label_rule(row):
+        lift = row.get("lift", 0)
+        confidence = row.get("confidence", 0)
+        support = row.get("support", 0)
+        
+        labels = []
+        
+        if lift > 3 and confidence > 0.5:
+            labels.append("🎯 Cross-sell")
+        if lift > 2 and support > 0.01:
+            labels.append("📦 Bundle")
+        if lift > 1.5 and confidence > 0.3:
+            labels.append("🔗 Promo Pairing")
+        if lift > 2 and confidence > 0.4:
+            labels.append("📍 Layout Adjacency")
+        if lift > 1.5 and support < 0.001:
+            labels.append("⚠️ Rare but Strong")
+        
+        return " | ".join(labels) if labels else "—"
+    
+    df["commercial_use_case"] = df.apply(_label_rule, axis=1)
+    return df
+
+
 def _enrich_rules_with_penetration(display_rules: pd.DataFrame, basket_pen: pd.DataFrame, product_lookup: dict) -> pd.DataFrame:
     """Add basket penetration metrics to rules display."""
     # Create lookup for basket penetration

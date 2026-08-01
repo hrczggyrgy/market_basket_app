@@ -736,6 +736,11 @@ def _render_kvi_identification(
     """Render Key Value Item (KVI) identification and scoring."""
 
     st.header("🏷️ KVI (Key Value Item) Identification")
+    st.caption(
+        "Identifies items where price changes have outsized impact on customer perception and traffic. "
+        "**Internal transaction-data KVI proxy only.** "
+        "Does not reflect market-wide price perception or competitive position without competitor/recall data."
+    )
 
     method = params.get("kvi_method", "xgb_importance")
     top_k = params.get("top_k_kvi", 20)
@@ -924,7 +929,8 @@ def _render_kvi_composite(
     st.header("🏷️ KVI Composite Score (NielsenIQ 4-Signal Framework)")
     st.caption(
         "Signals: Elasticity | Penetration | Frequency | Price Recall Proxy  |  "
-        "Quadrants: True KVI / Promo Lever / Price Anchor / Margin Recovery"
+        "Quadrants: True KVI / Promo Lever / Price Anchor / Margin Recovery  |  "
+        "**Internal transaction-data proxy only — not a market-wide KVI assessment.**"
     )
 
     # Check for elasticity data
@@ -954,8 +960,8 @@ def _render_kvi_composite(
     with col4:
         st.metric("Mean KVI Score", f"{kvi_df['kvi_score'].mean():.3f}")
 
-    # Sub-tabs
-    kvi_tabs = [" KVI Quadrant", " Price Ladder", " Tier Table", " Signal Breakdown"]
+# Sub-tabs
+    kvi_tabs = [" KVI Quadrant", " Price Ladder", " True Price View", " Basket Segments", " Tier Table", " Signal Breakdown"]
     selected = persistent_tabs(kvi_tabs, "kvi_composite_tabs", default_tab=0)
 
     if selected == 0:
@@ -963,8 +969,12 @@ def _render_kvi_composite(
     elif selected == 1:
         _render_price_ladder_chart(transactions_df, product_lookup, params)
     elif selected == 2:
-        _render_kvi_tier_table(kvi_df, product_lookup)
+        _render_true_price_view(transactions_df, product_lookup, params)
     elif selected == 3:
+        _render_basket_segment_pricing_tab(transactions_df, product_lookup, params)
+    elif selected == 4:
+        _render_kvi_tier_table(kvi_df, product_lookup)
+    elif selected == 5:
         _render_kvi_signal_breakdown(kvi_df, product_lookup)
 
     render_analytics_export(kvi_df, "KVI_Composite")
@@ -998,8 +1008,8 @@ def _render_kvi_quadrant_chart(kvi_df: pd.DataFrame, product_lookup: dict):
         title="KVI Quadrant: Elasticity vs Price Recall",
         labels={
             "abs_elasticity": "|Elasticity| (Price Sensitivity)",
-            "price_recall_proxy": "Price Recall Proxy",
-            "kvi_quadrant": "KVI Quadrant",
+            "price_recall_proxy": "Price Recall Proxy (Internal Proxy)",
+            "kvi_quadrant": "KVI Quadrant (Internal Proxy)",
             "total_revenue": "Revenue",
         },
         size_max=50,
@@ -1017,7 +1027,7 @@ def _render_kvi_quadrant_chart(kvi_df: pd.DataFrame, product_lookup: dict):
     x_min = kvi_df["abs_elasticity"].min() * 0.9
     y_min = kvi_df["price_recall_proxy"].min() * 0.9
 
-    fig.add_annotation(x=x_max*0.7, y=y_max*0.9, text="<b>True KVI</b>", showarrow=False, font=dict(color="#2E7D32", size=14))
+    fig.add_annotation(x=x_max*0.7, y=y_max*0.9, text="<b>True KVI (Internal Proxy)</b>", showarrow=False, font=dict(color="#2E7D32", size=14))
     fig.add_annotation(x=x_max*0.7, y=y_min*1.1, text="<b>Promo Lever</b>", showarrow=False, font=dict(color="#FF8F00", size=14))
     fig.add_annotation(x=x_min*1.3, y=y_max*0.9, text="<b>Price Anchor</b>", showarrow=False, font=dict(color="#1565C0", size=14))
     fig.add_annotation(x=x_min*1.3, y=y_min*1.1, text="<b>Margin Recovery</b>", showarrow=False, font=dict(color="#C62828", size=14))
@@ -1043,6 +1053,10 @@ def _render_kvi_quadrant_chart(kvi_df: pd.DataFrame, product_lookup: dict):
         }).background_gradient(cmap="RdYlGn", subset=["Total_Revenue", "Avg_KVI_Score"]),
         use_container_width=True,
     )
+    
+    st.caption("⚠️ **Important**: KVI Quadrant is based on internal transaction data only. "
+               "Does not reflect competitor pricing, market share, or consumer recall surveys. "
+               "Quadrant labels are internal proxies, not validated market KVI classifications.")
 
 
 def _render_price_ladder_chart(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
@@ -1205,6 +1219,250 @@ def _render_kvi_signal_breakdown(kvi_df: pd.DataFrame, product_lookup: dict):
         title="Signal Strength by SKU (Green=High, Red=Low)",
     )
     st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_basket_segment_pricing_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
+    """Render basket-size segment analysis for pricing context."""
+    st.subheader("Basket-Size Segment Analysis")
+    st.caption(
+        "Baskets segmented by number of distinct SKUs: Small (1-2), Medium (3-7), Large (8+). "
+        "Shows how pricing metrics vary by basket size."
+    )
+
+    from src.analytics.basket_metrics import compute_basket_size_segments, compute_basket_segment_profile
+
+    with st.spinner("Computing basket segments..."):
+        basket_segments = compute_basket_size_segments(transactions_df)
+        segment_profile = compute_basket_segment_profile(transactions_df)
+
+    # Segment overview
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Small Baskets (1-2 SKUs)", f"{basket_segments[basket_segments['basket_segment']=='Small']['_basket'].count():,}")
+    with col2:
+        st.metric("Medium Baskets (3-7 SKUs)", f"{basket_segments[basket_segments['basket_segment']=='Medium']['_basket'].count():,}")
+    with col3:
+        st.metric("Large Baskets (8+ SKUs)", f"{basket_segments[basket_segments['basket_segment']=='Large']['_basket'].count():,}")
+
+    # Segment profile
+    st.subheader("Segment Profile")
+    st.dataframe(
+        segment_profile.style.format({
+            "n_baskets": "{:,}",
+            "n_customers": "{:,}",
+            "total_revenue": "${:,.0f}",
+            "avg_basket_value": "${:.2f}",
+            "avg_basket_depth": "{:.1f}",
+            "avg_basket_units": "{:.1f}",
+            "pct_baskets": "{:.1f}%",
+            "pct_revenue": "{:.1f}%",
+            "pct_customers": "{:.1f}%",
+        }).background_gradient(cmap="RdYlGn", subset=["pct_baskets", "pct_revenue"]),
+        use_container_width=True,
+    )
+
+    # ASP by segment
+    st.subheader("Average Price by Basket Segment")
+    st.caption("Average selling price per product, broken down by basket segment.")
+
+    with st.spinner("Computing ASP by segment..."):
+        from src.analytics.basket_metrics import get_basket_segment_for_product
+        product_segments = get_basket_segment_for_product(transactions_df)
+
+    if not product_segments.empty:
+        product_segments = product_segments.merge(
+            transactions_df.groupby("stockcode").agg(
+                avg_price=("price", "mean"),
+                total_revenue=("price", lambda x: (x * transactions_df.loc[transactions_df["stockcode"] == x.index, "quantity"]).sum()),
+            ).reset_index(),
+            on="stockcode",
+            how="left",
+        )
+        product_segments["product_name"] = product_segments["stockcode"].map(product_lookup)
+
+        fig = px.box(
+            product_segments,
+            x="basket_segment",
+            y="avg_price",
+            color="basket_segment",
+            points="all",
+            hover_data=["product_name", "total_revenue"],
+            title="ASP Distribution by Basket Segment",
+            labels={"basket_segment": "Basket Segment", "avg_price": "Average Price ($)"},
+        )
+        fig.update_layout(height=400)
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ASP by segment table
+        asp_by_segment = product_segments.groupby("basket_segment").agg(
+            n_products=("stockcode", "count"),
+            avg_price=("avg_price", "mean"),
+            median_price=("avg_price", "median"),
+            total_revenue=("total_revenue", "sum"),
+        ).reset_index()
+        
+        st.dataframe(
+            asp_by_segment.style.format({
+                "avg_price": "${:.2f}",
+                "median_price": "${:.2f}",
+                "total_revenue": "${:,.0f}",
+            }).background_gradient(cmap="RdYlGn", subset=["total_revenue"]),
+            use_container_width=True,
+        )
+    else:
+        st.info("No product-level segment data available.")
+
+
+def _render_true_price_view(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
+    """Render NIQ-style True Price View showing actual price points consumers see."""
+    st.subheader("💲 True Price View (NIQ-Style)")
+    st.caption(
+        "Shows the actual price points consumers see at shelf. "
+        "Each dot = a price point observed in transactions. "
+        "Size = revenue at that price point. "
+        "Vertical lines = detected price tiers (KMeans)."
+    )
+
+    # Compute price per unit for each product
+    price_data = _compute_price_per_unit(transactions_df, product_lookup)
+
+    if price_data.empty:
+        st.error("Could not compute price per unit data.")
+        return
+
+    # Compute ASP per product
+    asp_data = (
+        transactions_df.groupby("stockcode")
+        .agg(
+            product_name=("product", "first"),
+            category=("category", "first") if "category" in transactions_df.columns else ("stockcode", "first"),
+            avg_price=("price", "mean"),
+            median_price=("price", "median"),
+            min_price=("price", "min"),
+            max_price=("price", "max"),
+            price_std=("price", "std"),
+            total_revenue=("price", lambda x: (x * transactions_df.loc[x.index, "quantity"]).sum()),
+            total_units=("quantity", "sum"),
+        )
+        .reset_index()
+    )
+    asp_data["product_name"] = asp_data["stockcode"].map(product_lookup)
+
+    # Detect price tiers using KMeans on ASP
+    n_tiers = params.get("n_tiers", 3)
+    from sklearn.cluster import KMeans
+    
+    asp_values = asp_data["avg_price"].values.reshape(-1, 1)
+    if len(asp_values) >= n_tiers:
+        kmeans = KMeans(n_clusters=n_tiers, random_state=42, n_init=10)
+        asp_data["price_tier"] = kmeans.fit_predict(asp_values)
+        
+        # Sort tiers by mean price
+        tier_order = asp_data.groupby("price_tier")["avg_price"].mean().sort_values().index
+        tier_map = {old: new for new, old in enumerate(tier_order)}
+        asp_data["price_tier"] = asp_data["price_tier"].map(tier_map)
+        
+        tier_centers = kmeans.cluster_centers_.flatten()
+        tier_centers_sorted = np.sort(tier_centers)
+    else:
+        asp_data["price_tier"] = 0
+        tier_centers_sorted = [asp_data["avg_price"].median()]
+
+    # TIER COLORS
+    tier_colors = {
+        0: "#2E7D32",    # Value - green
+        1: "#1565C0",    # Mainstream - blue
+        2: "#FF8F00",    # Premium - amber
+        3: "#C62828",    # Ultra - red
+        4: "#673AB7",    # Luxury - purple
+    }
+    tier_labels = {0: "Value", 1: "Mainstream", 2: "Premium", 3: "Ultra", 4: "Luxury"}
+
+    # Scatter plot: ASP vs Revenue, colored by tier
+    fig = px.scatter(
+        asp_data,
+        x="avg_price",
+        y="total_revenue",
+        color="price_tier",
+        color_discrete_map=tier_colors,
+        hover_data=["product_name", "category", "total_units", "min_price", "max_price"],
+        labels={
+            "avg_price": "Average Selling Price ($)",
+            "total_revenue": "Total Revenue ($)",
+            "price_tier": "Price Tier",
+        },
+        title="True Price View: ASP vs Revenue by Price Tier",
+    )
+
+    # Add tier boundary lines
+    for center in tier_centers_sorted:
+        fig.add_vline(x=center, line_dash="dash", line_color="gray", line_width=1,
+                      annotation_text=f"Tier boundary: ${center:.2f}",
+                      annotation_position="top")
+
+    fig.update_layout(height=500)
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Tier summary table
+    st.subheader("Price Tier Summary")
+    tier_summary = asp_data.groupby("price_tier").agg(
+        SKUs=("stockcode", "count"),
+        Avg_ASP=("avg_price", "mean"),
+        Total_Revenue=("total_revenue", "sum"),
+        Total_Units=("total_units", "sum"),
+        Min_Price=("min_price", "min"),
+        Max_Price=("max_price", "max"),
+    ).reset_index()
+    tier_summary["Tier_Label"] = tier_summary["price_tier"].map(tier_labels)
+    tier_summary = tier_summary.sort_values("Avg_ASP")
+    
+    st.dataframe(
+        tier_summary.style.format({
+            "Avg_ASP": "${:.2f}",
+            "Total_Revenue": "${:,.0f}",
+            "Total_Units": "{:,.0f}",
+            "Min_Price": "${:.2f}",
+            "Max_Price": "${:.2f}",
+        }).background_gradient(cmap="RdYlGn", subset=["Total_Revenue", "SKUs"]),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    # Price distribution histogram by tier
+    st.subheader("Price Distribution by Tier")
+    fig2 = px.histogram(
+        asp_data,
+        x="avg_price",
+        color="price_tier",
+        color_discrete_map=tier_colors,
+        nbins=30,
+        facet_row="price_tier",
+        facet_row_spacing=0.05,
+        labels={"avg_price": "Average Selling Price ($)", "count": "Number of SKUs"},
+        title="Price Distribution by Tier",
+    )
+    fig2.update_layout(height=400, showlegend=False)
+    st.plotly_chart(fig2, use_container_width=True)
+
+    # Price point analysis: show actual observed price points
+    st.subheader("Observed Price Points (Transaction-Level)")
+    st.caption("Each dot = one transaction price. Vertical lines = median price per tier.")
+    
+    # Sample transactions for performance
+    sample_size = min(5000, len(transactions_df))
+    sample_df = transactions_df.sample(n=sample_size, random_state=42) if len(transactions_df) > sample_size else transactions_df
+    
+    fig3 = px.strip(
+        sample_df,
+        x="price",
+        y="price_tier" if "price_tier" in sample_df.columns else None,
+        color="price_tier" if "price_tier" in sample_df.columns else None,
+        color_discrete_map=tier_colors,
+        labels={"price": "Transaction Price ($)"},
+        title="Observed Transaction Prices by Tier",
+    )
+    fig3.update_layout(height=300, showlegend=False)
+    st.plotly_chart(fig3, use_container_width=True)
 
 
 # ============================================================================

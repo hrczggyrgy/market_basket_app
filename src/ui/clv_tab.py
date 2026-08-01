@@ -14,6 +14,45 @@ from src.analytics.clv_customer import (
 from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
+from src.ui.insight_header import render_result_context
+from src.ui.data_quality import render_data_quality_expander
+
+
+def _render_clv_readiness_notes():
+    """Render BG/NBD applicability and readiness notes."""
+    with st.expander(" BG/NBD Model Readiness & Applicability Notes", expanded=False):
+        st.markdown("""
+        **When BG/NBD Works Well:**
+        - ✅ Frequent, repeat-purchase categories (groceries, consumables, coffee, personal care)
+        - ✅ Non-contractual settings (customers can come and go freely)
+        - ✅ Sufficient repeat customers (≥100 with ≥2 purchases each)
+        - ✅ Sufficient time span (≥6 months for weekly, ≥12 months for monthly)
+        - ✅ Customers make independent purchase decisions
+
+        **When BG/NBD May Be Unreliable:**
+        - ❌ Durable/one-time purchase categories (electronics, furniture, apparel)
+        - ❌ Contractual/subscription settings (use Pareto/NBD instead)
+        - ❌ Too few repeat customers (<50 with repeat purchases)
+        - ❌ Too short observation window (<3 months)
+        - ❌ Strong seasonality not captured by model
+        - ❌ Major marketing interventions during observation period
+
+        **Model Assumptions (Know Before You Trust):**
+        - Purchases follow Poisson process while "alive"
+        - Lifetime follows exponential distribution
+        - Customers are independent and homogeneous within segments
+        - No covariates (marketing, seasonality) included in base model
+        - "Alive" means still in the buying process, not literally alive
+
+        **Validation Checklist Before Using CLV:**
+        - [ ] P(alive) heatmap shows smooth diagonal gradient (top-left green → bottom-right red)
+        - [ ] Top-left (recent + frequent) ≈ 1.0, Bottom-right ≈ 0.0
+        - [ ] No green cells in bottom-right (old + low freq = churned)
+        - [ ] Customer counts per heatmap cell ≥ 5 for reliable estimates
+        - [ ] Segment profiles show clear differentiation (Champions ≠ Lost)
+        """)
+from src.ui.insight_header import render_result_context
+from src.ui.data_quality import render_data_quality_expander
 
 
 def render_clv_tab(
@@ -30,6 +69,9 @@ def render_clv_tab(
         st.warning("No transaction data available")
         return
 
+    # BG/NBD Applicability & Readiness Notes
+    _render_clv_readiness_notes()
+
     # Data sufficiency gate
     sufficiency = assess_data_sufficiency(transactions_df)
     with st.expander(" Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
@@ -38,6 +80,9 @@ def render_clv_tab(
             st.warning("Dataset may be too small for reliable CLV modeling.")
         elif sufficiency["overall"] == "directional":
             st.info("CLV results should be treated as directional.")
+
+    # Data quality & readiness at top
+    render_data_quality_expander(transactions_df, "clv", params, expanded=False)
 
     # Parameters
     col1, col2, col3 = st.columns(3)
@@ -77,6 +122,29 @@ def render_clv_tab(
         return
 
     st.success(f"Computed CLV for {len(clv_df):,} customers")
+
+    # Insight header for CLV overview
+    active_pct = (clv_df["p_alive"] > 0.5).mean() * 100
+    median_palive = clv_df["p_alive"].median()
+    mean_clv = clv_df["clv_12m"].mean()
+    render_result_context(
+        title="BG/NBD CLV Model Overview",
+        finding=(
+            f"BG/NBD model fit for {len(clv_df):,} customers | "
+            f"{active_pct:.1f}% Active (P(alive) > 0.5) | "
+            f"Median P(alive): {median_palive:.2f} | "
+            f"Mean 12m CLV: ${mean_clv:,.2f}"
+        ),
+        evidence=f"Horizon: {horizon_days}d | Freq: {'Daily' if freq == 'D' else 'Weekly'} | "
+                 f"Segments: {segment_profiles.shape[0]} | "
+                 f"Total 12m CLV: ${clv_df['clv_12m'].sum():,.0f}",
+        confidence="Directional",
+        limitation="BG/NBD assumes Poisson purchases while alive + exponential lifetime. "
+                   "Best for frequent, repeat-purchase categories (groceries, consumables). "
+                   "Not suitable for durable/one-time purchases or contractual settings. "
+                   "No covariates included (marketing, seasonality). "
+                   "P(alive) is model probability, not observed ground truth.",
+    )
 
     # Compute segment profiles with correct median
     segment_profiles = compute_clv_segment_profiles(clv_df)

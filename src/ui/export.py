@@ -2,7 +2,7 @@
 
 import io
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import pandas as pd
@@ -21,7 +21,7 @@ def _build_export_metadata(
     """Build metadata dict for export."""
     return {
         "analysis": analysis_name,
-        "export_timestamp": datetime.utcnow().isoformat() + "Z",
+        "export_timestamp": datetime.now(timezone.utc).isoformat(),
         "date_range": {
             "start": date_range[0].isoformat() if date_range and date_range[0] else None,
             "end": date_range[1].isoformat() if date_range and date_range[1] else None,
@@ -55,6 +55,30 @@ def _inject_metadata_json(df: pd.DataFrame, metadata: Dict[str, Any]) -> str:
         "data": df.to_dict(orient="records"),
     }
     return json.dumps(envelope, indent=2, default=str)
+
+
+def export_plotly_chart(fig, filename: str, metadata: Dict[str, Any] = None):
+    """Export Plotly chart as HTML with embedded metadata."""
+    if metadata is None:
+        metadata = _build_export_metadata(analysis_name=filename)
+    
+    # Embed metadata as a script tag in the HTML
+    metadata_json = json.dumps(metadata, indent=2, default=str)
+    
+    html = fig.to_html(include_plotlyjs="cdn", full_html=True)
+    
+    # Inject metadata as a script tag
+    metadata_script = f'<script id="chart-metadata" type="application/json">{metadata_json}</script>'
+    html = html.replace('</head>', f'{metadata_script}\n</head>')
+    
+    st.download_button(
+        label=f"📥 Download {filename} (HTML with Metadata)",
+        data=html,
+        file_name=f"{filename}.html",
+        mime="text/html",
+        key=f"export_chart_{filename}",
+        width="stretch",
+    )
 
 
 def render_export_buttons(
@@ -179,3 +203,6 @@ def render_analytics_export(
         key=f"{prefix}_{name}_json",
         width="stretch",
     )
+    
+    # Also offer chart export if we have a chart (this would be used by passing a fig)
+    # Note: Caller should call export_plotly_chart separately if they have a figure

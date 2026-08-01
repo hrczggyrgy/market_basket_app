@@ -12,6 +12,8 @@ from src.analytics.category_overview import (
 from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
+from src.ui.insight_header import render_result_context
+from src.ui.data_quality import render_data_quality_expander
 
 
 def render_category_overview_tab(
@@ -36,6 +38,9 @@ def render_category_overview_tab(
             st.warning("Dataset may be too small for reliable category analysis.")
         elif sufficiency["overall"] == "directional":
             st.info("Category results should be treated as directional.")
+
+    # Data quality & readiness at top
+    render_data_quality_expander(transactions_df, "category_overview", params, expanded=False)
 
     # Read parameters from params (set in sidebar) - don't create duplicate widgets
     n_clusters = params.get("n_categories", 8)
@@ -65,17 +70,17 @@ def render_category_overview_tab(
 
     # Persistent sub-tabs
     tab_labels = [
-        " Role Quadrant",
         " KPI Scorecard",
+        " Role Quadrant",
         " PoP Deltas",
         " Revenue Sparklines",
     ]
     selected = persistent_tabs(tab_labels, "category_overview_main_tabs", default_tab=0)
 
     if selected == 0:
-        _render_role_quadrant(cat_df, x_med, y_med)
-    elif selected == 1:
         _render_kpi_scorecard(cat_df)
+    elif selected == 1:
+        _render_role_quadrant(cat_df, x_med, y_med)
     elif selected == 2:
         _render_pop_deltas(cat_df, prior_weeks)
     elif selected == 3:

@@ -43,6 +43,9 @@ from src.analytics.demand_transference import (
     node_delist_impact,
 )
 from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
+from src.ui.export import render_analytics_export
+from src.ui.insight_header import render_result_context
+from src.ui.data_quality import render_data_quality_expander
 from src.viz.cdt_viz import plot_dendrogram as _plot_dendrogram
 from src.viz.cdt_viz import plot_sunburst, plot_treemap
 
@@ -64,6 +67,9 @@ def render_cdt_assortment_tab(
                 st.warning("Dataset may be too small for reliable analysis.")
             elif sufficiency["overall"] == "directional":
                 st.info("Results should be treated as directional.")
+
+    # Data quality & readiness at top
+    render_data_quality_expander(transactions_df, "cdt", params, expanded=False)
 
     # Invalidate cached results when the data changes
     _invalidate_data_cache_if_changed(transactions_df)
@@ -351,6 +357,20 @@ def _render_cdt_results(
 ):
     """Render CDT results with visualizations and export options."""
 
+    # Insight header for CDT overview
+    from src.ui.insight_header import render_result_context
+    render_result_context(
+        title="Customer Decision Tree Overview",
+        finding=(
+            f"CDT built with {metadata['n_leaves']} leaf clusters, {metadata['max_depth']} levels. "
+            f"Quality ratio: {metadata['quality_ratio']:.1%} "
+            f"({'Pass' if metadata['passed_threshold'] else 'Fail'})"
+        ),
+        evidence=f"Similarity: {params.get('similarity_methods', ['phi'])[0].upper()} | Min co-occurrence: {params.get('min_cooccurrence', 5)}",
+        confidence="Directional",
+        limitation="CDT is an observed co-purchase structure, not a causal decision tree. Attribute splits are descriptive, not prescriptive.",
+    )
+
     # Quality metrics
     st.subheader("📊 CDT Quality Metrics")
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -367,6 +387,74 @@ def _render_cdt_results(
 
     status = "✅ PASSED" if metadata["passed_threshold"] else "⚠️ BELOW THRESHOLD"
     st.info(f"Quality threshold ({metadata['quality_threshold']:.0%}): {status}")
+
+    # Summary table first (primary view)
+    st.subheader("CDT Summary")
+    st.caption("Summary of Customer Decision Tree structure and quality metrics. Use the tabs below to explore visualizations.")
+
+    # Key metrics
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Nodes", metadata["n_nodes"])
+    col2.metric("Leaf Clusters", metadata["n_leaves"])
+    col3.metric("Max Depth", metadata["max_depth"])
+    col4.metric("Quality Ratio", f"{metadata['quality_ratio']:.1%}")
+
+    st.divider()
+
+    # Quality metrics
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Tree Quality Score", f"{metadata['tree_quality']:.3f}")
+    col2.metric("Unconstrained Baseline", f"{metadata['unconstrained_baseline']:.3f}")
+    col3.metric("Quality Ratio", f"{metadata['quality_ratio']:.1%}")
+    col4.metric("Threshold", f"{metadata['quality_threshold']:.0%}")
+
+    if not metadata["passed_threshold"]:
+        st.warning(
+            f"Tree quality ({metadata['quality_ratio']:.1%}) is below the "
+            f"{metadata['quality_threshold']:.0%} threshold. "
+            "Consider: lowering min_cluster_size, adding more attributes, "
+            "or using a different similarity method."
+        )
+
+    st.divider()
+
+    # Cluster summary table
+    st.subheader("Cluster Summary")
+    st.caption("Leaf clusters from CDT (each row = one terminal node)")
+
+    # Show similarity matrix stats
+    st.subheader("Similarity Matrix Statistics")
+    n_products = len(sim_matrix)
+    sim_values = sim_matrix.values[np.triu_indices_from(sim_matrix.values, k=1)]
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Products in Matrix", n_products)
+    col2.metric("Avg Similarity", f"{np.nanmean(sim_values):.3f}")
+    col3.metric("Max Similarity", f"{np.nanmax(sim_values):.3f}")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Min Similarity", f"{np.nanmin(sim_values):.3f}")
+    with col2:
+        st.metric("Std Dev", f"{np.nanstd(sim_values):.3f}")
+
+    # Export option
+    st.divider()
+    st.caption("Use the tabs below to explore visualizations, or export the CDT structure below.")
+    if st.button("Export CDT Summary (CSV)", key="cdt_assortment_export_summary"):
+        summary_df = pd.DataFrame({
+            "Metric": ["Total Nodes", "Leaf Clusters", "Max Depth", "Quality Score", "Quality Ratio", "Passed Threshold"],
+            "Value": [metadata["n_nodes"], metadata["n_leaves"], metadata["max_depth"], 
+                     metadata["tree_quality"], f"{metadata['quality_ratio']:.1%}", 
+                     "Yes" if metadata["passed_threshold"] else "No"]
+        })
+        csv = summary_df.to_csv(index=False)
+        st.download_button(
+            "Download CDT Summary",
+            csv,
+            "cdt_summary.csv",
+            "text/csv",
+            key="cdt_assortment_summary_export"
+        )
 
     # Visualization tabs
     viz_tab1, viz_tab2, viz_tab3, viz_tab4 = st.tabs(
@@ -472,6 +560,23 @@ def _render_demand_transference(transactions_df: pd.DataFrame, product_lookup: d
     """Render Demand Transference / Delist Simulation."""
 
     st.header("🔄 Demand Transference & Delist Simulation")
+    st.caption(
+        "Estimates the fraction of revenue that transfers from a delisted product to substitutes, "
+        "based on observed switching patterns. Substitutable Demand % (SDP) = revenue at risk that "
+        "transfers to substitutes / product revenue. SDP > 80% = highly substitutable; SDP < 20% = unique demand driver."
+    )
+
+    # Insight header for overall demand transference
+    render_result_context(
+        title="Demand Transference Overview",
+        finding=(
+            f"Demand transference matrix built for {dt_matrix['from_product'].nunique()} products. "
+            f"Average SDP: {dt_matrix.groupby('from_product')['demand_transference'].sum().mean():.1%}"
+        ),
+        evidence=f"Based on observed switching patterns (min co-occurrence: {params.get('min_cooccurrence', 5)})",
+        confidence="Directional",
+        limitation="Assumes observed switching = substitution. No causal identification. Does not account for competitive response, stockouts, or marketing changes.",
+    )
 
     # Need to run CDT pipeline first to get similarity, clusters, etc.
     with st.spinner("Building CDT pipeline for demand transference..."):
@@ -489,13 +594,6 @@ def _render_demand_transference(transactions_df: pd.DataFrame, product_lookup: d
             switching_df,
             top_n=params.get("top_n_products", 50),
         )
-
-    if dt_matrix.empty:
-        st.warning("No demand transference data available.")
-        return
-
-    # Delist Simulator
-    st.subheader("🗑️ Delist Impact Simulator")
 
     # Product selector
     all_products = dt_matrix["from_product"].unique().tolist()
@@ -515,7 +613,15 @@ def _render_demand_transference(transactions_df: pd.DataFrame, product_lookup: d
             dt_matrix,
             delist_products,
         )
-
+        
+        # Compute substitutable demand percentage
+        sdp_dict = compute_substitutable_demand_percentage(dt_matrix, transactions_df)
+        
+        # Add SDP to impact_df
+        impact_df["substitutable_demand_pct"] = impact_df["stockcode"].map(
+            lambda x: sdp_dict.get(x, 0)
+        )
+        
         st.subheader("📊 Delist Impact Results")
 
         # Summary metrics
@@ -523,7 +629,7 @@ def _render_demand_transference(transactions_df: pd.DataFrame, product_lookup: d
         total_recovered = impact_df["estimated_revenue_recovered"].sum()
         net_impact = total_recovered - total_lost
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("Revenue Lost", f"${total_lost:,.2f}")
         with col2:
@@ -534,6 +640,9 @@ def _render_demand_transference(transactions_df: pd.DataFrame, product_lookup: d
                 f"${net_impact:,.2f}",
                 delta_color="normal" if net_impact >= 0 else "inverse",
             )
+        with col4:
+            avg_sdp = impact_df["substitutable_demand_pct"].mean()
+            st.metric("Avg Substitutable Demand %", f"{avg_sdp:.1%}")
 
         # Detail table
         display_df = impact_df.copy()
@@ -545,11 +654,59 @@ def _render_demand_transference(transactions_df: pd.DataFrame, product_lookup: d
             "estimated_revenue_recovered",
             "net_revenue_impact",
             "recovery_rate",
+            "substitutable_demand_pct",
         ]
-        st.dataframe(display_df[display_cols], use_container_width=True)
+        st.dataframe(
+            display_df[display_cols].style.format({
+                "product_revenue": "${:,.2f}",
+                "estimated_revenue_recovered": "${:,.2f}",
+                "net_revenue_impact": "${:,.2f}",
+                "recovery_rate": "{:.1%}",
+                "substitutable_demand_pct": "{:.1%}",
+            }),
+            use_container_width=True,
+        )
 
         # Waterfall chart
         _render_delist_waterfall(impact_df, product_names)
+        
+        # Bootstrap CI for top transfers
+        with st.expander("📊 Bootstrap CI for Demand Transference", expanded=False):
+            n_resamples = st.slider(
+                "Bootstrap Resamples",
+                100, 500, 300, 100,
+                key="dt_bootstrap_n",
+                help="More resamples = more accurate CI but slower"
+            )
+            if st.button("Compute Bootstrap CI", key="dt_compute_bootstrap"):
+                with st.spinner("Computing bootstrap confidence intervals..."):
+                    from src.analytics.demand_transference import bootstrap_demand_transference_ci
+                    ci_results = bootstrap_demand_transference_ci(
+                        transactions_df,
+                        switching_df,
+                        top_n=params.get("top_n_products", 50),
+                        n_resamples=n_resamples,
+                        ci_level=0.95,
+                        random_seed=42,
+                    )
+                    if ci_results:
+                        ci_df = pd.DataFrame.from_dict(ci_results, orient="index")
+                        ci_df = ci_df.reset_index().rename(columns={"index": "transfer"})
+                        ci_df[["from_product", "to_product"]] = ci_df["transfer"].str.split("->", expand=True)
+                        ci_df["from_name"] = ci_df["from_product"].map(product_lookup)
+                        ci_df["to_name"] = ci_df["to_product"].map(product_lookup)
+                        
+                        st.dataframe(
+                            ci_df[["from_name", "to_name", "estimate", "lower", "upper", "std_error", "n_resamples"]].style.format({
+                                "estimate": "{:.4f}",
+                                "lower": "{:.4f}",
+                                "upper": "{:.4f}",
+                                "std_error": "{:.4f}",
+                            }),
+                            use_container_width=True,
+                        )
+                    else:
+                        st.warning("No demand transference estimates available for CI")
 
     # Node-level SDP
     with st.expander("🎯 Node-Level Substitutable Demand % (SDP)", expanded=False):

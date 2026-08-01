@@ -46,6 +46,8 @@ from src.analytics.sufficiency import (
     format_sufficiency_summary,
 )
 from src.ui.export import render_analytics_export
+from src.ui.insight_header import render_result_context
+from src.ui.data_quality import render_data_quality_expander
 from src.viz.cdt_viz import (
     plot_behavioral_heatmap,
     plot_dendrogram,
@@ -60,15 +62,16 @@ from src.viz.cdt_viz import (
 # CDT result tab labels  (keep in sync with _render_cdt_results_tabs)
 # ---------------------------------------------------------------------------
 _CDT_TABS = [
-    "\U0001f31e CDT Sunburst",
-    "\U0001f5fa CDT Treemap",
-    "\U0001f333 Dendrogram & Clusters",
-    "\U0001f525 Similarity Heatmap",
-    "\U0001f501 Switching Analysis",
-    "\U0001f504 Substitution Analysis",
-    "\U0001f381 Bundling Opportunities",
-    "\U0001f4ca CDT Benchmark",
-    "\U0001f4e4 Export",
+    "📋 CDT Summary",
+    "🌞 CDT Sunburst",
+    "📦 CDT Treemap",
+    "🌲 Dendrogram & Clusters",
+    "🔥 Similarity Heatmap",
+    "🔄 Switching Analysis",
+    "🔄 Substitution Analysis",
+    "🎁 Bundling Opportunities",
+    "📊 CDT Benchmark",
+    "📥 Export",
 ]
 
 
@@ -221,6 +224,9 @@ def render_cdt_tab(
         elif sufficiency["overall"] == "directional":
             st.info("CDT results should be treated as directional.")
 
+    # Data quality & readiness at top
+    render_data_quality_expander(transactions_df, "cdt", params, expanded=False)
+
     # Invalidate cached CDT results if the data has changed
     _invalidate_cdt_cache_if_data_changed(transactions_df)
 
@@ -270,6 +276,7 @@ def render_cdt_tab(
             optimal_k,
             product_lookup,
             similarity_method,
+            params,
         )
         return
 
@@ -589,6 +596,7 @@ def _render_cdt_results_tabs(
     optimal_k: int,
     product_lookup: dict,
     similarity_method: str = "phi",
+    params: dict = None,
 ):
     """Render CDT results with lazy per-tab rendering.
 
@@ -596,6 +604,19 @@ def _render_cdt_results_tabs(
     and the initial page load does not block on all 8 heavy plots at once.
     """
     render_quality_summary(metadata)
+    
+    # Insight header for CDT overview
+    render_result_context(
+        title="Customer Decision Tree Overview",
+        finding=(
+            f"CDT built with {metadata['n_leaves']} leaf clusters, {metadata['max_depth']} levels. "
+            f"Quality ratio: {metadata['quality_ratio']:.1%} "
+            f"({'Pass' if metadata['passed_threshold'] else 'Fail'})"
+        ),
+        evidence=f"Similarity: {similarity_method.upper()} | Min co-occurrence: {params.get('min_cooccurrence', 5) if params else 'N/A'}",
+        confidence="Directional",
+        limitation="CDT is an observed co-purchase structure, not a causal decision tree. Attribute splits are descriptive, not prescriptive.",
+    )
 
     st.markdown("#### Explore Results")
     btn_cols = st.columns(len(_CDT_TABS))
@@ -610,28 +631,111 @@ def _render_cdt_results_tabs(
     st.divider()
 
     if active == 0:
-        _tab_sunburst(root, metadata)
+        _tab_summary(metadata, similarity_matrix, product_lookup)
     elif active == 1:
-        _tab_treemap(root)
+        _tab_sunburst(root, metadata)
     elif active == 2:
-        _tab_dendrogram(linkage_matrix, ordered_labels, silhouette_scores, optimal_k)
+        _tab_treemap(root)
     elif active == 3:
-        _tab_similarity(similarity_matrix, similarity_method)
+        _tab_dendrogram(linkage_matrix, ordered_labels, silhouette_scores, optimal_k)
     elif active == 4:
-        _tab_switching(switching_df, product_lookup)
+        _tab_similarity(similarity_matrix, similarity_method)
     elif active == 5:
-        _tab_substitution(substitution_df, product_lookup)
+        _tab_switching(switching_df, product_lookup)
     elif active == 6:
-        _tab_bundling(bundling_df, product_lookup)
+        _tab_substitution(substitution_df, product_lookup)
     elif active == 7:
-        _tab_cdt_benchmark()
+        _tab_bundling(bundling_df, product_lookup)
     elif active == 8:
+        _tab_cdt_benchmark()
+    elif active == 9:
         _tab_export(root, switching_df, substitution_df, bundling_df)
 
 
 # ---------------------------------------------------------------------------
 # Individual lazy tab renderers
 # ---------------------------------------------------------------------------
+def _tab_summary(metadata: dict, similarity_matrix: pd.DataFrame, product_lookup: dict):
+    """Render CDT Summary table as the primary view."""
+    st.subheader("CDT Summary")
+    st.caption(
+        "Summary of Customer Decision Tree structure and quality metrics. "
+        "Use the tabs above to explore visualizations."
+    )
+
+    # Key metrics
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Nodes", metadata["n_nodes"])
+    col2.metric("Leaf Clusters", metadata["n_leaves"])
+    col3.metric("Max Depth", metadata["max_depth"])
+    col4.metric("Quality Ratio", f"{metadata['quality_ratio']:.1%}")
+
+    st.divider()
+
+    # Quality metrics
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Tree Quality Score", f"{metadata['tree_quality']:.3f}")
+    col2.metric("Unconstrained Baseline", f"{metadata['unconstrained_baseline']:.3f}")
+    col3.metric("Quality Ratio", f"{metadata['quality_ratio']:.1%}")
+    col4.metric("Threshold", f"{metadata['quality_threshold']:.0%}")
+
+    if not metadata["passed_threshold"]:
+        st.warning(
+            f"Tree quality ({metadata['quality_ratio']:.1%}) is below the "
+            f"{metadata['quality_threshold']:.0%} threshold. "
+            "Consider: lowering min_cluster_size, adding more attributes, "
+            "or using a different similarity method."
+        )
+
+    st.divider()
+
+    # Cluster summary table
+    st.subheader("Cluster Summary")
+    st.caption("Leaf clusters from CDT (each row = one terminal node)")
+
+    # Build cluster summary from metadata if available
+    # For now, show basic stats
+    st.info(
+        f"CDT has {metadata['n_leaves']} leaf clusters across {metadata['max_depth']} levels. "
+        f"Quality ratio: {metadata['quality_ratio']:.1%} "
+        f"({'✅ Pass' if metadata['passed_threshold'] else '⚠️ Below threshold'})"
+    )
+
+    # Show similarity matrix stats
+    st.subheader("Similarity Matrix Statistics")
+    n_products = len(similarity_matrix)
+    sim_values = similarity_matrix.values[np.triu_indices_from(similarity_matrix.values, k=1)]
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Products in Matrix", n_products)
+    col2.metric("Avg Similarity", f"{np.nanmean(sim_values):.3f}")
+    col3.metric("Max Similarity", f"{np.nanmax(sim_values):.3f}")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Min Similarity", f"{np.nanmin(sim_values):.3f}")
+    with col2:
+        st.metric("Std Dev", f"{np.nanstd(sim_values):.3f}")
+
+    # Export option
+    st.divider()
+    st.caption("Use the tabs above to explore visualizations, or export the CDT structure below.")
+    if st.button("Export CDT Summary (CSV)", key="cdt_export_summary"):
+        summary_df = pd.DataFrame({
+            "Metric": ["Total Nodes", "Leaf Clusters", "Max Depth", "Quality Score", "Quality Ratio", "Passed Threshold"],
+            "Value": [metadata["n_nodes"], metadata["n_leaves"], metadata["max_depth"], 
+                     metadata["tree_quality"], f"{metadata['quality_ratio']:.1%}", 
+                     "Yes" if metadata["passed_threshold"] else "No"]
+        })
+        csv = summary_df.to_csv(index=False)
+        st.download_button(
+            "Download CDT Summary",
+            csv,
+            "cdt_summary.csv",
+            "text/csv",
+            key="cdt_summary_export"
+        )
+
+
 def _tab_sunburst(root, metadata: dict):
     st.subheader("Customer Decision Tree \u2014 Sunburst View")
     st.caption(
@@ -716,6 +820,19 @@ def _tab_switching(switching_df: pd.DataFrame, product_lookup: dict):
     # Diagnostic metrics
     n_pairs = len(switching_df)
     max_rate = switching_df["switch_rate"].max()
+    
+    # Insight header for switching analysis
+    render_result_context(
+        title="Observed Customer Transitions",
+        finding=(
+            f"{n_pairs:,} switching pairs detected — "
+            f"max switch rate: {max_rate:.1%}"
+        ),
+        evidence=f"Derived from customer purchase sequences (min co-occurrence filter applied)",
+        confidence="Directional",
+        limitation="Observed transitions only — not causal substitution. No control for availability, marketing, or stockouts. 'Likely substitute' requires repeated evidence + attribute similarity.",
+    )
+
     st.info(
         f"\U0001f4ca **{n_pairs:,}** switching pairs detected \u2014 "
         f"max switch rate: **{max_rate:.1%}**"
@@ -795,6 +912,18 @@ def _tab_substitution(substitution_df: pd.DataFrame, product_lookup: dict):
         st.info("No substitution data available.")
         return
 
+    # Insight header for substitution analysis
+    n_pairs = len(substitution_df)
+    max_score = substitution_df["substitution_score"].max() if "substitution_score" in substitution_df.columns else 0
+    
+    render_result_context(
+        title="Substitution Analysis",
+        finding=f"{n_pairs:,} substitutable pairs detected — max similarity score: {max_score:.3f}",
+        evidence=f"Derived from co-purchase Phi coefficient (min co-occurrence filter applied)",
+        confidence="Directional",
+        limitation="High similarity ≠ causal substitution. Co-purchase patterns may reflect category adjacency, not true substitution. Requires attribute similarity + repeated transition evidence.",
+    )
+
     top_n = st.slider("Top N Products", 10, 100, 50, key="cdt_sub_top_n")
     with st.spinner("\U0001f504 Rendering substitution heatmap \u2014 please wait\u2026"):
         fig = plot_similarity_heatmap(
@@ -829,6 +958,19 @@ def _tab_bundling(bundling_df: pd.DataFrame, product_lookup: dict):
     if bundling_df.empty:
         st.info("No bundling data available.")
         return
+
+    # Insight header for bundling analysis
+    n_pairs = len(bundling_df)
+    max_lift = bundling_df["lift"].max() if "lift" in bundling_df.columns else 0
+    min_sub = bundling_df["substitution"].min() if "substitution" in bundling_df.columns else 0
+    
+    render_result_context(
+        title="Bundling Opportunities",
+        finding=f"{n_pairs:,} candidate bundling pairs — max lift: {max_lift:.2f}, min substitution: {min_sub:.3f}",
+        evidence=f"Lift from co-purchase patterns; substitution from Phi coefficient. Sweet spot: high lift + low substitution.",
+        confidence="Directional",
+        limitation="High lift + low substitution suggests complementarity, not causation. No control for trip mission, seasonality, or promotions. Bundle performance not validated.",
+    )
 
     st.write("**Top Bundling Pairs**")
     top_bundles = get_top_bundling_pairs(bundling_df, top_n=20)

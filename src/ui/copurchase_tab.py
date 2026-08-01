@@ -119,6 +119,7 @@ def render_copurchase_tab(
         "Quadrant View",
         "Heatmap",
         "Product Profile",
+        "Basket Segments",
     ]
     active_tab = persistent_tabs(tab_labels, "copurchase_tabs", default_tab=0)
 
@@ -130,6 +131,8 @@ def render_copurchase_tab(
         _render_heatmap_tab(affinity_matrix, product_lookup, top_n_products)
     elif active_tab == 3:
         _render_profile_tab(transactions_df, top_pairs, product_lookup, min_lift)
+    elif active_tab == 4:
+        _render_basket_segment_tab(transactions_df, product_lookup)
 
 
 def _render_top_pairs_tab(top_pairs: pd.DataFrame):
@@ -367,3 +370,77 @@ def _render_profile_tab(
     )
     fig.update_layout(yaxis={"categoryorder": "total ascending"})
     st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_basket_segment_tab(transactions_df: pd.DataFrame, product_lookup: dict):
+    """Render basket-size segment analysis for co-purchase context."""
+    st.subheader("Basket-Size Segment Analysis")
+    st.caption(
+        "Baskets segmented by number of distinct SKUs: Small (1-2), Medium (3-7), Large (8+). "
+        "Shows how co-purchase patterns vary by basket size."
+    )
+
+    from src.analytics.basket_metrics import compute_basket_size_segments, get_basket_segment_for_product
+
+    with st.spinner("Computing basket segments..."):
+        basket_segments = compute_basket_size_segments(transactions_df)
+        segment_profile = compute_basket_segment_profile(transactions_df)
+
+    # Segment overview
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Small Baskets (1-2 SKUs)", f"{basket_segments[basket_segments['basket_segment']=='Small']['_basket'].count():,}")
+    with col2:
+        st.metric("Medium Baskets (3-7 SKUs)", f"{basket_segments[basket_segments['basket_segment']=='Medium']['_basket'].count():,}")
+    with col3:
+        st.metric("Large Baskets (8+ SKUs)", f"{basket_segments[basket_segments['basket_segment']=='Large']['_basket'].count():,}")
+
+    # Segment profile
+    st.subheader("Segment Profile")
+    st.dataframe(
+        segment_profile.style.format({
+            "n_baskets": "{:,}",
+            "n_customers": "{:,}",
+            "total_revenue": "${:,.0f}",
+            "avg_basket_value": "${:.2f}",
+            "avg_basket_depth": "{:.1f}",
+            "avg_basket_units": "{:.1f}",
+            "pct_baskets": "{:.1f}%",
+            "pct_revenue": "{:.1f}%",
+            "pct_customers": "{:.1f}%",
+        }).background_gradient(cmap="RdYlGn", subset=["pct_baskets", "pct_revenue"]),
+        use_container_width=True,
+    )
+
+    # Product-level segment distribution
+    st.subheader("Product-Level Segment Distribution")
+    st.caption("Shows which basket segments each product appears in.")
+
+    with st.spinner("Computing product-level segment distribution..."):
+        from src.analytics.basket_metrics import get_basket_segment_for_product
+        product_segments = get_basket_segment_for_product(transactions_df)
+
+    if not product_segments.empty:
+        product_segments["Product Name"] = product_segments["stockcode"].map(product_lookup)
+        
+        # Pivot for heatmap
+        pivot = product_segments.pivot_table(
+            index="Product Name",
+            columns="basket_segment",
+            values="pct_baskets",
+            fill_value=0,
+        )
+        
+        fig = px.imshow(
+            pivot.values,
+            x=pivot.columns,
+            y=pivot.index,
+            color_continuous_scale="RdYlGn",
+            labels={"x": "Basket Segment", "y": "Product", "color": "% of Baskets"},
+            title="Product Presence by Basket Segment (%)",
+            aspect="auto",
+        )
+        fig.update_layout(height=max(400, len(pivot) * 20))
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No product-level segment data available.")
