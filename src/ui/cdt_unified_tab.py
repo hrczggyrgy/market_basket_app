@@ -143,13 +143,15 @@ def _render_cdt_builder(transactions_df: pd.DataFrame, product_lookup: dict, par
         root = st.session_state["cdt_unified_root"]
         metadata = st.session_state["cdt_unified_metadata"]
         similarity_matrix = st.session_state["cdt_unified_similarity_matrix"]
-        switching_df = st.session_state["cdt_unified_switching_df"]
-        substitution_df = st.session_state["cdt_unified_substitution_df"]
-        bundling_df = st.session_state["cdt_unified_bundling_df"]
-        linkage_matrix = st.session_state["cdt_unified_linkage_matrix"]
-        ordered_labels = st.session_state["cdt_unified_ordered_labels"]
-        silhouette_scores = st.session_state["cdt_unified_silhouette_scores"]
-        optimal_k = st.session_state["cdt_unified_optimal_k"]
+        # Fix 2: use .get() with safe fallbacks — these keys were never written
+        # before this fix, so a cold-start rerun would crash without the guard.
+        switching_df = st.session_state.get("cdt_unified_switching_df") or pd.DataFrame()
+        substitution_df = st.session_state.get("cdt_unified_substitution_df") or pd.DataFrame()
+        bundling_df = st.session_state.get("cdt_unified_bundling_df") or pd.DataFrame()
+        linkage_matrix = st.session_state.get("cdt_unified_linkage_matrix")
+        ordered_labels = st.session_state.get("cdt_unified_ordered_labels", [])
+        silhouette_scores = st.session_state.get("cdt_unified_silhouette_scores", {})
+        optimal_k = st.session_state.get("cdt_unified_optimal_k", 0)
         similarity_method = st.session_state.get("cdt_unified_similarity_method", "phi")
         product_lookup = st.session_state.get("cdt_unified_product_lookup", {})
 
@@ -393,6 +395,11 @@ def _render_cdt_config_panel(
         st.session_state["cdt_unified_similarity_method"] = cdt_config.similarity_methods[0]
         st.session_state["cdt_unified_product_lookup"] = product_lookup
         st.session_state["cdt_unified_just_built"] = True
+        # Fix 1: write behavioral DataFrames — these were previously never stored,
+        # causing KeyError on the very next rerun.
+        st.session_state["cdt_unified_switching_df"] = result.get("switching_df") or pd.DataFrame()
+        st.session_state["cdt_unified_substitution_df"] = result.get("substitution_df") or pd.DataFrame()
+        st.session_state["cdt_unified_bundling_df"] = result.get("bundling_df") or pd.DataFrame()
 
         progress_bar.progress(100)
         status_text.success(
@@ -427,6 +434,7 @@ def _render_cdt_results_tabs(
     optimal_k: int,
     product_lookup: dict,
     similarity_method: str = "phi",
+    params: dict = None,
 ):
     """Render CDT results with lazy per-tab rendering."""
     render_quality_summary(metadata)
@@ -1307,8 +1315,9 @@ def _render_assortment_results(
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # Export
-    render_analytics_export(sku_df, product_lookup, prefix="assortment")
+    # Fix 4: render_analytics_export takes (df, label) — product_lookup and prefix
+    # were previously passed as wrong positional args.
+    render_analytics_export(sku_df, "Assortment")
 
 
 def _render_scenario_comparison(
