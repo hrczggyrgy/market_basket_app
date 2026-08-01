@@ -1,4 +1,8 @@
-"""Promotional Analytics Tab with persistent tab state."""
+"""Promotional Analytics Tab — Promotion Diagnostics (Descriptive).
+
+This tab provides descriptive promotional pattern analysis.
+For causal uplift estimation, use Pricing & Promotions → Promo Uplift Modeling.
+"""
 
 import pandas as pd
 import plotly.express as px
@@ -12,33 +16,30 @@ from src.analytics.promotional import (
     detect_promotions,
 )
 from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
+from src.analytics.basket_metrics import compute_basket_penetration
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
+from src.ui.insight_header import render_result_context
+from src.ui.data_quality import render_data_quality_expander
 
 
 def render_promotional_tab(
     transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None
 ):
     """Render promotional analytics tab with persistent sub-tabs."""
-    st.header(" Promotional Analytics")
+    st.header(" Promotional Analytics — Promotion Diagnostics")
+    st.caption(
+        "Describes price/volume patterns, detected promotion windows, potential "
+        "forward-buy, substitution, and halo indicators. "
+        "**Not causal incrementality** — for causal uplift, use Pricing & Promotions → Promo Uplift Modeling."
+    )
 
     if transactions_df.empty:
         st.warning("No transaction data available")
         return
 
-    # Data sufficiency gate
-    sufficiency = assess_data_sufficiency(transactions_df)
-    with st.expander("📋 Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
-        st.markdown(format_sufficiency_summary(sufficiency))
-        if sufficiency["overall"] == "insufficient":
-            st.warning("Dataset may be too small for reliable promotional analysis.")
-        elif sufficiency["overall"] == "directional":
-            st.info("Promotional results should be treated as directional.")
-
-    # Check if we have promotional data (or simulate)
-    st.info(
-        " This analysis requires promotional period data. Using simulated promotions based on price drops and volume spikes."
-    )
+    # Data quality & readiness at top
+    render_data_quality_expander(transactions_df, "promotional", params, expanded=False)
 
     # Detect promotions (cached)
     @st.cache_data
@@ -66,6 +67,15 @@ def render_promotional_tab(
         return
 
     st.success(f"Detected {len(promo_periods)} promotional periods")
+
+    # Insight header for promo overview
+    render_result_context(
+        title="Promotion Detection Summary",
+        finding=f"Detected {len(promo_periods)} promo periods across {promo_periods['stockcode'].nunique()} products using price-drop threshold ≥{params.get('price_change_threshold', 0.15):.0%}",
+        evidence=f"Date range: {promo_periods['start_date'].min()} to {promo_periods['end_date'].max()} | Avg duration: {(promo_periods['end_date'] - promo_periods['start_date']).dt.days.mean():.0f} days",
+        confidence="Directional",
+        limitation="Heuristic detection from price/volume patterns only. No true promo calendar. Confounds clearance, markdowns, data errors. Not validated against ground truth.",
+    )
 
     # Show promo periods
     with st.expander("View Detected Promotions", expanded=False):

@@ -55,6 +55,8 @@ from src.ui.cdt_tab import (
 )
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
+from src.ui.insight_header import render_result_context
+from src.ui.data_quality import render_data_quality_expander
 from src.viz.cdt_viz import (
     plot_behavioral_heatmap,
     plot_dendrogram,
@@ -170,25 +172,24 @@ def render_segmentation_tab(
 ):
     """Render customer segmentation analysis tab with enhanced features."""
     st.header(" Customer Segmentation")
+    st.caption(
+        "Descriptive customer clusters from transaction data. "
+        "**Segments are descriptive clusters, not fixed customer truths.** "
+        "Behavioral clustering is recommended as primary business view."
+    )
 
     if transactions_df.empty:
         st.warning("No transaction data available")
         return
 
-    # Data sufficiency gate
-    sufficiency = assess_data_sufficiency(transactions_df)
-    with st.expander("📋 Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
-        st.markdown(format_sufficiency_summary(sufficiency))
-        if sufficiency["overall"] == "insufficient":
-            st.warning("Dataset may be too small for reliable segmentation.")
-        elif sufficiency["overall"] == "directional":
-            st.info("Segmentation results should be treated as directional.")
+    # Data quality & readiness at top
+    render_data_quality_expander(transactions_df, "segmentation", params, expanded=False)
 
-    # Enhanced tabs
+    # Enhanced tabs - Behavioral first as recommended
     tab_labels = [
-        " Overview",
-        " RFM Segmentation",
-        " Behavioral",
+        " Behavioral (Recommended)",
+        " RFM Quantile (Legacy)",
+        " RFM K-Means (Legacy)",
         " Value-Based (CLV)",
         " Enhanced Features",
         " Cluster Map",
@@ -201,11 +202,11 @@ def render_segmentation_tab(
     selected = persistent_tabs(tab_labels, "segmentation_main_tabs", default_tab=0)
 
     if selected == 0:
-        render_overview(transactions_df)
-    elif selected == 1:
-        render_rfm_segmentation(transactions_df, params, pipeline)
-    elif selected == 2:
         render_behavioral_segmentation(transactions_df, params, pipeline)
+    elif selected == 1:
+        render_rfm_segmentation(transactions_df, params, pipeline, method="quantile")
+    elif selected == 2:
+        render_rfm_segmentation(transactions_df, params, pipeline, method="kmeans")
     elif selected == 3:
         render_value_segmentation(transactions_df, params, pipeline)
     elif selected == 4:
@@ -262,34 +263,18 @@ def render_overview(transactions_df: pd.DataFrame):
     """)
 
 
-def render_rfm_segmentation(transactions_df: pd.DataFrame, params: dict, pipeline: dict = None):
-    """Render RFM / Behavioral segmentation analysis."""
-    st.subheader("Customer Segmentation")
+def render_rfm_segmentation(transactions_df: pd.DataFrame, params: dict, pipeline: dict = None, method: str = "quantile"):
+    """Render RFM segmentation analysis (Quantile or K-Means)."""
+    method_labels = {
+        "quantile": "RFM Quantile (Simple, legacy)",
+        "kmeans": "RFM K-Means (Simple, legacy)",
+    }
+    st.subheader(f"Customer Segmentation — {method_labels.get(method, method)}")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        method = st.radio(
-            "Segmentation Method",
-            [
-                "Behavioral Clustering (Recommended)",
-                "RFM Quantile (Simple, legacy)",
-                "RFM K-Means (Simple, legacy)",
-            ],
-            index=0,
-            key="seg_tab_rfm_method",
-            help="Behavioral = K-Means on 10+ purchase-behavior features. "
-            "RFM Quantile = classic 4x4x4 scoring. "
-            "RFM K-Means = K-Means on Recency/Frequency/Monetary.",
-        )
-    with col2:
-        if "K-Means" in method:
-            n_segments = st.slider("Number of Segments", 3, 12, 8, key="seg_tab_n_segments")
-        else:
-            n_segments = 8
-
-    if method == "Behavioral Clustering (Recommended)":
-        render_behavioral_segmentation(transactions_df, params)
-        return
+    if method == "kmeans":
+        n_segments = st.slider("Number of Segments", 3, 12, 8, key="seg_tab_n_segments")
+    else:
+        n_segments = 8
 
     with st.spinner("Computing RFM features..."):
         rfm = _cached_compute_rfm_features(transactions_df)
@@ -299,7 +284,7 @@ def render_rfm_segmentation(transactions_df: pd.DataFrame, params: dict, pipelin
     rfm_tabs = [" Segment Distribution", " Revenue Analysis", " 3D Visualization", " Profiles"]
     rfm_selected = persistent_tabs(rfm_tabs, "rfm_view_tabs", default_tab=0)
 
-    if method == "RFM Quantile (Simple, legacy)":
+    if method == "quantile":
         rfm_scored = _cached_rfm_segmentation(rfm, method="quantile", n_segments=8)
 
         if rfm_selected == 0:
@@ -591,8 +576,14 @@ def _render_kmeans_segment_details(rfm_clustered: pd.DataFrame):
 def render_behavioral_segmentation(
     transactions_df: pd.DataFrame, params: dict, pipeline: dict = None
 ):
-    st.subheader("Behavioral Segmentation")
+    st.subheader("Behavioral Segmentation (Recommended)")
+    st.caption(
+        "K-means on 10+ purchase-behavior features. "
+        "**Descriptive clusters — not fixed customer truths.** "
+        "Reuse customer entropy and IPT-CV from basket_metrics as segment descriptors."
+    )
 
+    # Insight header for segment overview
     n_clusters = st.slider("Number of Clusters", 3, 10, 6, key="seg_tab_behav_n_clusters")
     method = st.selectbox(
         "Clustering Method",
@@ -609,8 +600,16 @@ def render_behavioral_segmentation(
             transactions_df, n_clusters=n_clusters, method=method, return_metrics=True
         )
 
-    # Show validation metrics
     if quality_metrics:
+        # Insight header with segment quality
+        render_result_context(
+            title="Behavioral Segmentation Quality",
+            finding=f"{quality_metrics.get('n_clusters', n_clusters)} segments found with Silhouette={quality_metrics.get('silhouette_score', 0):.3f}, Davies-Bouldin={quality_metrics.get('davies_bouldin_score', 0):.3f}",
+            evidence=f"Min cluster size: {quality_metrics.get('cluster_size_min', 0)} | Method: {method}",
+            confidence="Directional",
+            limitation="Descriptive clusters only. No causal interpretation. Stability varies with random seed and feature scaling. Segments are not fixed customer identities.",
+        )
+
         st.subheader("Cluster Validation")
         col1, col2, col3, col4 = st.columns(4)
         with col1:

@@ -37,30 +37,14 @@ def render_category_overview_tab(
         elif sufficiency["overall"] == "directional":
             st.info("Category results should be treated as directional.")
 
-    # Parameters
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        n_clusters = st.slider(
-            "Number of Inferred Categories",
-            4,
-            15,
-            params.get("n_categories", 8),
-            key="cat_overview_n_clusters",
-            help="KMeans clusters on TF-IDF product names. More = finer granularity.",
-        )
-    with col2:
-        prior_weeks = st.slider(
-            "PoP Prior Window (weeks)",
-            2,
-            8,
-            params.get("prior_weeks", 4),
-            key="cat_overview_prior_weeks",
-            help="Compare last 4 weeks vs this many weeks before.",
-        )
-    with col3:
-        if st.button(" Regenerate Categories", key="cat_overview_regen"):
-            st.cache_data.clear()
-            st.rerun()
+    # Read parameters from params (set in sidebar) - don't create duplicate widgets
+    n_clusters = params.get("n_categories", 8)
+    prior_weeks = params.get("prior_weeks", 4)
+
+    # Optional: Allow regeneration
+    if st.button(" Regenerate Categories", key="cat_overview_regen"):
+        st.cache_data.clear()
+        st.rerun()
 
     # Compute category scorecard (cached)
     @st.cache_data

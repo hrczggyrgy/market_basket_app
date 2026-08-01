@@ -6,9 +6,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
+from src.analytics.basket_metrics import compute_basket_penetration
 from src.rules.generator import filter_rules, format_rules_for_display
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
+from src.ui.insight_header import render_result_context
+from src.ui.data_quality import render_data_quality_expander
 from src.viz.heatmap import create_heatmap, create_scatter_heatmap
 from src.viz.network import create_network_graph
 
@@ -24,22 +27,23 @@ def render_rules_tab(
     st.header("📋 Association Rules")
     st.caption(
         "Discovers product combinations that occur together more than chance. "
-        "**Lift > 1** = positive association. **Conviction → ∞** = near-deterministic rule."
+        "**Lift > 1** = positive association. **Conviction → ∞** = near-deterministic rule. "
+        "*Associative only — not causal incrementality.*"
     )
 
     if rules.empty:
         st.warning("No rules generated. Try lowering min_support or min_confidence.")
         return
 
-    # Data sufficiency gate (on source transactions if available)
+    # Data quality & readiness at top
     if transactions_df is not None:
-        sufficiency = assess_data_sufficiency(transactions_df)
-        with st.expander("📋 Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
-            st.markdown(format_sufficiency_summary(sufficiency))
-            if sufficiency["overall"] == "insufficient":
-                st.warning("Dataset may be too small for reliable association rules.")
-            elif sufficiency["overall"] == "directional":
-                st.info("Association rule results should be treated as directional.")
+        render_data_quality_expander(transactions_df, "association_rules", params, expanded=False)
+
+    # Compute basket penetration for rule enrichment
+    basket_pen = None
+    if transactions_df is not None:
+        with st.spinner("Computing basket penetration..."):
+            basket_pen = compute_basket_penetration(transactions_df)
 
     # Filter controls
     with st.expander(" Filter Rules", expanded=True):
@@ -134,8 +138,21 @@ def render_rules_tab(
         st.warning("No rules match the current filters")
         return
 
+    # Unstable result warning
+    if not filtered.empty:
+        min_supp_in_filtered = filtered["support"].min()
+        if min_supp_in_filtered < 0.001:
+            st.warning(
+                f"⚠️ **Unstable results**: Minimum support in filtered rules is {min_supp_in_filtered:.5f}. "
+                "Rules with very low support (<0.1%) are statistically unreliable and may not replicate."
+            )
+
     # Format for display
     display_rules = format_rules_for_display(filtered, product_lookup)
+
+    # Enrich with basket penetration if available
+    if basket_pen is not None and not basket_pen.empty:
+        display_rules = _enrich_rules_with_penetration(display_rules, basket_pen, product_lookup)
 
     # Persistent sub-tabs for different views
     tab_labels = [" Table", " Network", " Heatmap", " Scatter", " 3D"]
@@ -155,17 +172,30 @@ def render_rules_tab(
 
 def _render_rules_table_tab(display_rules: pd.DataFrame, filtered: pd.DataFrame):
     """Render the rules table view."""
-    st.subheader("Rules Table")
+    st.subheader("Rules Table — Ranked Evidence")
 
-    # Top rule insight callout
+    # Insight header for top rule
     if not display_rules.empty and "lift" in filtered.columns:
         top = filtered.nlargest(1, "lift").iloc[0]
         ant = ", ".join(str(x) for x in top["antecedents"])
         con = ", ".join(str(x) for x in top["consequents"])
-        st.info(
-            f"💡 **Strongest rule:** `{ant}` → `{con}`  \n"
-            f"Lift **{top['lift']:.2f}** · Confidence **{top['confidence']:.2%}** · "
-            f"Support **{top['support']:.4f}**"
+
+        evidence_parts = [
+            f"Lift: {top['lift']:.2f}",
+            f"Confidence: {top['confidence']:.2%}",
+            f"Support: {top['support']:.4f}",
+        ]
+        if "basket_penetration_a" in top:
+            evidence_parts.append(f"Basket Pen A: {top['basket_penetration_a']:.2%}")
+        if "basket_penetration_b" in top:
+            evidence_parts.append(f"Basket Pen B: {top['basket_penetration_b']:.2%}")
+
+        render_result_context(
+            title="Top Association Rule",
+            finding=f"`{ant}` → `{con}` — items co-occur {top['lift']:.1f}x more than expected by chance",
+            evidence=" | ".join(evidence_parts),
+            confidence="Directional",
+            limitation="Associative only — co-occurrence does not imply causation. No control for confounding (trip type, seasonality, promotions).",
         )
 
     # Column selector
@@ -179,6 +209,10 @@ def _render_rules_table_tab(display_rules: pd.DataFrame, filtered: pd.DataFrame)
         "conviction",
         "zhangs_metric",
     ]
+    # Add penetration columns if available
+    pen_cols = [c for c in available_cols if "basket_penetration" in c or "shopper_penetration" in c]
+    default_cols.extend(pen_cols)
+
     selected_cols = st.multiselect(
         "Display Columns",
         available_cols,
@@ -205,12 +239,49 @@ def _render_rules_table_tab(display_rules: pd.DataFrame, filtered: pd.DataFrame)
             height=500,
         )
 
+    # Disclaimer
+    st.caption(
+        "⚠️ **Interpretation**: Lift > 1 indicates co-occurrence above chance. "
+        "Confidence = P(consequent|antecedent). These are **associative** metrics from observational data. "
+        "They do not prove causation, incrementality, or substitution."
+    )
+
     render_analytics_export(filtered, "Association_Rules")
+
+
+def _enrich_rules_with_penetration(display_rules: pd.DataFrame, basket_pen: pd.DataFrame, product_lookup: dict) -> pd.DataFrame:
+    """Add basket penetration metrics to rules display."""
+    # Create lookup for basket penetration
+    pen_lookup = basket_pen.set_index("stockcode")
+
+    def get_pen(stockcode, col):
+        try:
+            return pen_lookup.loc[stockcode, col]
+        except (KeyError, IndexError):
+            return np.nan
+
+    # For each rule, get penetration of antecedents and consequents
+    def get_rule_pen(row, side, metric):
+        items = row.get(f"{side}edents", row.get(f"{side}equents", []))
+        if isinstance(items, (list, set, frozenset)):
+            vals = [get_pen(str(item), metric) for item in items]
+            vals = [v for v in vals if not np.isnan(v)]
+            return np.mean(vals) if vals else np.nan
+        return np.nan
+
+    display_rules = display_rules.copy()
+    display_rules["basket_penetration_a"] = display_rules.apply(lambda r: get_rule_pen(r, "ant", "basket_penetration"), axis=1)
+    display_rules["basket_penetration_c"] = display_rules.apply(lambda r: get_rule_pen(r, "cons", "basket_penetration"), axis=1)
+    display_rules["unique_shopper_penetration_a"] = display_rules.apply(lambda r: get_rule_pen(r, "ant", "unique_shopper_penetration"), axis=1)
+    display_rules["unique_shopper_penetration_c"] = display_rules.apply(lambda r: get_rule_pen(r, "cons", "unique_shopper_penetration"), axis=1)
+
+    return display_rules
 
 
 def _render_rules_network_tab(filtered: pd.DataFrame, product_lookup: dict, min_lift: float):
     """Render the network graph view."""
     st.subheader("Rules Network Graph")
+    st.caption("Network shows co-occurrence associations. Edge weight = lift. **Associative only — not causal.**")
 
     if len(filtered) > 0:
         min_lift_net = st.slider(

@@ -31,6 +31,8 @@ from src.analytics.sufficiency import (
     format_sufficiency_summary,
 )
 from src.utils.cache import get_trace_cache, trace_cache_key
+from src.ui.insight_header import render_result_context, render_elasticity_context, render_uplift_context
+from src.ui.data_quality import render_data_quality_expander
 
 warnings.filterwarnings("ignore")
 
@@ -39,8 +41,8 @@ def render_pricing_tab(
     transactions_df: pd.DataFrame,
     product_lookup: dict,
     params: dict,
-    mode: str = "elasticity",
     pipeline: Any = None,
+    mode: str = "elasticity",
 ):
     """Main entry point for Pricing & Promotions tab with sub-modes."""
 
@@ -73,22 +75,13 @@ def _render_elasticity_analysis(
     """Render price elasticity estimation using log-log regression."""
 
     st.header("📈 Price Elasticity Analysis")
-
-    # Data sufficiency gate
-    sufficiency = assess_data_sufficiency(
-        transactions_df,
-        min_transactions=params.get("min_transactions", 500),
-        min_customers=params.get("min_customers", 30),
-        min_products=params.get("min_products", 5),
-        min_time_span_days=params.get("min_time_span_days", 60),
-        min_price_variation_cv=params.get("min_price_variation", 0.03),
+    st.caption(
+        "Estimates price elasticity of demand from observational transaction data. "
+        "**Observational only — not causal.** Confounded by promotions, seasonality, stockouts, competitor actions."
     )
-    with st.expander("📋 Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
-        st.markdown(format_sufficiency_summary(sufficiency))
-        if sufficiency["overall"] == "insufficient":
-            st.warning("Dataset may be too small for reliable elasticity estimates.")
-        elif sufficiency["overall"] == "directional":
-            st.info("Results should be treated as directional, not definitive.")
+
+    # Data quality & readiness at top
+    render_data_quality_expander(transactions_df, "elasticity", params, expanded=False)
 
     method = params.get("elasticity_method", "loglog_ols")
     min_periods = params.get("min_periods", 10)
@@ -167,26 +160,17 @@ def _render_single_product_elasticity(
             st.info("This product did not meet minimum data requirements for Bayesian estimation.")
             return
         row = row.iloc[0]
-        st.subheader(f"📊 Bayesian Elasticity: {product_lookup.get(product_id, product_id)}")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Elasticity (posterior mean)", f"{row['elasticity_mean']:.3f}")
-        with col2:
-            st.metric("Posterior SD", f"{row['elasticity_sd']:.3f}")
-        with col3:
-            st.metric("94% HDI Lower", f"{row['elasticity_hdi_lower']:.3f}")
-        with col4:
-            st.metric("94% HDI Upper", f"{row['elasticity_hdi_upper']:.3f}")
-        if row["elasticity_hdi_lower"] < 0 and row["elasticity_hdi_upper"] < 0:
-            st.info("🔴 **Elastic** — 94% HDI entirely below zero (demand sensitive to price).")
-        elif row["elasticity_hdi_lower"] < 0 < row["elasticity_hdi_upper"]:
-            st.warning(
-                "🟡 **Uncertain** — HDI crosses zero (insufficient evidence of price effect)."
-            )
-        else:
-            st.info(
-                "🟢 **Positive** — HDI above zero (possible promo effect or omitted variable bias)."
-            )
+
+        render_elasticity_context(
+            sku=product_lookup.get(product_id, product_id),
+            elasticity=row['elasticity_mean'],
+            n_obs=row.get('n_obs', 0),
+            price_cv=row.get('price_cv', 0),
+            n_price_points=row.get('n_price_points', 0),
+            method="Bayesian Hierarchical",
+            hdi_lower=row['elasticity_hdi_lower'],
+            hdi_upper=row['elasticity_hdi_upper'],
+        )
 
         # Trace diagnostics (only for NUTS)
         if params.get("bayesian_mode", "").startswith("full"):
@@ -213,6 +197,8 @@ def _render_single_product_elasticity(
 
     # Check price variation
     price_cv = weekly["avg_price"].std() / weekly["avg_price"].mean()
+    n_price_points = weekly["avg_price"].nunique()
+
     if price_cv < params.get("min_price_variation", 0.05):
         st.warning(
             f"Low price variation (CV={price_cv:.3f}). Elasticity estimates may be unreliable."
@@ -232,29 +218,15 @@ def _render_single_product_elasticity(
     elasticity = slope
     r_squared = r_value**2
 
-    # Display results
-    st.subheader(f"📊 Elasticity: {product_lookup.get(product_id, product_id)}")
-
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Elasticity (β)", f"{elasticity:.3f}")
-    with col2:
-        st.metric("R²", f"{r_squared:.3f}")
-    with col3:
-        st.metric("p-value", f"{p_value:.4f}")
-    with col4:
-        st.metric("Observations", len(log_price))
-
-    # Interpretation
-    if elasticity < -1:
-        interp = "🟢 **Elastic** — Demand sensitive to price changes"
-    elif elasticity < -0.1:
-        interp = "🟡 **Inelastic** — Demand not very sensitive to price"
-    elif abs(elasticity) <= 0.1:
-        interp = "⚪ **Unit Elastic** — Quantity changes proportionally"
-    else:
-        interp = "🔴 **Positive Elasticity** — Likely omitted variable bias (promos raise both price & qty)"
-    st.info(interp)
+    # Display results using insight header
+    render_elasticity_context(
+        sku=product_lookup.get(product_id, product_id),
+        elasticity=elasticity,
+        n_obs=len(log_price),
+        price_cv=price_cv,
+        n_price_points=n_price_points,
+        method="Log-log OLS",
+    )
 
     # Scatter plot with regression line
     fig = px.scatter(
@@ -1545,6 +1517,14 @@ def _render_promo_uplift_modeling(
     """Render promo uplift modeling using T-learner / S-learner."""
 
     st.header("🎯 Promo Uplift Modeling")
+    st.caption(
+        "Causal uplift estimation from observational data. "
+        "**Experimental — not validated incrementality.** Requires strong treatment/control overlap. "
+        "Results blocked if propensity overlap < 60% or validation score < 0.7."
+    )
+
+    # Data quality & readiness at top
+    render_data_quality_expander(transactions_df, "promo_uplift", params, expanded=False)
 
     drop_threshold = params.get("promo_drop_threshold", 15) / 100
     baseline_window = params.get("promo_baseline_window", 28)
@@ -1579,67 +1559,128 @@ def _render_promo_uplift_modeling(
     )
     promo_summary["product_name"] = promo_summary["stockcode"].map(product_lookup)
 
-    st.dataframe(
-        promo_summary.sort_values("total_promo_revenue", ascending=False), use_container_width=True
-    )
+    st.subheader("Detected Promotions Summary")
+    st.dataframe(promo_summary, use_container_width=True)
 
-    # Step 2: Build uplift features
-    with st.spinner("Building uplift features and training model..."):
-        uplift_results = _train_uplift_model(
-            transactions_df, promo_df, method, n_estimators, max_depth, propensity_strat
+    # Step 2: Build uplift dataset
+    with st.spinner("Building uplift dataset..."):
+        uplift_data = build_uplift_dataset(
+            transactions_df,
+            promo_df,
+            baseline_window=baseline_window,
         )
 
-    if uplift_results is None:
-        st.error("Failed to train uplift model.")
+    if uplift_data.empty:
+        st.warning("Insufficient data for uplift modeling.")
         return
 
-    # Results
-    st.subheader("📈 Uplift Model Results")
+    # Readiness gate: treatment/control overlap
+    treatment_n = uplift_data["treatment"].sum()
+    control_n = (~uplift_data["treatment"]).sum()
+    overlap_pct = min(treatment_n, control_n) / max(treatment_n, control_n) * 100 if max(treatment_n, control_n) > 0 else 0
 
+    st.subheader("Treatment/Control Balance")
     col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Qini Coefficient", f"{uplift_results.get('qini', 0):.4f}")
-    with col2:
-        st.metric("AUUC", f"{uplift_results.get('auuc', 0):.4f}")
-    with col3:
-        st.metric("Uplift @ Top 10%", f"{uplift_results.get('uplift_at_10', 0):.4f}")
+    col1.metric("Treatment (Promo)", f"{int(treatment_n):,}")
+    col2.metric("Control (Non-Promo)", f"{int(control_n):,}")
+    col3.metric("Overlap", f"{overlap_pct:.1f}%")
 
-    st.caption(
-        "ℹ️ Qini and AUUC are not normalized — compare relative model performance on THIS dataset, not absolute values across different datasets or reports."
+    if overlap_pct < 60:
+        st.error(f"🚫 **Blocked**: Treatment/control overlap ({overlap_pct:.1f}%) < 60%. "
+                 "Insufficient common support for causal estimation.")
+        st.info("Try: lower promo drop threshold, longer baseline window, or different products.")
+        return
+
+    # Step 3: Train uplift model
+    with st.spinner(f"Training {method} uplift model..."):
+        if method == "t_learner":
+            model, metrics = train_t_learner_uplift(
+                uplift_data,
+                n_estimators=n_estimators,
+                max_depth=max_depth,
+                propensity_stratification=propensity_strat,
+            )
+        else:
+            model, metrics = train_s_learner_uplift(
+                uplift_data,
+                n_estimators=n_estimators,
+                max_depth=max_depth,
+                propensity_stratification=propensity_strat,
+            )
+
+    if model is None:
+        st.error(f"Model training failed: {metrics.get('error', 'Unknown error')}")
+        return
+
+    validation_score = metrics.get("validation_score", 0)
+    ate = metrics.get("ate", None)
+
+    # Readiness gate: validation score
+    if validation_score < 0.7:
+        st.error(f"🚫 **Blocked**: Validation score ({validation_score:.3f}) < 0.7. "
+                 "Model lacks predictive power for reliable uplift estimation.")
+        return
+
+    # Render uplift context with all diagnostics
+    render_uplift_context(
+        treatment_n=int(treatment_n),
+        control_n=int(control_n),
+        overlap_pct=overlap_pct,
+        validation_score=validation_score,
+        method=method,
+        ate=ate,
     )
 
+    # Uplift distribution
+    st.subheader("Uplift Distribution")
+    predictions = metrics.get("predictions")
+    if predictions is not None:
+        fig = px.histogram(
+            predictions,
+            nbins=50,
+            title="Predicted Uplift Distribution",
+            labels={"value": "Uplift"},
+        )
+        fig.add_vline(x=0, line_dash="dash", line_color="red", annotation_text="Zero Uplift")
+        st.plotly_chart(fig, use_container_width=True)
+
     # Qini curve
-    if "qini_curve" in uplift_results:
-        _render_qini_curve(uplift_results["qini_curve"])
+    if "qini_curve" in metrics:
+        st.subheader("Qini Curve")
+        qini = metrics["qini_curve"]
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=qini["population_pct"],
+            y=qini["qini"],
+            mode="lines",
+            name="Model",
+            line=dict(color="#2E7D32"),
+        ))
+        fig.add_trace(go.Scatter(
+            x=qini["population_pct"],
+            y=qini["random"],
+            mode="lines",
+            name="Random",
+            line=dict(color="gray", dash="dash"),
+        ))
+        fig.update_layout(
+            xaxis_title="Population %",
+            yaxis_title="Qini Coefficient",
+            height=400,
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
-    # Uplift by segment
-    if "segment_uplift" in uplift_results:
-        _render_uplift_by_segment(uplift_results["segment_uplift"])
+    # SHAP diagnostics in expert expander
+    with st.expander("🔬 Expert Diagnostics (SHAP, Feature Importance)", expanded=False):
+        _render_uplift_expert_diagnostics(metrics, uplift_data)
 
-
-def _derive_promo_flag(
-    transactions_df: pd.DataFrame,
-    window_days: int = 28,
-    drop_threshold: float = 0.15,
-    baseline_quantile: float = 0.9,
-) -> pd.DataFrame:
-    """Detect promotions from price drops vs rolling baseline."""
-
-    df = transactions_df.copy()
-    df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values(["stockcode", "date"])
-
-    promos = []
-
-    for sku, grp in df.groupby("stockcode"):
-        prices = grp["price"].values
-        dates = grp["date"].values
-
-        if len(prices) < window_days:
-            continue
-
-        # Rolling baseline (quantile over window)
-        baseline = pd.Series(prices).rolling(window_days, min_periods=1).quantile(baseline_quantile)
+    # Step 1: Derive promo flags
+    with st.spinner("Detecting promotional periods..."):
+        promo_df = _derive_promo_flag(
+            transactions_df,
+            window_days=baseline_window,
+            drop_threshold=drop_threshold,
+        )
 
         for i, (price, date) in enumerate(zip(prices, dates)):
             base = baseline.iloc[i]

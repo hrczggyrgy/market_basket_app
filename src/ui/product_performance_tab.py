@@ -22,6 +22,8 @@ from src.analytics.product_performance import (
 from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
+from src.ui.insight_header import render_result_context
+from src.ui.data_quality import render_data_quality_expander
 
 
 def render_product_performance_tab(
@@ -57,6 +59,7 @@ def render_product_performance_tab(
         " SKU Rationalization",
         " Pareto Waterfall",
         " BCG Portfolio Matrix",
+        " Assortment Review",
     ]
     selected = persistent_tabs(tab_labels, "product_perf_main_tabs", default_tab=0)
 
@@ -84,6 +87,8 @@ def render_product_performance_tab(
         render_pareto_waterfall(transactions_df, product_lookup)
     elif selected == 11:
         render_bcg_portfolio_matrix(transactions_df, product_lookup)
+    elif selected == 12:
+        render_assortment_review(transactions_df, product_lookup, params)
 
 
 def render_product_dashboard(transactions_df: pd.DataFrame, product_lookup: dict):
@@ -1493,3 +1498,267 @@ def render_bcg_portfolio_matrix(transactions_df: pd.DataFrame, product_lookup: d
         }).background_gradient(cmap="RdYlGn", subset=["Total_Revenue"]),
         use_container_width=True,
     )
+
+
+def render_assortment_review(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
+    """Render Assortment Review — primary SKU scorecard for assortment decisions."""
+    st.header(" Assortment Review")
+    st.caption(
+        "Primary SKU scorecard for assortment review. Combines ABC/XYZ, penetration, loyalty, "
+        "switching, trend, and data sufficiency into one actionable table. "
+        "Conservative action labels: Protect / Review low contribution / Review volatility / Watch declining trend / Monitor."
+    )
+
+    # Data quality & readiness at top
+    render_data_quality_expander(transactions_df, "assortment_review", params, expanded=False)
+
+    with st.spinner("Computing SKU rationalization scorecard..."):
+        sku_df = compute_sku_rationalization_df(transactions_df, product_lookup)
+
+    if sku_df.empty:
+        st.warning("No SKU data available")
+        return
+
+    st.success(f"Analyzed {len(sku_df)} SKUs")
+
+    # --- Insight header for top action ---
+    if not sku_df.empty:
+        protect = sku_df[sku_df["recommended_action"] == "🟢 Core — Protect"]
+        review_low = sku_df[sku_df["recommended_action"] == "🟠 Review — Volatile/Low"]
+        watch = sku_df[sku_df["recommended_action"] == "🟡 Watch — Declining"]
+        delist = sku_df[sku_df["recommended_action"] == "🔴 Delist Candidate"]
+
+        render_result_context(
+            title="Assortment Action Summary",
+            finding=(
+                f"{len(protect)} SKUs to **Protect** (core revenue, high uplift) | "
+                f"{len(watch)} to **Watch** (declining trend) | "
+                f"{len(review_low)} to **Review** (volatile/low contribution) | "
+                f"{len(delist)} flagged **Review low contribution** (low revenue, high substitutability)"
+            ),
+            evidence=f"Total SKUs: {len(sku_df):,} | Total Revenue: ${sku_df['total_revenue'].sum():,.0f}",
+            confidence="Directional",
+            limitation="Action rules are heuristic based on transaction data only. No cost/margin, no competitive data, no causal substitution evidence.",
+        )
+
+    # --- Primary SKU Scorecard Table ---
+    st.subheader("SKU Scorecard")
+
+    # Filters
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        abc_filter = st.multiselect(
+            "ABC Class", ["A", "B", "C", "D"],
+            default=["A", "B", "C", "D"], key="assort_abc"
+        )
+    with col2:
+        xyz_filter = st.multiselect(
+            "XYZ Class", ["X", "Y", "Z", "I"],
+            default=["X", "Y", "Z", "I"], key="assort_xyz"
+        )
+    with col3:
+        action_filter = st.multiselect(
+            "Action", sku_df["recommended_action"].unique().tolist(),
+            default=sku_df["recommended_action"].unique().tolist(), key="assort_action"
+        )
+    with col4:
+        min_rev = st.number_input("Min Revenue", 0, int(sku_df["total_revenue"].max()), 0, key="assort_min_rev")
+
+    filtered = sku_df[
+        sku_df["abc_class"].isin(abc_filter) &
+        sku_df["xyz_class"].isin(xyz_filter) &
+        sku_df["recommended_action"].isin(action_filter) &
+        (sku_df["total_revenue"] >= min_rev)
+    ]
+
+    # Display columns with all required metrics
+    display_cols = [
+        "stockcode",
+        "product_name",
+        "category",
+        "total_revenue",
+        "total_quantity",
+        "revenue_share_pct",
+        "cumulative_revenue_share_pct",
+        "abc_class",
+        "xyz_class",
+        "basket_penetration",
+        "unique_shopper_penetration",
+        "repeat_rate",
+        "avg_price",
+        "price_cv",
+        "trend_index",
+        "substitutability_score",
+        "basket_value_uplift_pct",
+        "data_sufficiency_status",
+        "recommended_action",
+        "evidence_text",
+    ]
+    display_cols = [c for c in display_cols if c in filtered.columns]
+
+    # Add computed columns if missing
+    if "revenue_share_pct" not in filtered.columns:
+        filtered["revenue_share_pct"] = filtered["total_revenue"] / filtered["total_revenue"].sum() * 100
+    if "cumulative_revenue_share_pct" not in filtered.columns:
+        filtered = filtered.sort_values("total_revenue", ascending=False).reset_index(drop=True)
+        filtered["cumulative_revenue_share_pct"] = filtered["total_revenue"].cumsum() / filtered["total_revenue"].sum() * 100
+    if "data_sufficiency_status" not in filtered.columns:
+        filtered["data_sufficiency_status"] = filtered.apply(_compute_sku_sufficiency, axis=1)
+    if "evidence_text" not in filtered.columns:
+        filtered["evidence_text"] = filtered.apply(_build_evidence_text, axis=1)
+
+    # Format for display
+    format_dict = {
+        "total_revenue": "${:,.0f}",
+        "total_quantity": "{:,.0f}",
+        "revenue_share_pct": "{:.1f}%",
+        "cumulative_revenue_share_pct": "{:.1f}%",
+        "basket_penetration": "{:.1%}",
+        "unique_shopper_penetration": "{:.1%}",
+        "repeat_rate": "{:.1%}",
+        "avg_price": "${:.2f}",
+        "price_cv": "{:.3f}",
+        "trend_index": "{:.2f}",
+        "substitutability_score": "{:.3f}",
+        "basket_value_uplift_pct": "{:.1f}%",
+    }
+    format_dict = {k: v for k, v in format_dict.items() if k in filtered.columns}
+
+    st.dataframe(
+        filtered[display_cols].style.format(format_dict).background_gradient(
+            cmap="RdYlGn", subset=[c for c in ["total_revenue", "basket_penetration", "repeat_rate", "trend_index"] if c in filtered.columns]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    render_analytics_export(filtered[display_cols], "Assortment_Review_Scorecard")
+
+    # --- Primary Visual 1: Pareto Contribution Chart ---
+    st.subheader("Pareto Contribution (80% Revenue Boundary)")
+    _render_pareto_chart(filtered)
+
+    # --- Primary Visual 2: SKU Portfolio Scatter ---
+    st.subheader("SKU Portfolio: Penetration vs Trend")
+    _render_portfolio_scatter(filtered)
+
+
+def _compute_sku_sufficiency(row) -> str:
+    """Compute per-SKU data sufficiency status."""
+    issues = []
+    if row.get("repeat_rate", 0) == 0 or pd.isna(row.get("repeat_rate")):
+        issues.append("no_repeat")
+    if row.get("trend_index", 1.0) == 1.0 or pd.isna(row.get("trend_index")):
+        issues.append("no_trend")
+    if row.get("price_cv", 0) < 0.03:
+        issues.append("low_price_var")
+    if row.get("basket_penetration", 0) < 0.001:
+        issues.append("low_penetration")
+
+    if not issues:
+        return "Sufficient"
+    elif len(issues) == 1:
+        return f"Limited ({issues[0]})"
+    else:
+        return f"Limited ({len(issues)} issues)"
+
+
+def _build_evidence_text(row) -> str:
+    """Build evidence text for the SKU."""
+    parts = []
+    parts.append(f"Rev: ${row.get('total_revenue', 0):,.0f}")
+    parts.append(f"Pen: {row.get('basket_penetration', 0):.1%}")
+    parts.append(f"Rep: {row.get('repeat_rate', 0):.1%}")
+    parts.append(f"Trend: {row.get('trend_index', 1.0):.2f}")
+    parts.append(f"Sub: {row.get('substitutability_score', 0):.2f}")
+    return " | ".join(parts)
+
+
+def _render_pareto_chart(sku_df: pd.DataFrame):
+    """Pareto chart with 80% cumulative revenue reference line."""
+    plot_df = sku_df.sort_values("total_revenue", ascending=False).reset_index(drop=True)
+    plot_df["cum_rev_pct"] = plot_df["total_revenue"].cumsum() / plot_df["total_revenue"].sum() * 100
+    plot_df["rank"] = range(1, len(plot_df) + 1)
+
+    pareto_80_idx = plot_df["cum_rev_pct"].searchsorted(80) + 1
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=plot_df["rank"],
+        y=plot_df["total_revenue"],
+        name="Revenue",
+        marker_color="steelblue",
+        hovertemplate="Rank: %{x}<br>Revenue: $%{y:,.0f}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=plot_df["rank"],
+        y=plot_df["cum_rev_pct"],
+        name="Cumulative %",
+        yaxis="y2",
+        line=dict(color="red", width=2),
+        hovertemplate="Rank: %{x}<br>Cum %: %{y:.1f}%<extra></extra>",
+    ))
+    fig.add_vline(
+        x=pareto_80_idx,
+        line_color="red",
+        line_width=2,
+        line_dash="dash",
+        annotation_text=f"80% Boundary (Rank {pareto_80_idx})",
+        annotation_position="top",
+    )
+    fig.update_layout(
+        title=f"SKU Revenue Pareto — 80% at Rank {pareto_80_idx}",
+        xaxis_title="SKU Rank (by Revenue)",
+        yaxis_title="Revenue ($)",
+        yaxis2=dict(title="Cumulative %", overlaying="y", side="right", range=[0, 105]),
+        height=400,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_portfolio_scatter(sku_df: pd.DataFrame):
+    """SKU portfolio scatter: Penetration vs Trend, sized by Revenue, colored by ABC."""
+    plot_df = sku_df.dropna(subset=["basket_penetration", "trend_index", "total_revenue"]).copy()
+    if plot_df.empty:
+        st.info("Insufficient data for portfolio scatter")
+        return
+
+    abc_colors = {"A": "#2E7D32", "B": "#1565C0", "C": "#FF8F00", "D": "#C62828"}
+
+    fig = px.scatter(
+        plot_df,
+        x="basket_penetration",
+        y="trend_index",
+        size="total_revenue",
+        color="abc_class",
+        color_discrete_map=abc_colors,
+        hover_data=["product_name", "revenue_share_pct", "repeat_rate", "xyz_class", "recommended_action"],
+        title="SKU Portfolio: Basket Penetration vs Trend Index",
+        labels={
+            "basket_penetration": "Basket Penetration % (Reach)",
+            "trend_index": "Trend Index (Recent 4w / Prior 4w, 1.0 = Flat)",
+            "abc_class": "ABC Class",
+            "total_revenue": "Revenue",
+        },
+        size_max=50,
+    )
+
+    # Quadrant lines
+    x_med = plot_df["basket_penetration"].median()
+    y_med = 1.0
+    fig.add_vline(x=x_med, line_dash="dash", line_color="gray", line_width=1)
+    fig.add_hline(y=y_med, line_dash="dash", line_color="gray", line_width=1)
+
+    # Quadrant labels
+    x_max = plot_df["basket_penetration"].max() * 1.1
+    y_max = plot_df["trend_index"].max() * 1.1
+    x_min = plot_df["basket_penetration"].min() * 0.9
+    y_min = plot_df["trend_index"].min() * 0.9
+
+    fig.add_annotation(x=x_max*0.7, y=y_max*0.95, text="<b>Stars</b><br>High Pen, Growing", showarrow=False, font=dict(size=11, color="#2E7D32"))
+    fig.add_annotation(x=x_max*0.7, y=y_min*1.05, text="<b>Cash Cows</b><br>High Pen, Declining", showarrow=False, font=dict(size=11, color="#1565C0"))
+    fig.add_annotation(x=x_min*1.3, y=y_max*0.95, text="<b>Question Marks</b><br>Low Pen, Growing", showarrow=False, font=dict(size=11, color="#FF8F00"))
+    fig.add_annotation(x=x_min*1.3, y=y_min*1.05, text="<b>Dogs</b><br>Low Pen, Declining", showarrow=False, font=dict(size=11, color="#C62828"))
+
+    fig.update_layout(height=500)
+    st.plotly_chart(fig, use_container_width=True)

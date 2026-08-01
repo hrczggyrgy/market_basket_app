@@ -142,6 +142,9 @@ def run_analysis(config: Config):
     # Merge params
     all_params = {**fp_params, **params}
 
+    # Remove mode from params if present to avoid duplicate argument errors
+    mode_param = all_params.pop("mode", None)
+
     # Get data from pipeline
     pipeline = get_pipeline()
     transactions_df = pipeline.transactions_df

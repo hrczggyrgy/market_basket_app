@@ -11,6 +11,8 @@ from src.analytics.cohort import (
 )
 from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
 from src.ui.export import render_analytics_export
+from src.ui.insight_header import render_result_context
+from src.ui.data_quality import render_data_quality_expander
 
 
 @st.cache_data
@@ -41,21 +43,16 @@ def render_cohort_tab(
     st.caption(
         "Groups customers by their **first purchase month**. "
         "Each cell shows the % of that cohort still purchasing in that period. "
-        "Diagonal fade = natural churn; flat rows = high retention."
+        "Diagonal fade = natural churn; flat rows = high retention. "
+        "**Cohort base sizes shown — low-N cells masked.**"
     )
 
     if transactions_df.empty:
         st.warning("No transaction data available")
         return
 
-    # Data sufficiency gate
-    sufficiency = assess_data_sufficiency(transactions_df)
-    with st.expander("📋 Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
-        st.markdown(format_sufficiency_summary(sufficiency))
-        if sufficiency["overall"] == "insufficient":
-            st.warning("Dataset may be too small for reliable cohort analysis.")
-        elif sufficiency["overall"] == "directional":
-            st.info("Cohort results should be treated as directional.")
+    # Data quality & readiness at top
+    render_data_quality_expander(transactions_df, "cohort", params, expanded=False)
 
     # Parameters
     col1, col2, col3 = st.columns(3)
@@ -109,6 +106,16 @@ def render_cohort_tab(
     if len(period_cols) > max_periods:
         cohort_matrix = cohort_matrix[period_cols[:max_periods]]
 
+    # Get cohort base sizes (Period 0 = first period)
+    if "Period 0" in cohort_matrix.columns:
+        cohort_sizes = cohort_matrix["Period 0"]
+    elif len(cohort_matrix.columns) > 0:
+        # First period column as base size proxy
+        first_period = cohort_matrix.columns[0]
+        cohort_sizes = cohort_matrix[first_period]
+    else:
+        cohort_sizes = pd.Series(index=cohort_matrix.index, dtype=float)
+
     # Reset index to get Cohort as column
     cohort_data = cohort_matrix.reset_index()
     # Safety check for Cohort column name
@@ -116,6 +123,29 @@ def render_cohort_tab(
         cohort_data = cohort_data.rename(columns={cohort_data.columns[0]: "Cohort"})
     else:
         cohort_data = cohort_data.rename(columns={"index": "Cohort"})
+
+    # Add cohort base sizes
+    cohort_data["Base_Size"] = cohort_sizes.values
+
+    # --- Insight header ---
+    n_cohorts = len(cohort_matrix)
+    avg_ret_1 = summary.get('avg_retention_period_1', 0) if (summary := _cached_cohort_comparison_summary(transactions_df, cohort_period=period_code, max_periods=max_periods)) else 0
+
+    render_result_context(
+        title="Cohort Retention Overview",
+        finding=(
+            f"{n_cohorts} cohorts ({cohort_period.lower()}) | "
+            f"Avg Period-1 retention: {avg_ret_1:.1%} | "
+            f"Date range: {transactions_df['date'].min()} to {transactions_df['date'].max()} | "
+            f"Total customers: {transactions_df['customer_id'].nunique():,}"
+        ),
+        evidence=f"Metric: {metric} | Periods shown: {min(len(period_cols), max_periods)} | "
+                 f"Lowest cohort base: {cohort_sizes.min():.0f} | Highest: {cohort_sizes.max():.0f}",
+        confidence="Directional",
+        limitation="Retention = repeat purchase within period. No causal drivers identified. "
+                   "Seasonality, marketing changes, and competitive actions not controlled. "
+                   "Low-N cohorts (<30) masked in heatmap.",
+    )
 
     # Summary metrics
     st.subheader("Cohort Summary")
@@ -156,27 +186,40 @@ def render_cohort_tab(
     with col6:
         st.metric("Best Cohort Revenue", summary.get("best_cohort_revenue", "N/A"))
 
-    # Cohort heatmap
+    # Cohort heatmap with base sizes and low-N masking
     st.subheader(f"Cohort {metric} Heatmap")
 
     if not cohort_matrix.empty:
+        # Create display matrix with masking for low-N cohorts
+        display_matrix = cohort_matrix.copy()
+        # Mask cohorts with base size < 30
+        low_n_mask = cohort_sizes < 30
+        if low_n_mask.any():
+            display_matrix = display_matrix.copy()
+            display_matrix.loc[low_n_mask, :] = np.nan
+            st.warning(f"⚠️ {low_n_mask.sum()} cohort(s) with base size < 30 masked in heatmap (shown as gray)")
+
         fig = px.imshow(
-            cohort_matrix.values,
-            x=cohort_matrix.columns,
-            y=cohort_matrix.index,
+            display_matrix.values,
+            x=display_matrix.columns,
+            y=display_matrix.index,
             color_continuous_scale="RdYlGn",
             labels={"x": "Period", "y": "Cohort", "color": metric},
-            title=f"Cohort {metric.capitalize()} Heatmap",
+            title=f"Cohort {metric.capitalize()} Heatmap (Low-N masked)",
             aspect="auto",
         )
         st.plotly_chart(fig, width="stretch")
 
-        # Show raw data
-        with st.expander("View Raw Data"):
+        # Show raw data with base sizes
+        with st.expander("View Raw Data (with Base Sizes)"):
+            display_cols = ["Cohort", "Base_Size"] + period_cols[:max_periods]
+            fmt = "{:.2%}" if metric_internal == "retention" else "${:,.2f}"
+            fmt_cols = {col: fmt for col in display_cols if col not in ["Cohort", "Base_Size"]}
+            fmt_cols["Base_Size"] = "{:,.0f}"
             st.dataframe(
-                cohort_matrix.style.format(
-                    "{:.2%}" if metric_internal == "retention" else "${:,.2f}"
-                ).background_gradient(cmap="RdYlGn", axis=None),
+                cohort_data[display_cols]
+                .style.format(fmt_cols)
+                .background_gradient(cmap="RdYlGn", axis=None, subset=period_cols[:max_periods]),
                 width="stretch",
             )
 
@@ -203,14 +246,15 @@ def render_cohort_tab(
     # Cohort comparison table
     st.subheader("Cohort Comparison")
 
-    display_cols = ["Cohort"] + period_cols[:max_periods]
+    display_cols = ["Cohort", "Base_Size"] + period_cols[:max_periods]
 
     fmt = "{:.2%}" if metric_internal == "retention" else "${:,.2f}"
-    fmt_cols = {col: fmt for col in display_cols if col != "Cohort"}
+    fmt_cols = {col: fmt for col in display_cols if col not in ["Cohort", "Base_Size"]}
+    fmt_cols["Base_Size"] = "{:,.0f}"
     st.dataframe(
         cohort_data[display_cols]
         .style.format(fmt_cols)
-        .background_gradient(cmap="RdYlGn", axis=None),
+        .background_gradient(cmap="RdYlGn", axis=None, subset=period_cols[:max_periods]),
         width="stretch",
     )
 
@@ -237,6 +281,7 @@ def render_cohort_tab(
             comparison = pd.DataFrame(
                 {
                     "Cohort": cohort_data["Cohort"],
+                    "Base_Size": cohort_data["Base_Size"],
                     period_1: cohort_data[period_1],
                     period_2: cohort_data[period_2],
                     "Change": cohort_data[period_2] - cohort_data[period_1],
@@ -253,6 +298,7 @@ def render_cohort_tab(
                         period_2: ("{:.2%}" if metric_internal == "retention" else "${:,.2f}"),
                         "Change": ("{:.2%}" if metric_internal == "retention" else "${:,.2f}"),
                         "Pct Change": "{:.1f}%",
+                        "Base_Size": "{:,.0f}",
                     }
                 ).background_gradient(cmap="RdYlGn", subset=["Change", "Pct Change"]),
                 width="stretch",

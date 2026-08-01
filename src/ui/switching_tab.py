@@ -22,6 +22,8 @@ from src.analytics.switching import (
 )
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
+from src.ui.insight_header import render_result_context
+from src.ui.data_quality import render_data_quality_expander
 
 
 def render_switching_tab(
@@ -31,26 +33,17 @@ def render_switching_tab(
     st.header("🔀 Product Switching Analysis")
     st.caption(
         "Tracks when a customer buys product A on one visit, then product B on the next. "
-        "High **switch rate** from A \u2192 B suggests substitutability or a sequential need. "
-        "A new Markov view summarizes transition probabilities among the most important products."
+        "High **switch rate** from A \u2192 B suggests observed transition or sequential need. "
+        "**Observed customer transitions — not causal substitution.** "
+        "A Markov view summarizes transition probabilities among the most important products."
     )
 
     if transactions_df.empty:
         st.warning("No transaction data available")
         return
 
-    # Data sufficiency gate
-    sufficiency = assess_data_sufficiency(
-        transactions_df,
-        min_transactions=params.get("min_transactions", 200),
-        min_customers=params.get("min_customers", 20),
-        min_products=params.get("min_products", 5),
-        min_time_span_days=params.get("min_time_span_days", 30),
-    )
-    with st.expander("📋 Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
-        st.markdown(format_sufficiency_summary(sufficiency))
-        if sufficiency["overall"] == "insufficient":
-            st.warning("Dataset may be too small for reliable switching estimates.")
+    # Data quality & readiness at top
+    render_data_quality_expander(transactions_df, "switching", params, expanded=False)
 
     with st.expander(" Switching Parameters", expanded=False):
         col1, col2 = st.columns(2)
@@ -111,25 +104,63 @@ def render_switching_tab(
     st.subheader("Switching Overview")
 
     total_events = len(switch_matrix) if not switch_matrix.empty else 0
+    total_customers = len(loyalty)
+    unique_customers_switching = (
+        switch_matrix["from_product"].nunique() if not switch_matrix.empty else 0
+    )
     avg_switch = switch_matrix["switch_rate"].mean() if not switch_matrix.empty else 0
     mean_asym = switch_matrix["asymmetry_ratio"].abs().mean() if not switch_matrix.empty else 0
-    total_customers = len(loyalty)
     loyal_n = (
         int(loyalty["loyalty_segment"].eq("Loyal").sum())
         if "loyalty_segment" in loyalty.columns
         else 0
     )
 
+    # Insight header
+    render_result_context(
+        title="Observed Customer Transitions",
+        finding=(
+            f"Window: {window_days} days | "
+            f"{total_events:,} transition events across {unique_customers_switching} products | "
+            f"{total_customers:,} customers in base | "
+            f"Avg switch rate: {avg_switch:.1%}"
+        ),
+        evidence=f"Min transactions/customer: {min_transactions} | Asymmetry: {mean_asym:.2f}",
+        confidence="Directional",
+        limitation="Observed transitions only — not causal substitution. No control for availability, marketing, or stockouts. 'Likely substitute' requires repeated evidence + attribute similarity.",
+    )
+
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Switching Events", total_events)
-    col2.metric("Avg Switch Rate", f"{avg_switch:.1%}")
-    col3.metric("Avg Flow Asymmetry", f"{mean_asym:.2f}")
+    col1.metric("Total Transition Events", f"{total_events:,}")
+    col2.metric("Products in Transitions", f"{unique_customers_switching:,}")
+    col3.metric("Avg Switch Rate", f"{avg_switch:.1%}")
     col4.metric(
         "Loyal Customers",
         loyal_n,
         delta=f"{loyal_n / total_customers:.0%} of base" if total_customers else None,
         delta_color="normal",
     )
+
+    # Within-category filter if category exists
+    if "category" in transactions_df.columns and not switch_matrix.empty:
+        categories = ["All"] + sorted(transactions_df["category"].unique().tolist())
+        selected_cat = st.selectbox("Filter by Category", categories, key="switch_cat_filter")
+        if selected_cat != "All":
+            cat_products = transactions_df[transactions_df["category"] == selected_cat]["stockcode"].unique()
+            switch_matrix = switch_matrix[
+                switch_matrix["from_product"].isin(cat_products) &
+                switch_matrix["to_product"].isin(cat_products)
+            ]
+            st.info(f"Filtered to category: {selected_cat} ({len(switch_matrix)} transitions)")
+
+    # Return-to-original rate
+    if not switch_matrix.empty:
+        return_to_original = switch_matrix[
+            switch_matrix["from_product"] == switch_matrix["to_product"]
+        ]
+        if not return_to_original.empty:
+            return_rate = return_to_original["switch_count"].sum() / switch_matrix["switch_count"].sum()
+            st.metric("Return-to-Original Rate", f"{return_rate:.1%}")
 
     # Bootstrap CI for average switch rate
     if not switch_matrix.empty and len(switch_matrix) >= 5:
@@ -150,6 +181,7 @@ def render_switching_tab(
             )
 
     tab_labels = [
+        " Transition Table",
         " Switching Heatmap",
         " Top Switch Paths",
         " Asymmetry View",
@@ -161,19 +193,55 @@ def render_switching_tab(
     selected = persistent_tabs(tab_labels, "switching_view_tabs", default_tab=0)
 
     if selected == 0:
-        _render_heatmap_tab(switch_matrix, transactions_df, product_lookup, top_n_products)
+        _render_transition_table_tab(switch_matrix, product_lookup)
     elif selected == 1:
-        _render_top_paths_tab(top_paths, product_lookup)
+        _render_heatmap_tab(switch_matrix, transactions_df, product_lookup, top_n_products)
     elif selected == 2:
-        _render_asymmetry_tab(top_paths, product_lookup)
+        _render_top_paths_tab(top_paths, product_lookup)
     elif selected == 3:
-        _render_markov_tab(transition_matrix, product_lookup)
+        _render_asymmetry_tab(top_paths, product_lookup)
     elif selected == 4:
-        _render_sankey_tab(switch_matrix, product_lookup)
+        _render_markov_tab(transition_matrix, product_lookup)
     elif selected == 5:
-        _render_demand_transfer_sankey_tab(transactions_df, product_lookup, params)
+        _render_sankey_tab(switch_matrix, product_lookup)
     elif selected == 6:
+        _render_demand_transfer_sankey_tab(transactions_df, product_lookup, params)
+    elif selected == 7:
         _render_loyalty_tab(loyalty)
+
+
+def _render_transition_table_tab(switch_matrix: pd.DataFrame, product_lookup: dict):
+    """Render the transition table as primary output before visualizations."""
+    st.subheader("Observed Customer Transitions — Ranked Table")
+    st.caption("Each row = observed transition from Product A to Product B. Not causal substitution.")
+
+    if switch_matrix.empty:
+        st.info("No switching data available")
+        return
+
+    display_df = switch_matrix.copy()
+    display_df["From Product"] = display_df["from_product"].map(product_lookup)
+    display_df["To Product"] = display_df["to_product"].map(product_lookup)
+
+    display_cols = [
+        "From Product",
+        "To Product",
+        "switch_count",
+        "switch_rate",
+        "unique_customers",
+        "avg_days_between",
+        "asymmetry_ratio",
+        "switches_per_customer",
+    ]
+    available = [c for c in display_cols if c in display_df.columns]
+
+    st.dataframe(
+        display_df[available].sort_values("switch_count", ascending=False).round(4),
+        width="stretch",
+        hide_index=True,
+    )
+
+    render_analytics_export(display_df, "Observed_Transitions")
 
 
 def _render_heatmap_tab(
@@ -184,6 +252,7 @@ def _render_heatmap_tab(
 ):
     """Render the switching heatmap tab."""
     st.subheader("Product Switching Heatmap")
+    st.caption("Observed transition counts. **Associative only — not causal substitution.**")
 
     @st.cache_data
     def get_heatmap_data_cached(df, top_n):
@@ -225,7 +294,7 @@ def _render_heatmap_tab(
             exit_str = " \u00b7 ".join(
                 f"**{row['name']}** ({int(row['switch_count'])})" for _, row in top_exits.iterrows()
             )
-            st.info(f"\ud83d\udce4 **Top switch-away products:** {exit_str}")
+            st.info(f"📤 **Top switch-away products:** {exit_str}")
 
         with st.expander("View Raw Matrix"):
             st.dataframe(heatmap_data.round(2), width="stretch")
@@ -236,6 +305,7 @@ def _render_heatmap_tab(
 def _render_top_paths_tab(top_paths: pd.DataFrame, product_lookup: dict):
     """Render the top switching paths tab."""
     st.subheader("Top Switching Paths")
+    st.caption("Observed transitions ranked by count. **Not causal substitution.**")
 
     if not top_paths.empty:
         top_paths = top_paths.copy()

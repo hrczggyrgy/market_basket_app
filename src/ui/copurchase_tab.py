@@ -1,5 +1,6 @@
 """Co-purchase / Affinity analysis tab."""
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -11,8 +12,11 @@ from src.analytics.copurchase import (
     get_top_affinity_pairs,
 )
 from src.analytics.sufficiency import assess_data_sufficiency, format_sufficiency_summary
+from src.analytics.basket_metrics import compute_basket_penetration
 from src.ui.export import render_analytics_export
 from src.ui.tabs import persistent_tabs
+from src.ui.insight_header import render_result_context
+from src.ui.data_quality import render_data_quality_expander
 
 
 @st.cache_data
@@ -51,21 +55,21 @@ def render_copurchase_tab(
     st.caption(
         "Measures how often products are bought **in the same basket**. "
         "Lift > 1 = complementary pair. Jaccard and Kulczynski add more robust, "
-        "symmetric evidence for scientifically stronger pair ranking."
+        "symmetric evidence for scientifically stronger pair ranking. "
+        "**Associative only — not causal incrementality.**"
     )
 
     if transactions_df.empty:
         st.warning("No transaction data available")
         return
 
-    # Data sufficiency gate
-    sufficiency = assess_data_sufficiency(transactions_df)
-    with st.expander("📋 Data Sufficiency", expanded=sufficiency["overall"] != "robust"):
-        st.markdown(format_sufficiency_summary(sufficiency))
-        if sufficiency["overall"] == "insufficient":
-            st.warning("Dataset may be too small for reliable co-purchase analysis.")
-        elif sufficiency["overall"] == "directional":
-            st.info("Co-purchase results should be treated as directional.")
+    # Data quality & readiness at top
+    render_data_quality_expander(transactions_df, "copurchase", params, expanded=False)
+
+    # Compute basket penetration for enrichment
+    basket_pen = None
+    with st.spinner("Computing basket penetration..."):
+        basket_pen = compute_basket_penetration(transactions_df)
 
     with st.expander("Affinity Parameters", expanded=False):
         col1, col2, col3 = st.columns(3)
@@ -90,11 +94,22 @@ def render_copurchase_tab(
         st.warning("No significant co-purchase pairs found. Try lowering min_lift or min_support.")
         return
 
+    # Unstable result warning
+    min_supp_in_filtered = top_pairs["support"].min()
+    if min_supp_in_filtered < 0.001:
+        st.warning(
+            f"⚠️ **Unstable results**: Minimum support in top pairs is {min_supp_in_filtered:.5f}. "
+            "Pairs with very low support (<0.1%) are statistically unreliable."
+        )
+
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Pairs Found", len(top_pairs))
     col2.metric("Max Lift", f"{top_pairs['lift'].max():.2f}")
     col3.metric("Avg Jaccard", f"{top_pairs['jaccard'].mean():.3f}")
     col4.metric("Avg Kulczynski", f"{top_pairs['kulczynski'].mean():.3f}")
+
+    # Enrich with basket penetration
+    top_pairs = _enrich_pairs_with_penetration(top_pairs, basket_pen, product_lookup)
 
     top_pairs["Product A Name"] = top_pairs["product_a"].map(product_lookup)
     top_pairs["Product B Name"] = top_pairs["product_b"].map(product_lookup)
@@ -119,7 +134,32 @@ def render_copurchase_tab(
 
 def _render_top_pairs_tab(top_pairs: pd.DataFrame):
     """Render top co-purchase pairs table and classical scatter."""
-    st.subheader("Top Co-purchase Pairs")
+    st.subheader("Top Co-purchase Pairs — Ranked Evidence")
+
+    # Insight header for top pair
+    if not top_pairs.empty:
+        best = top_pairs.nlargest(1, "lift").iloc[0]
+        name_a = best.get("Product A Name", best["product_a"])
+        name_b = best.get("Product B Name", best["product_b"])
+
+        evidence_parts = [
+            f"Lift: {best['lift']:.2f}",
+            f"Jaccard: {best['jaccard']:.3f}",
+            f"Kulczynski: {best['kulczynski']:.3f}",
+            f"Support: {best['support']:.4f}",
+        ]
+        if "basket_penetration_a" in best:
+            evidence_parts.append(f"Basket Pen A: {best['basket_penetration_a']:.2%}")
+        if "basket_penetration_b" in best:
+            evidence_parts.append(f"Basket Pen B: {best['basket_penetration_b']:.2%}")
+
+        render_result_context(
+            title="Top Co-purchase Pair",
+            finding=f"`{name_a}` + `{name_b}` co-occur {best['lift']:.1f}x more than expected — strong bundle candidate",
+            evidence=" | ".join(evidence_parts),
+            confidence="Directional",
+            limitation="Associative only — co-occurrence does not imply causation or incrementality. No control for trip type, seasonality, or promotions.",
+        )
 
     display_cols = [
         "Product A Name",
@@ -134,18 +174,20 @@ def _render_top_pairs_tab(top_pairs: pd.DataFrame):
         "phi_coefficient",
         "leverage",
     ]
+    # Add penetration columns if available
+    pen_cols = [c for c in top_pairs.columns if "basket_penetration" in c or "shopper_penetration" in c]
+    display_cols.extend(pen_cols)
     available = [c for c in display_cols if c in top_pairs.columns]
+
     st.dataframe(top_pairs[available].round(4), width="stretch", hide_index=True)
 
-    if not top_pairs.empty:
-        best = top_pairs.nlargest(1, "lift").iloc[0]
-        name_a = best.get("Product A Name", best["product_a"])
-        name_b = best.get("Product B Name", best["product_b"])
-        st.success(
-            f"🏆 **Best bundle candidate:** `{name_a}` + `{name_b}`  \n"
-            f"Lift **{best['lift']:.2f}** · Jaccard **{best['jaccard']:.3f}** · "
-            f"Kulczynski **{best['kulczynski']:.3f}**"
-        )
+    # Disclaimer
+    st.caption(
+        "⚠️ **Interpretation**: Lift > 1 indicates co-occurrence above chance. "
+        "Jaccard/Kulczynski are symmetric affinity measures. "
+        "These are **associative** metrics from observational basket data. "
+        "They do not prove causation, incrementality, or that bundling will increase sales."
+    )
 
     render_analytics_export(top_pairs, "CoPurchase_Pairs")
 
@@ -184,6 +226,28 @@ def _render_top_pairs_tab(top_pairs: pd.DataFrame):
         annotation_position="bottom right",
     )
     st.plotly_chart(fig, use_container_width=True)
+
+
+def _enrich_pairs_with_penetration(top_pairs: pd.DataFrame, basket_pen: pd.DataFrame, product_lookup: dict) -> pd.DataFrame:
+    """Add basket penetration metrics to pairs display."""
+    if basket_pen is None or basket_pen.empty:
+        return top_pairs
+
+    pen_lookup = basket_pen.set_index("stockcode")
+
+    def get_pen(stockcode, col):
+        try:
+            return pen_lookup.loc[stockcode, col]
+        except (KeyError, IndexError):
+            return np.nan
+
+    top_pairs = top_pairs.copy()
+    for side in ["a", "b"]:
+        col_name = f"product_{side}"
+        top_pairs[f"basket_penetration_{side}"] = top_pairs[col_name].apply(lambda x: get_pen(x, "basket_penetration"))
+        top_pairs[f"unique_shopper_penetration_{side}"] = top_pairs[col_name].apply(lambda x: get_pen(x, "unique_shopper_penetration"))
+
+    return top_pairs
 
 
 def _render_quadrant_tab(top_pairs: pd.DataFrame):
@@ -233,6 +297,7 @@ def _render_quadrant_tab(top_pairs: pd.DataFrame):
 def _render_heatmap_tab(affinity_matrix: pd.DataFrame, product_lookup: dict, top_n_products: int):
     """Render lift heatmap."""
     st.subheader("Affinity Matrix Heatmap")
+    st.caption("Symmetric lift matrix. **Associative only — not causal.** Red/Green = above/below independence.")
 
     if affinity_matrix.empty:
         st.info("No affinity matrix available")

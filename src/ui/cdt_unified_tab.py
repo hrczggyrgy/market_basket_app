@@ -37,6 +37,7 @@ def render_cdt_tab(
     transactions_df: pd.DataFrame,
     product_lookup: dict,
     params: dict,
+    pipeline: dict = None,
     mode: str = "cdt",
 ):
     """Main entry point for unified CDT tab with sub-modes."""
