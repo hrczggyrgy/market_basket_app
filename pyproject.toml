@@ -34,6 +34,7 @@ dependencies = [
     "scikit-learn>=1.3.0",
     "scipy>=1.11.0",
     "openpyxl>=3.0.0",
+    "pydantic-settings>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -47,7 +48,6 @@ dev = [
 full = [
     "xgboost>=2.0.0",
     "lightgbm>=4.0.0",
-    "shap>=0.42.0",
     "lifelines>=0.28.0",
 ]
 science = [
