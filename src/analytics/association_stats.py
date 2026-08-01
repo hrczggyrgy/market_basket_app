@@ -289,6 +289,7 @@ def bootstrap_lift_ci(
     confidence_level: float = 0.95,
     product_col: str = "stockcode",
     customer_col: str = "customer_id",
+    random_state: int | None = None,
 ) -> pd.DataFrame:
     """Compute bootstrap confidence intervals for association rule lift.
 
@@ -304,6 +305,7 @@ def bootstrap_lift_ci(
         confidence_level: Confidence level for CI (default 0.95)
         product_col: Product identifier column
         customer_col: Customer identifier column
+        random_state: Seed for reproducibility (default None = truly random)
 
     Returns:
         DataFrame with original rules + lift_ci_lower, lift_ci_upper, lift_mean_boot
@@ -318,7 +320,6 @@ def bootstrap_lift_ci(
     rules = rules_df[["product_a", "product_b"]].drop_duplicates()
 
     # Pre-compute customer-level baskets for fast resampling
-    # basket is already customer x product binary matrix
     customer_ids = basket.index.tolist()
 
     alpha = (1 - confidence_level) / 2
@@ -327,19 +328,21 @@ def bootstrap_lift_ci(
 
     lift_samples = {idx: [] for idx in rules.index}
 
+    rng = np.random.default_rng(random_state)
+
     for i in range(n_bootstrap):
-        # Resample customers with replacement
         sample_ids = resample(
-            customer_ids, replace=True, n_samples=n_customers, random_state=42 + i
+            customer_ids,
+            replace=True,
+            n_samples=n_customers,
+            random_state=int(rng.integers(0, 2**31)),
         )
         basket_sample = basket.loc[sample_ids]
 
         # Compute probabilities on resampled data
         p_a = basket_sample.mean()
-        p_ab = (basket_sample > 0).all(axis=1).mean()  # This is wrong - need pairwise
 
-        # Better: compute co-occurrence matrix for this sample
-        # Use matrix multiplication for speed
+        # Compute co-occurrence matrix for this sample via matrix multiplication
         coocc = (basket_sample.T @ basket_sample) / n_customers
         np.fill_diagonal(coocc.values, p_a.values)
 
@@ -386,6 +389,7 @@ def bootstrap_lift_ci_fast(
     basket_matrix: pd.DataFrame,
     n_bootstrap: int = 200,
     confidence_level: float = 0.95,
+    random_state: int | None = None,
 ) -> pd.DataFrame:
     """Optimized version using pre-computed basket matrix.
 
@@ -394,6 +398,7 @@ def bootstrap_lift_ci_fast(
         basket_matrix: Pre-computed binary customer-product matrix (customers x products)
         n_bootstrap: Number of bootstrap iterations
         confidence_level: Confidence level for CI
+        random_state: Seed for reproducibility (default None = truly random)
 
     Returns:
         DataFrame with original rules + lift_ci_lower, lift_ci_upper, lift_mean_boot
@@ -410,9 +415,14 @@ def bootstrap_lift_ci_fast(
 
     lift_samples = {idx: [] for idx in rules.index}
 
+    rng = np.random.default_rng(random_state)
+
     for i in range(n_bootstrap):
         sample_ids = resample(
-            customer_ids, replace=True, n_samples=n_customers, random_state=42 + i
+            customer_ids,
+            replace=True,
+            n_samples=n_customers,
+            random_state=int(rng.integers(0, 2**31)),
         )
         basket_sample = basket_matrix.loc[sample_ids]
 
