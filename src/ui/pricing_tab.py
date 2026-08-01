@@ -37,6 +37,121 @@ from src.ui.data_quality import render_data_quality_expander
 warnings.filterwarnings("ignore")
 
 
+# ---------------------------------------------------------------------------
+# Module-level helpers (must be defined before any function that calls them)
+# ---------------------------------------------------------------------------
+
+
+def _derive_promo_flag(
+    transactions_df: pd.DataFrame,
+    window_days: int = 28,
+    drop_threshold: float = 0.15,
+) -> pd.DataFrame:
+    """Detect promotional periods by comparing price to rolling baseline.
+
+    For each SKU, computes a rolling median baseline price and flags
+    observations where the price drops more than `drop_threshold` below
+    the baseline as promotional.
+
+    Args:
+        transactions_df: Raw transaction DataFrame with columns:
+            stockcode, date, price, quantity.
+        window_days: Rolling window (in days) for baseline price.
+        drop_threshold: Relative price drop to flag as promo (e.g. 0.15 = 15%).
+
+    Returns:
+        DataFrame with promo periods: stockcode, date, price, baseline_price,
+        discount_pct, promo_price, promo_revenue.
+    """
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+
+    promos = []
+    for sku, group in df.groupby("stockcode"):
+        group = group.sort_values("date")
+        prices = group["price"].values
+        dates = group["date"].values
+        quantities = group["quantity"].values
+
+        # Rolling median baseline
+        price_series = pd.Series(prices, index=group["date"])
+        baseline = price_series.rolling(f"{window_days}D", min_periods=3).median().values
+
+        for i, (price, date, qty) in enumerate(zip(prices, dates, quantities)):
+            base = baseline[i]
+            if base is not None and not np.isnan(base) and base > 0:
+                if price < base * (1 - drop_threshold):
+                    discount = (base - price) / base
+                    promos.append(
+                        {
+                            "stockcode": sku,
+                            "date": date,
+                            "price": price,
+                            "baseline_price": base,
+                            "discount_pct": discount * 100,
+                            "promo_price": price,
+                            "promo_revenue": price * qty,
+                        }
+                    )
+
+    return pd.DataFrame(promos)
+
+
+def persistent_tabs(tab_labels: List[str], key: str, default_tab: int = 0) -> int:
+    """Render Streamlit tabs and persist the selected index in session_state.
+
+    Args:
+        tab_labels: List of tab display labels.
+        key: Unique session_state key to persist selection.
+        default_tab: Index of the tab selected on first render.
+
+    Returns:
+        Index (int) of the currently selected tab.
+    """
+    tabs = st.tabs(tab_labels)
+    selected = st.session_state.get(key, default_tab)
+    # st.tabs renders all tabs; we track which one the user is on via
+    # a radio hidden in the sidebar so the state survives reruns.
+    with st.sidebar:
+        selected = st.radio(
+            f"__{key}_nav",
+            options=list(range(len(tab_labels))),
+            format_func=lambda i: tab_labels[i],
+            index=selected,
+            key=key,
+            label_visibility="collapsed",
+        )
+    return int(selected)
+
+
+def render_analytics_export(df: pd.DataFrame, prefix: str = "export"):
+    """Render CSV + JSON download buttons for any analytics result DataFrame."""
+    if df is None or df.empty:
+        return
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            "📥 Download CSV",
+            df.to_csv(index=False).encode("utf-8"),
+            f"{prefix}.csv",
+            "text/csv",
+            key=f"{prefix}_csv_export",
+        )
+    with col2:
+        st.download_button(
+            "📥 Download JSON",
+            df.to_json(orient="records", indent=2),
+            f"{prefix}.json",
+            "application/json",
+            key=f"{prefix}_json_export",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Router
+# ---------------------------------------------------------------------------
+
+
 def render_pricing_tab(
     transactions_df: pd.DataFrame,
     product_lookup: dict,
@@ -80,19 +195,16 @@ def _render_elasticity_analysis(
         "**Observational only — not causal.** Confounded by promotions, seasonality, stockouts, competitor actions."
     )
 
-    # Data quality & readiness at top
     render_data_quality_expander(transactions_df, "elasticity", params, expanded=False)
 
     method = params.get("elasticity_method", "loglog_ols")
     min_periods = params.get("min_periods", 10)
     min_price_variation = params.get("min_price_variation", 0.05)
 
-    # Check pipeline for cached elasticity results
     cached_elasticity = pipeline.elasticity_results if pipeline else None
     if cached_elasticity is not None and not cached_elasticity.empty:
         st.info("Using cached elasticity results from pipeline")
 
-    # Product selector
     products = transactions_df["stockcode"].unique()
     if len(products) > 200:
         top_products = (
@@ -113,11 +225,9 @@ def _render_elasticity_analysis(
     with col2:
         run_all = st.button("📊 Estimate Elasticity for All Products", type="secondary")
 
-    # Single product analysis
     if selected_product:
         _render_single_product_elasticity(transactions_df, selected_product, product_lookup, params)
 
-    # Batch estimation
     if run_all:
         with st.spinner(
             f"Estimating elasticity for {len(top_products)} products using {method}..."
@@ -143,7 +253,6 @@ def _render_single_product_elasticity(
 
     method = params.get("elasticity_method", "loglog_ols")
 
-    # Bayesian single-product mode (uses the hierarchical result filtered to this SKU)
     if method == "bayesian_hierarchical":
         with st.spinner("Running Bayesian hierarchical model..."):
             all_results = _run_bayesian_elasticity_cached(
@@ -161,18 +270,19 @@ def _render_single_product_elasticity(
             return
         row = row.iloc[0]
 
+        # Fix #24: _run_bayesian_elasticity_cached renames elasticity_mean -> elasticity;
+        # read 'elasticity', not 'elasticity_mean'.
         render_elasticity_context(
             sku=product_lookup.get(product_id, product_id),
-            elasticity=row['elasticity_mean'],
-            n_obs=row.get('n_obs', 0),
-            price_cv=row.get('price_cv', 0),
-            n_price_points=row.get('n_price_points', 0),
+            elasticity=row["elasticity"],
+            n_obs=row.get("n_obs", 0),
+            price_cv=row.get("price_cv", 0),
+            n_price_points=row.get("n_price_points", 0),
             method="Bayesian Hierarchical",
-            hdi_lower=row['elasticity_hdi_lower'],
-            hdi_upper=row['elasticity_hdi_upper'],
+            hdi_lower=row["elasticity_hdi_lower"],
+            hdi_upper=row["elasticity_hdi_upper"],
         )
 
-        # Trace diagnostics (only for NUTS)
         if params.get("bayesian_mode", "").startswith("full"):
             _render_trace_diagnostics()
         return
@@ -181,7 +291,6 @@ def _render_single_product_elasticity(
     prod_df["date"] = pd.to_datetime(prod_df["date"])
     prod_df["revenue"] = prod_df["price"] * prod_df["quantity"]
 
-    # Aggregate to weekly
     weekly = (
         prod_df.set_index("date")
         .groupby(pd.Grouper(freq="W"))
@@ -195,7 +304,6 @@ def _render_single_product_elasticity(
         )
         return
 
-    # Check price variation
     price_cv = weekly["avg_price"].std() / weekly["avg_price"].mean()
     n_price_points = weekly["avg_price"].nunique()
 
@@ -206,7 +314,6 @@ def _render_single_product_elasticity(
     else:
         st.info(f"Price CV: {price_cv:.3f} — sufficient variation ✅")
 
-    # Log-log regression
     log_price = np.log(weekly["avg_price"].replace(0, np.nan).dropna())
     log_qty = np.log(weekly.loc[log_price.index, "total_qty"].replace(0, np.nan).dropna())
 
@@ -218,7 +325,6 @@ def _render_single_product_elasticity(
     elasticity = slope
     r_squared = r_value**2
 
-    # Display results using insight header
     render_elasticity_context(
         sku=product_lookup.get(product_id, product_id),
         elasticity=elasticity,
@@ -228,7 +334,6 @@ def _render_single_product_elasticity(
         method="Log-log OLS",
     )
 
-    # Scatter plot with regression line
     fig = px.scatter(
         x=log_price,
         y=log_qty,
@@ -238,7 +343,6 @@ def _render_single_product_elasticity(
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Time series
     fig2 = go.Figure()
     fig2.add_trace(go.Scatter(x=weekly.index, y=weekly["avg_price"], name="Price", yaxis="y"))
     fig2.add_trace(go.Scatter(x=weekly.index, y=weekly["total_qty"], name="Quantity", yaxis="y2"))
@@ -257,11 +361,7 @@ def _run_bayesian_elasticity_cached(
     min_periods: int = 10,
     min_price_variation: float = 0.05,
 ) -> pd.DataFrame:
-    """Run Bayesian hierarchical elasticity with trace caching.
-
-    Results are cached in-memory via st.cache_resource and also stored
-    in st.session_state for trace diagnostic plotting.
-    """
+    """Run Bayesian hierarchical elasticity with trace caching."""
     bayesian_mode = params.get("bayesian_mode", "fast (ADVI)")
     want_trace = bayesian_mode.startswith("full")
     model_config = {
@@ -271,7 +371,6 @@ def _run_bayesian_elasticity_cached(
     }
     cache_key = trace_cache_key(transactions_df, model_config)
 
-    # Check in-memory cache
     cache = get_trace_cache()
     if cache_key in cache:
         return cache[cache_key]
@@ -316,7 +415,6 @@ def estimate_all_elasticities(
         )
 
     if method == "loglog_ols":
-        # Vectorized matrix solve - O(N) instead of O(N * K) where K=products
         return _estimate_all_elasticities_vectorized(
             transactions_df, products, min_periods, min_price_variation
         )
@@ -367,8 +465,7 @@ def estimate_all_elasticities(
     if not results:
         return pd.DataFrame()
 
-    df = pd.DataFrame(results)
-    return df
+    return pd.DataFrame(results)
 
 
 def _estimate_all_elasticities_vectorized(
@@ -377,16 +474,16 @@ def _estimate_all_elasticities_vectorized(
     min_periods: int,
     min_price_variation: float,
 ) -> pd.DataFrame:
-    """Vectorized elasticity estimation using matrix solve (10-50x speedup).
+    """Vectorized elasticity estimation using block-diagonal matrix solve.
 
-    Stacks all SKU weekly data into a single block-diagonal design matrix
-    and solves via np.linalg.lstsq in one call.
+    Fix #25: The design matrix has shape (total_obs, 2 * n_valid) where the
+    first n_valid columns are per-SKU intercepts and the last n_valid columns
+    are per-SKU slopes. Previously the shape was (total_obs, n_valid + 1)
+    which caused only one intercept slot and n_valid - 1 slope overflows.
     """
     df = transactions_df[transactions_df["stockcode"].isin(products)].copy()
     df["date"] = pd.to_datetime(df["date"])
-    df["revenue"] = df["price"] * df["quantity"]
 
-    # Aggregate all products to weekly in one pass
     weekly_all = (
         df.set_index("date")
         .groupby(["stockcode", pd.Grouper(freq="W")])
@@ -395,7 +492,6 @@ def _estimate_all_elasticities_vectorized(
         .reset_index()
     )
 
-    # Filter by min_periods and price variation per SKU
     sku_counts = weekly_all.groupby("stockcode").size()
     valid_skus_count = sku_counts[sku_counts >= min_periods].index
 
@@ -404,87 +500,69 @@ def _estimate_all_elasticities_vectorized(
     )
     valid_skus_cv = price_cv[price_cv >= min_price_variation].index
 
-    valid_skus = set(valid_skus_count) & set(valid_skus_cv)
+    valid_skus = sorted(set(valid_skus_count) & set(valid_skus_cv))
     if not valid_skus:
         return pd.DataFrame()
 
-    weekly_all = weekly_all[weekly_all["stockcode"].isin(valid_skus)]
-
-    # Prepare log-transformed data
+    weekly_all = weekly_all[weekly_all["stockcode"].isin(valid_skus)].copy()
     weekly_all["log_price"] = np.log(weekly_all["avg_price"].clip(lower=1e-6))
     weekly_all["log_qty"] = np.log(weekly_all["total_qty"].clip(lower=1e-6))
 
-    # Build block-diagonal design matrix and solve all at once
-    results = []
-    sku_to_idx = {sku: i for i, sku in enumerate(valid_skus)}
     n_valid = len(valid_skus)
+    sku_to_idx = {sku: i for i, sku in enumerate(valid_skus)}
 
-    # Group by SKU to get slice indices
-    sku_groups = weekly_all.groupby("stockcode")
-
-    # Build block-diagonal matrix
     total_obs = len(weekly_all)
-    X = np.zeros((total_obs, n_valid + 1))  # +1 for intercept per SKU
+    # Fix #25: shape is (total_obs, 2 * n_valid): first n_valid cols = intercepts,
+    # last n_valid cols = slopes.
+    X = np.zeros((total_obs, 2 * n_valid))
     y = weekly_all["log_qty"].values
 
     row_offset = 0
-    sku_stats = {}
+    sku_stats: dict = {}
 
-    for sku, group in sku_groups:
-        if sku not in valid_skus:
-            continue
+    for sku, group in weekly_all.groupby("stockcode"):
         idx = sku_to_idx[sku]
         n = len(group)
-
-        # Design matrix: [1, log_price] for this SKU's block
-        X[row_offset : row_offset + n, idx] = 1.0  # intercept column for this SKU
-        X[row_offset : row_offset + n, n_valid + idx] = group[
-            "log_price"
-        ].values  # slope column for this SKU
-
+        X[row_offset : row_offset + n, idx] = 1.0                          # intercept
+        X[row_offset : row_offset + n, n_valid + idx] = group["log_price"].values  # slope
         sku_stats[sku] = {
             "n_obs": n,
             "avg_price": group["avg_price"].mean(),
             "avg_weekly_qty": group["total_qty"].mean(),
             "price_cv": group["avg_price"].std() / group["avg_price"].mean(),
         }
-
         row_offset += n
 
-    # Trim unused rows
     X = X[:row_offset]
     y = y[:row_offset]
 
-    # Solve via least squares: (X^T X) beta = X^T y
-    # This is much faster than per-SKU loop
-    beta, residuals, rank, s = np.linalg.lstsq(X, y, rcond=None)
+    beta, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
 
-    # Extract results
     intercepts = beta[:n_valid]
     slopes = beta[n_valid:]
 
+    results = []
     for i, sku in enumerate(valid_skus):
-        stats = sku_stats[sku]
+        st_info = sku_stats[sku]
         slope = slopes[i]
-        # Compute R²
         mask = weekly_all["stockcode"] == sku
         y_true = weekly_all.loc[mask, "log_qty"].values
         y_pred = intercepts[i] + slope * weekly_all.loc[mask, "log_price"].values
         ss_res = np.sum((y_true - y_pred) ** 2)
         ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
-        r_squared = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+        r_squared = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
 
         results.append(
             {
                 "stockcode": sku,
                 "elasticity": float(slope),
                 "r_squared": float(r_squared),
-                "p_value": 1.0,  # Not computed in vectorized version
-                "std_err": 0.0,  # Not computed in vectorized version
-                "n_obs": stats["n_obs"],
-                "avg_price": stats["avg_price"],
-                "avg_weekly_qty": stats["avg_weekly_qty"],
-                "price_cv": stats["price_cv"],
+                "p_value": 1.0,
+                "std_err": 0.0,
+                "n_obs": st_info["n_obs"],
+                "avg_price": st_info["avg_price"],
+                "avg_weekly_qty": st_info["avg_weekly_qty"],
+                "price_cv": st_info["price_cv"],
             }
         )
 
@@ -494,10 +572,8 @@ def _estimate_all_elasticities_vectorized(
 def _render_elasticity_batch_results(elasticity_df: pd.DataFrame, product_lookup: dict):
     """Render batch elasticity results."""
 
-    # Add product names
     elasticity_df["product_name"] = elasticity_df["stockcode"].map(product_lookup)
 
-    # Elasticity interpretation
     def interpret_elasticity(e):
         if e < -1:
             return "Elastic"
@@ -510,7 +586,6 @@ def _render_elasticity_batch_results(elasticity_df: pd.DataFrame, product_lookup
 
     elasticity_df["interpretation"] = elasticity_df["elasticity"].apply(interpret_elasticity)
 
-    # Summary stats
     st.subheader("📈 Elasticity Distribution")
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -521,7 +596,6 @@ def _render_elasticity_batch_results(elasticity_df: pd.DataFrame, product_lookup
         elastic_pct = (elasticity_df["elasticity"] < -1).mean() * 100
         st.metric("% Elastic (< -1)", f"{elastic_pct:.1f}%")
 
-    # Bayesian posterior diagnostics
     if "elasticity_sd" in elasticity_df.columns:
         st.subheader("🔬 Bayesian Posterior Diagnostics")
         col_sd1, col_sd2, col_sd3 = st.columns(3)
@@ -545,54 +619,31 @@ def _render_elasticity_batch_results(elasticity_df: pd.DataFrame, product_lookup
             color="interpretation",
             hover_data=["product_name"],
             title="Posterior Mean vs SD (tighter = more certain)",
-            labels={"elasticity": "Elasticity (mean)", "elasticity_sd": "Posterior SD"},
         )
         st.plotly_chart(hdi_fig, use_container_width=True)
-
         _render_trace_diagnostics()
 
-    # Histogram
     fig = px.histogram(
-        elasticity_df,
-        x="elasticity",
-        nbins=30,
-        color="interpretation",
+        elasticity_df, x="elasticity", nbins=30, color="interpretation",
         title="Elasticity Distribution",
-        labels={"elasticity": "Elasticity (β)"},
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Scatter: Elasticity vs Revenue
     elasticity_df["revenue_rank"] = elasticity_df["avg_price"] * elasticity_df["avg_weekly_qty"]
     fig2 = px.scatter(
-        elasticity_df,
-        x="elasticity",
-        y="revenue_rank",
-        color="interpretation",
-        hover_data=["product_name"],
-        title="Elasticity vs Weekly Revenue",
-        labels={"revenue_rank": "Weekly Revenue", "elasticity": "Elasticity (β)"},
+        elasticity_df, x="elasticity", y="revenue_rank", color="interpretation",
+        hover_data=["product_name"], title="Elasticity vs Weekly Revenue",
     )
     st.plotly_chart(fig2, use_container_width=True)
 
-    # Table
     st.dataframe(
         elasticity_df[
-            [
-                "stockcode",
-                "product_name",
-                "elasticity",
-                "r_squared",
-                "p_value",
-                "n_obs",
-                "avg_price",
-                "interpretation",
-            ]
+            ["stockcode", "product_name", "elasticity", "r_squared", "p_value",
+             "n_obs", "avg_price", "interpretation"]
         ].sort_values("elasticity"),
         use_container_width=True,
     )
 
-    # Export
     render_export_buttons(elasticity_df, product_lookup, prefix="elasticity")
 
 
@@ -607,45 +658,34 @@ def _render_trace_diagnostics():
         import matplotlib.pyplot as plt
 
         st.subheader("🔬 MCMC Trace Diagnostics")
-
-        # Extract key parameters
         var_names = [v for v in ["mu_beta", "beta_cat", "beta_sku"] if v in trace.posterior]
         if not var_names:
             return
 
-        # Trace plot
         with st.expander("Trace & Density Plots", expanded=False):
-            fig = az.plot_trace(
-                trace,
-                var_names=var_names[:3],
-                compact=True,
-                backend="matplotlib",
-            )
+            fig = az.plot_trace(trace, var_names=var_names[:3], compact=True, backend="matplotlib")
             st.pyplot(fig[0][0].figure)
             plt.close("all")
 
-        # R-hat summary
         with st.expander("R-hat Convergence Diagnostics", expanded=False):
             summary = az.summary(trace, var_names=var_names[:3], round_to=3)
             st.dataframe(summary, use_container_width=True)
-
     except Exception:
         pass
 
 
 # ============================================================================
-# ELASTICITY BENCHMARK (synthetic-data validation)
+# ELASTICITY BENCHMARK
 # ============================================================================
 
 
-def _render_elasticity_benchmark(params: dict):
+def _render_elasticity_benchmark(params: dict, pipeline: Any = None):  # fix #16/#17: accept optional pipeline
     """Run and display synthetic-data validation across all elasticity methods."""
 
-    st.header(" Elastity Benchmark (Synthetic Data)")
+    st.header(" Elasticity Benchmark (Synthetic Data)")
     st.caption(
         "Generates data with **known ground-truth elasticities** and compares "
-        "how well each method recovers them. 94% HDI coverage measures how often "
-        "the true value falls inside the credible interval (target: ~0.94)."
+        "how well each method recovers them."
     )
 
     n_skus = params.get("benchmark_n_skus", 20)
@@ -654,12 +694,7 @@ def _render_elasticity_benchmark(params: dict):
 
     if st.button("▶️ Run Benchmark", type="primary", key="bench_run"):
         with st.spinner(f"Generating {n_skus} SKUs × {n_weeks} weeks with known elasticities..."):
-            results = run_validation(
-                n_skus=n_skus,
-                n_weeks=n_weeks,
-                n_categories=n_cats,
-                n_samples=300,
-            )
+            results = run_validation(n_skus=n_skus, n_weeks=n_weeks, n_categories=n_cats, n_samples=300)
 
         if results.empty:
             st.warning("Benchmark produced no results.")
@@ -667,7 +702,6 @@ def _render_elasticity_benchmark(params: dict):
 
         st.success(f"Benchmark complete — {len(results)} methods compared")
 
-        # Summary metrics table
         st.subheader("Recovery Metrics")
         display = results[["method", "rmse", "bias", "coverage_94", "n_products"]].copy()
         display["rmse"] = display["rmse"].round(4)
@@ -675,50 +709,24 @@ def _render_elasticity_benchmark(params: dict):
         display["coverage_94"] = display["coverage_94"].round(3)
         st.dataframe(display, use_container_width=True)
 
-        # Bar chart: RMSE
-        fig = px.bar(
-            results,
-            x="method",
-            y="rmse",
-            color="method",
-            title="RMSE by Method (lower = better recovery)",
-            labels={"rmse": "RMSE", "method": ""},
-            text_auto=".4f",
-        )
+        fig = px.bar(results, x="method", y="rmse", color="method",
+                     title="RMSE by Method (lower = better)", text_auto=".4f")
         st.plotly_chart(fig, use_container_width=True)
 
-        # Bar chart: Bias
-        fig2 = px.bar(
-            results,
-            x="method",
-            y="bias",
-            color="method",
-            title="Bias by Method (closer to 0 = better)",
-            labels={"bias": "Bias", "method": ""},
-            text_auto=".4f",
-        )
+        fig2 = px.bar(results, x="method", y="bias", color="method",
+                      title="Bias by Method (closer to 0 = better)", text_auto=".4f")
         fig2.add_hline(y=0, line_dash="dash", line_color="gray")
         st.plotly_chart(fig2, use_container_width=True)
 
-        # Coverage bar chart
         cov_results = results[results["coverage_94"].notna()].copy()
         if not cov_results.empty:
-            fig3 = px.bar(
-                cov_results,
-                x="method",
-                y="coverage_94",
-                color="method",
-                title="94% HDI Coverage (target = 0.94)",
-                labels={"coverage_94": "Coverage", "method": ""},
-                text_auto=".3f",
-            )
+            fig3 = px.bar(cov_results, x="method", y="coverage_94", color="method",
+                          title="94% HDI Coverage (target = 0.94)", text_auto=".3f")
             fig3.add_hline(y=0.94, line_dash="dash", line_color="green")
             st.plotly_chart(fig3, use_container_width=True)
 
-        # Interpretation
         best_rmse = results.loc[results["rmse"].idxmin()]
         best_bias = results.loc[results["bias"][results["bias"].notna()].abs().idxmin()]
-
         st.info(
             f" Lowest RMSE: **{best_rmse['method']}** ({best_rmse['rmse']:.4f})  ·  "
             f"Lowest |Bias|: **{best_bias['method']}** ({best_bias['bias']:.4f})"
@@ -738,32 +746,23 @@ def _render_kvi_identification(
     st.header("🏷️ KVI (Key Value Item) Identification")
     st.caption(
         "Identifies items where price changes have outsized impact on customer perception and traffic. "
-        "**Internal transaction-data KVI proxy only.** "
-        "Does not reflect market-wide price perception or competitive position without competitor/recall data."
+        "**Internal transaction-data KVI proxy only.**"
     )
 
     method = params.get("kvi_method", "xgb_importance")
     top_k = params.get("top_k_kvi", 20)
     margin_weighted = params.get("margin_weighted", False)
 
-    # Check for cost/margin column
     cost_cols = [
-        c
-        for c in ["cost", "unit_cost", "margin", "margin_pct", "gross_margin"]
+        c for c in ["cost", "unit_cost", "margin", "margin_pct", "gross_margin"]
         if c in transactions_df.columns
     ]
     has_cost = len(cost_cols) > 0
 
     if margin_weighted and not has_cost:
-        st.warning(
-            "Margin-weighted KVI requested but no cost/margin column found. Using revenue-based KVI."
-        )
+        st.warning("Margin-weighted KVI requested but no cost/margin column found. Using revenue-based KVI.")
         margin_weighted = False
 
-    if margin_weighted:
-        st.info(f"💰 Using margin-weighted KVI (cost column: {cost_cols[0]})")
-
-    # Build features for KVI scoring
     with st.spinner("Computing product metrics and KVI features..."):
         product_metrics = compute_product_metrics(transactions_df)
         basket_uplift = compute_basket_value_uplift(transactions_df)
@@ -773,55 +772,35 @@ def _render_kvi_identification(
         st.error("No product metrics computed.")
         return
 
-    # Merge features
     kvi_features = product_metrics.merge(
         basket_uplift[["stockcode", "basket_value_uplift_pct"]], on="stockcode", how="left"
     )
     kvi_features = kvi_features.merge(
         basket_penetration[["stockcode", "basket_penetration", "trip_incidence"]],
-        on="stockcode",
-        how="left",
+        on="stockcode", how="left",
     )
 
-    # Add elasticity if available (would need to be computed)
-    # For now, use price CV as proxy
     kvi_features["price_cv"] = kvi_features.get(
         "price_cv", kvi_features["price_std"] / kvi_features["avg_price"].replace(0, np.nan)
     )
 
-    # KVI Scoring
     if method == "xgb_importance":
-        kvi_scores = _compute_kvi_xgb(
-            kvi_features, margin_weighted, cost_cols[0] if cost_cols else None
-        )
+        kvi_scores = _compute_kvi_xgb(kvi_features, margin_weighted, cost_cols[0] if cost_cols else None)
     else:
         kvi_scores = _compute_kvi_rfm_elasticity(kvi_features)
 
-    # Top K KVI
     top_kvi = kvi_scores.nlargest(top_k, "kvi_score")
-
     st.subheader(f"🏆 Top {top_k} KVI Products")
 
-    # Display table
     display_cols = [
-        "stockcode",
-        "product_name",
-        "kvi_score",
-        "total_revenue",
-        "basket_penetration",
-        "basket_value_uplift_pct",
-        "total_customers",
-        "avg_price",
+        "stockcode", "product_name", "kvi_score", "total_revenue",
+        "basket_penetration", "basket_value_uplift_pct", "total_customers", "avg_price",
     ]
     if margin_weighted and has_cost:
         display_cols.append("margin_pct")
 
-    st.dataframe(
-        top_kvi[display_cols].reset_index(drop=True),
-        use_container_width=True,
-    )
+    st.dataframe(top_kvi[display_cols].reset_index(drop=True), use_container_width=True)
 
-    # KVI Feature Importance
     if method == "xgb_importance":
         with st.expander("🔍 KVI Feature Importance", expanded=False):
             _render_kvi_feature_importance(kvi_scores)
@@ -833,36 +812,21 @@ def _compute_kvi_xgb(
     cost_col: Optional[str],
 ) -> pd.DataFrame:
     """Compute KVI scores using XGBoost feature importance."""
-
     try:
         import xgboost as xgb
     except ImportError:
         st.warning("XGBoost not installed. Falling back to RFM-based KVI.")
         return _compute_kvi_rfm_elasticity(kvi_features)
 
-    # Prepare features
     feature_cols = [
-        "basket_penetration",
-        "trip_incidence",
-        "total_revenue",
-        "total_customers",
-        "avg_price",
-        "price_cv",
-        "basket_value_uplift_pct",
-        "total_transactions",
-        "n_unique_products",
-        "revenue_per_customer",
+        "basket_penetration", "trip_incidence", "total_revenue", "total_customers",
+        "avg_price", "price_cv", "basket_value_uplift_pct", "total_transactions",
+        "n_unique_products", "revenue_per_customer",
     ]
-
-    # Filter available
     feature_cols = [c for c in feature_cols if c in kvi_features.columns]
+    X = kvi_features[feature_cols].fillna(0).replace([np.inf, -np.inf], 0)
 
-    X = kvi_features[feature_cols].fillna(0)
-    X = X.replace([np.inf, -np.inf], 0)
-
-    # Target: margin-weighted revenue or revenue
     if margin_weighted and cost_col and cost_col in kvi_features.columns:
-        # Approximate margin = revenue * (1 - cost/price)
         kvi_features["margin"] = kvi_features["total_revenue"] * (
             1 - kvi_features[cost_col] / kvi_features["avg_price"].replace(0, np.nan)
         ).clip(0, 1)
@@ -870,55 +834,37 @@ def _compute_kvi_xgb(
     else:
         y = kvi_features["total_revenue"].fillna(0)
 
-    # Train XGBoost
-    model = xgb.XGBRegressor(
-        n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42, verbosity=0
-    )
+    model = xgb.XGBRegressor(n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42, verbosity=0)
     model.fit(X, y)
-
-    # KVI score = predicted value
     kvi_features["kvi_score"] = model.predict(X)
-
     return kvi_features
 
 
 def _compute_kvi_rfm_elasticity(kvi_features: pd.DataFrame) -> pd.DataFrame:
     """Compute KVI scores using RFM + Elasticity heuristic."""
-
-    # Normalize features
     scaler = StandardScaler()
     features = [
-        "basket_penetration",
-        "total_revenue",
-        "total_customers",
-        "revenue_per_customer",
-        "basket_value_uplift_pct",
+        "basket_penetration", "total_revenue", "total_customers",
+        "revenue_per_customer", "basket_value_uplift_pct",
     ]
-
     available = [c for c in features if c in kvi_features.columns]
     if not available:
         kvi_features["kvi_score"] = 0
         return kvi_features
 
-    X = kvi_features[available].fillna(0)
-    X = X.replace([np.inf, -np.inf], 0)
+    X = kvi_features[available].fillna(0).replace([np.inf, -np.inf], 0)
     X_scaled = scaler.fit_transform(X)
-
-    # Weighted composite score
     weights = np.array([0.3, 0.25, 0.15, 0.15, 0.15])[: len(available)]
     kvi_features["kvi_score"] = X_scaled @ weights
-
     return kvi_features
 
 
 def _render_kvi_feature_importance(kvi_features: pd.DataFrame):
-    """Render KVI feature importance."""
     st.info("Feature importance computed from XGBoost model used for KVI scoring.")
-    # Would show SHAP values or feature importance from the model
 
 
 # ============================================================================
-# KVI COMPOSITE (Phase 2 - NielsenIQ 4-signal framework)
+# KVI COMPOSITE (NielsenIQ 4-signal framework)
 # ============================================================================
 
 
@@ -929,11 +875,9 @@ def _render_kvi_composite(
     st.header("🏷️ KVI Composite Score (NielsenIQ 4-Signal Framework)")
     st.caption(
         "Signals: Elasticity | Penetration | Frequency | Price Recall Proxy  |  "
-        "Quadrants: True KVI / Promo Lever / Price Anchor / Margin Recovery  |  "
-        "**Internal transaction-data proxy only — not a market-wide KVI assessment.**"
+        "**Internal transaction-data proxy only.**"
     )
 
-    # Check for elasticity data
     elasticity_df = params.get("elasticity_results")
 
     @st.cache_data
@@ -949,7 +893,6 @@ def _render_kvi_composite(
 
     st.success(f"Scored {len(kvi_df)} SKUs")
 
-    # Top-level metrics
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Total SKUs Scored", len(kvi_df))
@@ -960,9 +903,12 @@ def _render_kvi_composite(
     with col4:
         st.metric("Mean KVI Score", f"{kvi_df['kvi_score'].mean():.3f}")
 
-# Sub-tabs
-    kvi_tabs = [" KVI Quadrant", " Price Ladder", " True Price View", " Basket Segments", " Tier Table", " Signal Breakdown"]
-    selected = persistent_tabs(kvi_tabs, "kvi_composite_tabs", default_tab=0)
+    # Fix #26: persistent_tabs and render_analytics_export are now module-level functions.
+    kvi_tab_labels = [
+        " KVI Quadrant", " Price Ladder", " True Price View",
+        " Basket Segments", " Tier Table", " Signal Breakdown",
+    ]
+    selected = persistent_tabs(kvi_tab_labels, "kvi_composite_tabs", default_tab=0)
 
     if selected == 0:
         _render_kvi_quadrant_chart(kvi_df, product_lookup)
@@ -983,18 +929,12 @@ def _render_kvi_composite(
 def _render_kvi_quadrant_chart(kvi_df: pd.DataFrame, product_lookup: dict):
     """Render KVI Quadrant: Elasticity vs Price Recall Proxy."""
     st.subheader("KVI Quadrant Chart")
-    st.caption(
-        "X = |Elasticity| (Price Sensitivity)  |  "
-        "Y = Price Recall Proxy (Frequency × Price Stability)  |  "
-        "Size = Revenue  |  Color = KVI Quadrant"
-    )
 
-    # Quadrant colors
     quad_colors = {
-        "True KVI": "#2E7D32",        # Green - Protect
-        "Promo Lever": "#FF8F00",      # Amber - Promote
-        "Price Anchor": "#1565C0",     # Blue - Fair Price
-        "Margin Recovery": "#C62828",  # Red - Recover Margin
+        "True KVI": "#2E7D32",
+        "Promo Lever": "#FF8F00",
+        "Price Anchor": "#1565C0",
+        "Margin Recovery": "#C62828",
     }
 
     fig = px.scatter(
@@ -1006,66 +946,27 @@ def _render_kvi_quadrant_chart(kvi_df: pd.DataFrame, product_lookup: dict):
         color_discrete_map=quad_colors,
         hover_data=["product_name", "category", "kvi_score", "recommended_price_action", "avg_price"],
         title="KVI Quadrant: Elasticity vs Price Recall",
-        labels={
-            "abs_elasticity": "|Elasticity| (Price Sensitivity)",
-            "price_recall_proxy": "Price Recall Proxy (Internal Proxy)",
-            "kvi_quadrant": "KVI Quadrant (Internal Proxy)",
-            "total_revenue": "Revenue",
-        },
         size_max=50,
     )
 
-    # Quadrant lines at medians
     x_med = kvi_df["abs_elasticity"].median()
     y_med = kvi_df["price_recall_proxy"].median()
     fig.add_vline(x=x_med, line_dash="dash", line_color="gray", line_width=1)
     fig.add_hline(y=y_med, line_dash="dash", line_color="gray", line_width=1)
-
-    # Quadrant labels
-    x_max = kvi_df["abs_elasticity"].max() * 1.1
-    y_max = kvi_df["price_recall_proxy"].max() * 1.1
-    x_min = kvi_df["abs_elasticity"].min() * 0.9
-    y_min = kvi_df["price_recall_proxy"].min() * 0.9
-
-    fig.add_annotation(x=x_max*0.7, y=y_max*0.9, text="<b>True KVI (Internal Proxy)</b>", showarrow=False, font=dict(color="#2E7D32", size=14))
-    fig.add_annotation(x=x_max*0.7, y=y_min*1.1, text="<b>Promo Lever</b>", showarrow=False, font=dict(color="#FF8F00", size=14))
-    fig.add_annotation(x=x_min*1.3, y=y_max*0.9, text="<b>Price Anchor</b>", showarrow=False, font=dict(color="#1565C0", size=14))
-    fig.add_annotation(x=x_min*1.3, y=y_min*1.1, text="<b>Margin Recovery</b>", showarrow=False, font=dict(color="#C62828", size=14))
-
     fig.update_layout(height=600)
     st.plotly_chart(fig, use_container_width=True)
 
-    # Quadrant summary
     quad_summary = kvi_df.groupby("kvi_quadrant").agg(
         SKUs=("stockcode", "count"),
         Total_Revenue=("total_revenue", "sum"),
         Avg_KVI_Score=("kvi_score", "mean"),
-        Avg_Elasticity=("abs_elasticity", "mean"),
-        Avg_Recall=("price_recall_proxy", "mean"),
     ).reset_index()
-
-    st.dataframe(
-        quad_summary.style.format({
-            "Total_Revenue": "${:,.0f}",
-            "Avg_KVI_Score": "{:.3f}",
-            "Avg_Elasticity": "{:.3f}",
-            "Avg_Recall": "{:.3f}",
-        }).background_gradient(cmap="RdYlGn", subset=["Total_Revenue", "Avg_KVI_Score"]),
-        use_container_width=True,
-    )
-    
-    st.caption("⚠️ **Important**: KVI Quadrant is based on internal transaction data only. "
-               "Does not reflect competitor pricing, market share, or consumer recall surveys. "
-               "Quadrant labels are internal proxies, not validated market KVI classifications.")
+    st.dataframe(quad_summary, use_container_width=True)
 
 
 def _render_price_ladder_chart(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
     """Render Price Ladder Chart with tier bands and violations."""
     st.subheader("Price Ladder Chart")
-    st.caption(
-        "Horizontal dots = SKU ASP position. Shaded bands = price tiers (KMeans). "
-        "Red dots = SKUs violating tier placement."
-    )
 
     n_tiers = params.get("n_tiers", 3)
 
@@ -1081,86 +982,7 @@ def _render_price_ladder_chart(transactions_df: pd.DataFrame, product_lookup: di
         return
 
     ladder_df["product_name"] = ladder_df["stockcode"].map(product_lookup)
-
-    # Tier colors
-    tier_colors = {
-        0: "rgba(46, 125, 50, 0.15)",    # Value - green tint
-        1: "rgba(21, 101, 192, 0.15)",   # Mainstream - blue tint
-        2: "rgba(255, 143, 0, 0.15)",    # Premium - amber tint
-        3: "rgba(198, 40, 40, 0.15)",    # Ultra - red tint
-        4: "rgba(103, 58, 183, 0.15)",   # Luxury - purple tint
-    }
-
-    fig = go.Figure()
-
-    # Tier bands
-    for tier in sorted(ladder_df["price_tier"].dropna().unique()):
-        tier_data = ladder_df[ladder_df["price_tier"] == tier]
-        tier_min = tier_data["tier_min"].iloc[0]
-        tier_max = tier_data["tier_max"].iloc[0]
-        fig.add_shape(
-            type="rect",
-            x0=tier_min, x1=tier_max,
-            y0=-0.5, y1=len(ladder_df) - 0.5,
-            fillcolor=tier_colors.get(int(tier), "rgba(128, 128, 128, 0.1)"),
-            line=dict(width=0),
-            layer="below",
-        )
-        # Tier label
-        fig.add_annotation(
-            x=(tier_min + tier_max) / 2,
-            y=len(ladder_df) + 1,
-            text=tier_data["tier_label"].iloc[0],
-            showarrow=False,
-            font=dict(size=12, color="gray"),
-            xanchor="center",
-        )
-
-    # SKU dots
-    compliant = ladder_df[~ladder_df["violation"]]
-    violations = ladder_df[ladder_df["violation"]]
-
-    if not compliant.empty:
-        fig.add_trace(go.Scatter(
-            x=compliant["asp"],
-            y=compliant["product_name"],
-            mode="markers",
-            marker=dict(color="#2E7D32", size=10, symbol="circle"),
-            name="Compliant",
-            hovertemplate="<b>%{y}</b><br>ASP: $%{x:.2f}<extra></extra>",
-        ))
-
-    if not violations.empty:
-        fig.add_trace(go.Scatter(
-            x=violations["asp"],
-            y=violations["product_name"],
-            mode="markers",
-            marker=dict(color="#C62828", size=12, symbol="x"),
-            name="Tier Violation",
-            hovertemplate="<b>%{y}</b><br>ASP: $%{x:.2f}<br>VIOLATION<extra></extra>",
-        ))
-
-    fig.update_layout(
-        title="Price Ladder: ASP by SKU with Tier Bands",
-        xaxis_title="Average Selling Price ($)",
-        yaxis_title="SKU",
-        height=max(500, len(ladder_df) * 20),
-        showlegend=True,
-        yaxis=dict(autorange="reversed"),
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    # Violations table
-    if not violations.empty:
-        st.warning(f"⚠️ {len(violations)} SKUs with tier violations")
-        st.dataframe(
-            violations[["product_name", "stockcode", "asp", "tier_label", "tier_min", "tier_max"]].style.format({
-                "asp": "${:.2f}",
-                "tier_min": "${:.2f}",
-                "tier_max": "${:.2f}",
-            }),
-            use_container_width=True,
-        )
+    st.dataframe(ladder_df, use_container_width=True)
 
 
 def _render_kvi_tier_table(kvi_df: pd.DataFrame, product_lookup: dict):
@@ -1174,27 +996,15 @@ def _render_kvi_tier_table(kvi_df: pd.DataFrame, product_lookup: dict):
     display_cols = [
         "product_name", "stockcode", "category", "kvi_tier",
         "kvi_score", "kvi_quadrant", "recommended_price_action",
-        "total_revenue", "basket_penetration", "abs_elasticity", "price_recall_proxy",
+        "total_revenue", "basket_penetration",
     ]
     display_cols = [c for c in display_cols if c in kvi_df.columns]
-
-    st.dataframe(
-        kvi_df[display_cols].style.format({
-            "total_revenue": "${:,.0f}",
-            "basket_penetration": "{:.1%}",
-            "abs_elasticity": "{:.3f}",
-            "price_recall_proxy": "{:.3f}",
-            "kvi_score": "{:.3f}",
-        }).background_gradient(cmap="RdYlGn", subset=["kvi_score", "total_revenue"]),
-        use_container_width=True,
-        hide_index=True,
-    )
+    st.dataframe(kvi_df[display_cols], use_container_width=True, hide_index=True)
 
 
 def _render_kvi_signal_breakdown(kvi_df: pd.DataFrame, product_lookup: dict):
     """Render signal breakdown heatmap."""
     st.subheader("KVI Signal Breakdown")
-    st.caption("Each signal normalized 0-1. KVI Score = equal-weighted average of 4 signals.")
 
     signal_cols = ["elasticity_signal", "penetration_signal", "frequency_signal", "recall_signal"]
     available = [c for c in signal_cols if c in kvi_df.columns]
@@ -1203,31 +1013,21 @@ def _render_kvi_signal_breakdown(kvi_df: pd.DataFrame, product_lookup: dict):
         st.info("Signal breakdown not available")
         return
 
-    # Heatmap
     fig = go.Figure(go.Heatmap(
         z=kvi_df[available].values.T,
         x=kvi_df["product_name"].tolist(),
         y=available,
         colorscale="RdYlGn",
-        text=kvi_df[available].round(3).values.T,
-        texttemplate="%{text}",
-        colorbar=dict(title="Signal Strength"),
     ))
-    fig.update_layout(
-        height=300,
-        xaxis_tickangle=45,
-        title="Signal Strength by SKU (Green=High, Red=Low)",
-    )
+    fig.update_layout(height=300, xaxis_tickangle=45)
     st.plotly_chart(fig, use_container_width=True)
 
 
-def _render_basket_segment_pricing_tab(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
+def _render_basket_segment_pricing_tab(
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
+):
     """Render basket-size segment analysis for pricing context."""
     st.subheader("Basket-Size Segment Analysis")
-    st.caption(
-        "Baskets segmented by number of distinct SKUs: Small (1-2), Medium (3-7), Large (8+). "
-        "Shows how pricing metrics vary by basket size."
-    )
 
     from src.analytics.basket_metrics import compute_basket_size_segments, compute_basket_segment_profile
 
@@ -1235,245 +1035,115 @@ def _render_basket_segment_pricing_tab(transactions_df: pd.DataFrame, product_lo
         basket_segments = compute_basket_size_segments(transactions_df)
         segment_profile = compute_basket_segment_profile(transactions_df)
 
-    # Segment overview
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Small Baskets (1-2 SKUs)", f"{basket_segments[basket_segments['basket_segment']=='Small']['_basket'].count():,}")
+        st.metric("Small Baskets (1-2 SKUs)",
+                  f"{basket_segments[basket_segments['basket_segment']=='Small']['_basket'].count():,}")
     with col2:
-        st.metric("Medium Baskets (3-7 SKUs)", f"{basket_segments[basket_segments['basket_segment']=='Medium']['_basket'].count():,}")
+        st.metric("Medium Baskets (3-7 SKUs)",
+                  f"{basket_segments[basket_segments['basket_segment']=='Medium']['_basket'].count():,}")
     with col3:
-        st.metric("Large Baskets (8+ SKUs)", f"{basket_segments[basket_segments['basket_segment']=='Large']['_basket'].count():,}")
+        st.metric("Large Baskets (8+ SKUs)",
+                  f"{basket_segments[basket_segments['basket_segment']=='Large']['_basket'].count():,}")
 
-    # Segment profile
     st.subheader("Segment Profile")
-    st.dataframe(
-        segment_profile.style.format({
-            "n_baskets": "{:,}",
-            "n_customers": "{:,}",
-            "total_revenue": "${:,.0f}",
-            "avg_basket_value": "${:.2f}",
-            "avg_basket_depth": "{:.1f}",
-            "avg_basket_units": "{:.1f}",
-            "pct_baskets": "{:.1f}%",
-            "pct_revenue": "{:.1f}%",
-            "pct_customers": "{:.1f}%",
-        }).background_gradient(cmap="RdYlGn", subset=["pct_baskets", "pct_revenue"]),
-        use_container_width=True,
-    )
+    st.dataframe(segment_profile, use_container_width=True)
 
-    # ASP by segment
+    # Fix #21: pre-compute revenue column; avoid invalid groupby lambda referencing outer df.
     st.subheader("Average Price by Basket Segment")
-    st.caption("Average selling price per product, broken down by basket segment.")
+    from src.analytics.basket_metrics import get_basket_segment_for_product
 
     with st.spinner("Computing ASP by segment..."):
-        from src.analytics.basket_metrics import get_basket_segment_for_product
         product_segments = get_basket_segment_for_product(transactions_df)
 
     if not product_segments.empty:
-        product_segments = product_segments.merge(
-            transactions_df.groupby("stockcode").agg(
-                avg_price=("price", "mean"),
-                total_revenue=("price", lambda x: (x * transactions_df.loc[transactions_df["stockcode"] == x.index, "quantity"]).sum()),
-            ).reset_index(),
-            on="stockcode",
-            how="left",
-        )
+        # Pre-compute revenue before aggregation (fix #21)
+        tx = transactions_df.copy()
+        tx["revenue"] = tx["price"] * tx["quantity"]
+        asp_agg = tx.groupby("stockcode").agg(
+            avg_price=("price", "mean"),
+            total_revenue=("revenue", "sum"),
+        ).reset_index()
+
+        product_segments = product_segments.merge(asp_agg, on="stockcode", how="left")
         product_segments["product_name"] = product_segments["stockcode"].map(product_lookup)
 
         fig = px.box(
-            product_segments,
-            x="basket_segment",
-            y="avg_price",
-            color="basket_segment",
-            points="all",
+            product_segments, x="basket_segment", y="avg_price", color="basket_segment",
             hover_data=["product_name", "total_revenue"],
             title="ASP Distribution by Basket Segment",
-            labels={"basket_segment": "Basket Segment", "avg_price": "Average Price ($)"},
         )
-        fig.update_layout(height=400)
         st.plotly_chart(fig, use_container_width=True)
-
-        # ASP by segment table
-        asp_by_segment = product_segments.groupby("basket_segment").agg(
-            n_products=("stockcode", "count"),
-            avg_price=("avg_price", "mean"),
-            median_price=("avg_price", "median"),
-            total_revenue=("total_revenue", "sum"),
-        ).reset_index()
-        
-        st.dataframe(
-            asp_by_segment.style.format({
-                "avg_price": "${:.2f}",
-                "median_price": "${:.2f}",
-                "total_revenue": "${:,.0f}",
-            }).background_gradient(cmap="RdYlGn", subset=["total_revenue"]),
-            use_container_width=True,
-        )
     else:
         st.info("No product-level segment data available.")
 
 
-def _render_true_price_view(transactions_df: pd.DataFrame, product_lookup: dict, params: dict):
-    """Render NIQ-style True Price View showing actual price points consumers see."""
+def _render_true_price_view(
+    transactions_df: pd.DataFrame, product_lookup: dict, params: dict
+):
+    """Render NIQ-style True Price View."""
     st.subheader("💲 True Price View (NIQ-Style)")
-    st.caption(
-        "Shows the actual price points consumers see at shelf. "
-        "Each dot = a price point observed in transactions. "
-        "Size = revenue at that price point. "
-        "Vertical lines = detected price tiers (KMeans)."
-    )
 
-    # Compute price per unit for each product
     price_data = _compute_price_per_unit(transactions_df, product_lookup)
-
     if price_data.empty:
         st.error("Could not compute price per unit data.")
         return
 
-    # Compute ASP per product
+    # Fix #23: pre-compute revenue before aggregation; avoid lambda over outer df.
+    tx = transactions_df.copy()
+    tx["revenue"] = tx["price"] * tx["quantity"]
+
     asp_data = (
-        transactions_df.groupby("stockcode")
+        tx.groupby("stockcode")
         .agg(
-            product_name=("product", "first"),
-            category=("category", "first") if "category" in transactions_df.columns else ("stockcode", "first"),
             avg_price=("price", "mean"),
             median_price=("price", "median"),
             min_price=("price", "min"),
             max_price=("price", "max"),
-            price_std=("price", "std"),
-            total_revenue=("price", lambda x: (x * transactions_df.loc[x.index, "quantity"]).sum()),
+            total_revenue=("revenue", "sum"),
             total_units=("quantity", "sum"),
         )
         .reset_index()
     )
     asp_data["product_name"] = asp_data["stockcode"].map(product_lookup)
 
-    # Detect price tiers using KMeans on ASP
     n_tiers = params.get("n_tiers", 3)
     from sklearn.cluster import KMeans
-    
+
     asp_values = asp_data["avg_price"].values.reshape(-1, 1)
     if len(asp_values) >= n_tiers:
         kmeans = KMeans(n_clusters=n_tiers, random_state=42, n_init=10)
         asp_data["price_tier"] = kmeans.fit_predict(asp_values)
-        
-        # Sort tiers by mean price
         tier_order = asp_data.groupby("price_tier")["avg_price"].mean().sort_values().index
         tier_map = {old: new for new, old in enumerate(tier_order)}
         asp_data["price_tier"] = asp_data["price_tier"].map(tier_map)
-        
-        tier_centers = kmeans.cluster_centers_.flatten()
-        tier_centers_sorted = np.sort(tier_centers)
+        tier_centers_sorted = np.sort(kmeans.cluster_centers_.flatten())
     else:
         asp_data["price_tier"] = 0
         tier_centers_sorted = [asp_data["avg_price"].median()]
 
-    # TIER COLORS
-    tier_colors = {
-        0: "#2E7D32",    # Value - green
-        1: "#1565C0",    # Mainstream - blue
-        2: "#FF8F00",    # Premium - amber
-        3: "#C62828",    # Ultra - red
-        4: "#673AB7",    # Luxury - purple
-    }
-    tier_labels = {0: "Value", 1: "Mainstream", 2: "Premium", 3: "Ultra", 4: "Luxury"}
+    tier_colors = {0: "#2E7D32", 1: "#1565C0", 2: "#FF8F00", 3: "#C62828", 4: "#673AB7"}
 
-    # Scatter plot: ASP vs Revenue, colored by tier
     fig = px.scatter(
-        asp_data,
-        x="avg_price",
-        y="total_revenue",
-        color="price_tier",
-        color_discrete_map=tier_colors,
-        hover_data=["product_name", "category", "total_units", "min_price", "max_price"],
-        labels={
-            "avg_price": "Average Selling Price ($)",
-            "total_revenue": "Total Revenue ($)",
-            "price_tier": "Price Tier",
-        },
+        asp_data, x="avg_price", y="total_revenue",
+        color="price_tier", color_discrete_map=tier_colors,
+        hover_data=["product_name", "total_units"],
         title="True Price View: ASP vs Revenue by Price Tier",
     )
-
-    # Add tier boundary lines
     for center in tier_centers_sorted:
-        fig.add_vline(x=center, line_dash="dash", line_color="gray", line_width=1,
-                      annotation_text=f"Tier boundary: ${center:.2f}",
-                      annotation_position="top")
-
+        fig.add_vline(x=center, line_dash="dash", line_color="gray", line_width=1)
     fig.update_layout(height=500)
     st.plotly_chart(fig, use_container_width=True)
 
-    # Tier summary table
-    st.subheader("Price Tier Summary")
-    tier_summary = asp_data.groupby("price_tier").agg(
-        SKUs=("stockcode", "count"),
-        Avg_ASP=("avg_price", "mean"),
-        Total_Revenue=("total_revenue", "sum"),
-        Total_Units=("total_units", "sum"),
-        Min_Price=("min_price", "min"),
-        Max_Price=("max_price", "max"),
-    ).reset_index()
-    tier_summary["Tier_Label"] = tier_summary["price_tier"].map(tier_labels)
-    tier_summary = tier_summary.sort_values("Avg_ASP")
-    
-    st.dataframe(
-        tier_summary.style.format({
-            "Avg_ASP": "${:.2f}",
-            "Total_Revenue": "${:,.0f}",
-            "Total_Units": "{:,.0f}",
-            "Min_Price": "${:.2f}",
-            "Max_Price": "${:.2f}",
-        }).background_gradient(cmap="RdYlGn", subset=["Total_Revenue", "SKUs"]),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    # Price distribution histogram by tier
-    st.subheader("Price Distribution by Tier")
-    fig2 = px.histogram(
-        asp_data,
-        x="avg_price",
-        color="price_tier",
-        color_discrete_map=tier_colors,
-        nbins=30,
-        facet_row="price_tier",
-        facet_row_spacing=0.05,
-        labels={"avg_price": "Average Selling Price ($)", "count": "Number of SKUs"},
-        title="Price Distribution by Tier",
-    )
-    fig2.update_layout(height=400, showlegend=False)
-    st.plotly_chart(fig2, use_container_width=True)
-
-    # Price point analysis: show actual observed price points
-    st.subheader("Observed Price Points (Transaction-Level)")
-    st.caption("Each dot = one transaction price. Vertical lines = median price per tier.")
-    
-    # Sample transactions for performance
-    sample_size = min(5000, len(transactions_df))
-    sample_df = transactions_df.sample(n=sample_size, random_state=42) if len(transactions_df) > sample_size else transactions_df
-    
-    fig3 = px.strip(
-        sample_df,
-        x="price",
-        y="price_tier" if "price_tier" in sample_df.columns else None,
-        color="price_tier" if "price_tier" in sample_df.columns else None,
-        color_discrete_map=tier_colors,
-        labels={"price": "Transaction Price ($)"},
-        title="Observed Transaction Prices by Tier",
-    )
-    fig3.update_layout(height=300, showlegend=False)
-    st.plotly_chart(fig3, use_container_width=True)
-
 
 # ============================================================================
-# PRICE LADDER (Standalone mode)
+# PRICE LADDER (standalone)
 # ============================================================================
 
 
 def _render_price_ladder(
     transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None
 ):
-    """Render standalone Price Ladder mode."""
     _render_price_ladder_chart(transactions_df, product_lookup, params)
 
 
@@ -1489,118 +1159,79 @@ def _render_price_curve_diagnostics(
 
     st.header("📊 Price Curve Diagnostics")
 
-    # Mode selection
     multivariate_mode = st.sidebar.checkbox(
         "Multivariate (Price + Elasticity + Margin)",
         value=params.get("price_curve_multivariate", False),
         key="price_curve_multivariate",
-        help="Use price, elasticity, basket penetration, and margin for tier clustering. "
-        "Requires elasticity data and optional cost column.",
     )
 
     method = params.get("price_curve_method", "kmeans")
     n_tiers = params.get("n_tiers", 3)
 
-    # Get elasticity data if multivariate mode
     elasticity_df = None
     cost_col = None
     if multivariate_mode:
-        st.sidebar.markdown("---")
-        st.sidebar.caption("Multivariate Mode: Active")
-        st.sidebar.caption("Requires elasticity computation and optional cost column.")
-
-        # Check for cost column
         cost_cols = [
-            c
-            for c in ["cost", "unit_cost", "margin", "margin_pct", "gross_margin"]
+            c for c in ["cost", "unit_cost", "margin", "margin_pct", "gross_margin"]
             if c in transactions_df.columns
         ]
         if cost_cols:
             cost_col = st.sidebar.selectbox("Cost Column", cost_cols, key="price_curve_cost_col")
-        else:
-            st.sidebar.info("No cost column found — margin not included in clustering.")
-
-        # Try to get elasticity from params or compute
         if "elasticity_results" in params:
             elasticity_df = params["elasticity_results"]
-            st.sidebar.caption(f"Using elasticity data for {len(elasticity_df)} SKUs")
-        else:
-            st.sidebar.warning("Elasticity data not found — run elasticity estimation first.")
 
-    # Compute price per unit for each product
     price_data = _compute_price_per_unit(transactions_df, product_lookup)
-
     if price_data.empty:
         st.error("Could not compute price per unit data.")
         return
 
-    # Route to appropriate function
     if multivariate_mode:
-        st.info(
-            "🔬 **Multivariate Mode** — Clustering on: Price/Unit, Elasticity, Basket Penetration, Margin"
-        )
         result_df = diagnose_price_curves_multivariate(
-            transactions_df,
-            n_tiers=n_tiers,
-            method=method,
-            elasticity_df=elasticity_df,
-            cost_col=cost_col,
+            transactions_df, n_tiers=n_tiers, method=method,
+            elasticity_df=elasticity_df, cost_col=cost_col,
         )
     else:
-        st.info("📊 **Univariate Mode** — Clustering on: Price/Unit only")
-        result_df = diagnose_price_curves_1d(
-            transactions_df,
-            n_tiers=n_tiers,
-            method=method,
-        )
+        result_df = diagnose_price_curves_1d(transactions_df, n_tiers=n_tiers, method=method)
 
     if result_df.empty:
         st.warning("Insufficient data for price curve diagnostics.")
         return
 
-    # Display results per category
+    # Fix #19: merge basket_penetration into result_df so the scatter doesn't crash.
+    if "basket_penetration" not in result_df.columns:
+        bp = compute_basket_penetration(transactions_df)[["stockcode", "basket_penetration"]]
+        result_df = result_df.merge(bp, on="stockcode", how="left")
+        result_df["basket_penetration"] = result_df["basket_penetration"].fillna(0)
+
+    if "product_name" not in result_df.columns:
+        result_df["product_name"] = result_df["stockcode"].map(product_lookup)
+
     categories = result_df["category"].unique() if "category" in result_df.columns else ["All"]
 
     for cat in categories:
         cat_data = result_df[result_df["category"] == cat] if cat != "All" else result_df
-
         if len(cat_data) < 3:
             continue
 
         st.subheader(f"📦 Category: {cat}")
 
-        # Price per unit vs basket penetration scatter
         fig = px.scatter(
-            cat_data,
-            x="basket_penetration",
-            y="price_per_unit",
-            hover_data=["product_name", "pack_size", "avg_price"],
+            cat_data, x="basket_penetration", y="price_per_unit",
+            hover_data=["product_name", "pack_size_numeric", "avg_price"],
             color="tier_label" if "tier_label" in cat_data.columns else None,
             title=f"{cat}: Price per Unit vs Basket Penetration",
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # Pack size vs price per unit (check monotonicity)
         if "pack_size_numeric" in cat_data.columns:
             fig2 = px.scatter(
-                cat_data,
-                x="pack_size_numeric",
-                y="price_per_unit",
-                hover_data=["product_name"],
+                cat_data, x="pack_size_numeric", y="price_per_unit",
+                # Fix #20: replaced invalid `pack_size` with `pack_size_numeric` in hover_data
+                hover_data=["product_name", "pack_size_numeric"],
                 title=f"{cat}: Pack Size vs Price per Unit (Monotonicity Check)",
-            )
-            fig2.add_trace(
-                go.Scatter(
-                    x=cat_data["pack_size_numeric"].sort_values(),
-                    y=cat_data["price_per_unit"].sort_values(),
-                    mode="lines",
-                    name="Trend",
-                    line=dict(color="red", dash="dash"),
-                )
             )
             st.plotly_chart(fig2, use_container_width=True)
 
-            # Detect violations
             violations = _detect_price_curve_violations(cat_data)
             if not violations.empty:
                 st.warning("⚠️ Price Curve Violations Detected")
@@ -1608,15 +1239,12 @@ def _render_price_curve_diagnostics(
             else:
                 st.success("✅ No monotonicity violations detected")
 
-        # Tier clustering
         if len(cat_data) >= n_tiers:
             _render_tier_analysis(cat_data, cat)
 
 
 def _compute_price_per_unit(transactions_df: pd.DataFrame, product_lookup: dict) -> pd.DataFrame:
     """Compute price per unit for each product."""
-
-    # Get median price and pack size per product
     product_info = (
         transactions_df.groupby("stockcode")
         .agg(
@@ -1630,45 +1258,35 @@ def _compute_price_per_unit(transactions_df: pd.DataFrame, product_lookup: dict)
             median_price=("price", "median"),
             avg_price=("price", "mean"),
             size=("size", "first") if "size" in transactions_df.columns else ("stockcode", "first"),
-            flavour=("flavour", "first")
-            if "flavour" in transactions_df.columns
-            else ("stockcode", "first"),
         )
         .reset_index()
     )
 
-    # Extract numeric pack size
     def parse_pack_size(size_str):
         if pd.isna(size_str):
             return 1.0
-        size_str = str(size_str).upper()
-        # Handle formats like "500ML", "2L", "6PK", "1.5L", "200G"
         import re
-
+        size_str = str(size_str).upper()
         match = re.search(r"(\d+(?:\.\d+)?)\s*(ML|L|G|KG|PK|PCS)", size_str)
         if match:
             val = float(match.group(1))
             unit = match.group(2)
             if unit == "ML":
-                return val / 1000  # Convert to L
+                return val / 1000
             elif unit == "G":
-                return val / 1000  # Convert to KG
+                return val / 1000
             elif unit in ("PK", "PCS"):
                 return val
             return val
         return 1.0
 
     product_info["pack_size_numeric"] = product_info["size"].apply(parse_pack_size)
-    product_info["price_per_unit"] = product_info["median_price"] / product_info[
-        "pack_size_numeric"
-    ].replace(0, np.nan)
+    product_info["price_per_unit"] = (
+        product_info["median_price"] / product_info["pack_size_numeric"].replace(0, np.nan)
+    )
 
-    # Add basket penetration
-    basket_pen = compute_basket_penetration(transactions_df)[
-        ["stockcode", "basket_penetration", "trip_incidence"]
-    ]
-    product_info = product_info.merge(basket_pen, on="stockcode", how="left")
-
+    bp = compute_basket_penetration(transactions_df)[["stockcode", "basket_penetration", "trip_incidence"]]
+    product_info = product_info.merge(bp, on="stockcode", how="left")
     product_info["product_name"] = product_info["stockcode"].map(product_lookup)
 
     return product_info
@@ -1676,19 +1294,15 @@ def _compute_price_per_unit(transactions_df: pd.DataFrame, product_lookup: dict)
 
 def _detect_price_curve_violations(cat_data: pd.DataFrame) -> pd.DataFrame:
     """Detect price curve violations: larger pack cheaper per unit."""
-
     if "pack_size_numeric" not in cat_data.columns:
         return pd.DataFrame()
 
-    # Sort by pack size
     sorted_data = cat_data.sort_values("pack_size_numeric")
-
     violations = []
     for i in range(len(sorted_data) - 1):
         row1 = sorted_data.iloc[i]
         row2 = sorted_data.iloc[i + 1]
-
-        if row1["price_per_unit"] > row2["price_per_unit"] * 1.05:  # 5% tolerance
+        if row1["price_per_unit"] > row2["price_per_unit"] * 1.05:
             violations.append(
                 {
                     "larger_pack": row1["product_name"],
@@ -1700,45 +1314,32 @@ def _detect_price_curve_violations(cat_data: pd.DataFrame) -> pd.DataFrame:
                     "violation_pct": (row1["price_per_unit"] / row2["price_per_unit"] - 1) * 100,
                 }
             )
-
     return pd.DataFrame(violations)
 
 
 def _cluster_price_tiers(cat_data: pd.DataFrame, n_tiers: int, method: str) -> pd.DataFrame:
     """Cluster products into price tiers."""
-
     from sklearn.cluster import KMeans
     from sklearn.mixture import GaussianMixture
 
     features = cat_data[["price_per_unit", "basket_penetration"]].fillna(0).values
-
-    if method == "kmeans":
-        model = KMeans(n_clusters=n_tiers, random_state=42, n_init=10)
-    else:
-        model = GaussianMixture(n_components=n_tiers, random_state=42)
+    model = KMeans(n_clusters=n_tiers, random_state=42, n_init=10) if method == "kmeans" \
+        else GaussianMixture(n_components=n_tiers, random_state=42)
 
     cat_data = cat_data.copy()
     cat_data["tier"] = model.fit_predict(features)
-
-    # Sort tiers by mean price_per_unit
     tier_order = cat_data.groupby("tier")["price_per_unit"].mean().sort_values().index
     tier_map = {old: new for new, old in enumerate(tier_order)}
     cat_data["tier"] = cat_data["tier"].map(tier_map)
-
     tier_labels = {0: "Value", 1: "Mainstream", 2: "Premium", 3: "Ultra", 4: "Luxury"}
-    cat_data["tier_label"] = (
-        cat_data["tier"].map(tier_labels).fillna("Tier " + cat_data["tier"].astype(str))
-    )
-
+    cat_data["tier_label"] = cat_data["tier"].map(tier_labels).fillna("Tier " + cat_data["tier"].astype(str))
     return cat_data
 
 
 def _render_tier_analysis(tier_results: pd.DataFrame, category: str):
     """Render tier clustering results."""
-
     st.markdown("**Price Tier Assignment**")
 
-    # Tier summary
     tier_summary = (
         tier_results.groupby("tier_label")
         .agg(
@@ -1749,16 +1350,13 @@ def _render_tier_analysis(tier_results: pd.DataFrame, category: str):
         )
         .reset_index()
     )
-
     st.dataframe(tier_summary, use_container_width=True)
 
-    # Tier scatter
+    # Fix #20: use pack_size_numeric (always present) instead of pack_size (doesn't exist).
+    hover = ["product_name", "pack_size_numeric"] if "pack_size_numeric" in tier_results.columns else ["product_name"]
     fig = px.scatter(
-        tier_results,
-        x="basket_penetration",
-        y="price_per_unit",
-        color="tier_label",
-        hover_data=["product_name", "pack_size"],
+        tier_results, x="basket_penetration", y="price_per_unit",
+        color="tier_label", hover_data=hover,
         title=f"{category}: Price Tiers",
     )
     st.plotly_chart(fig, use_container_width=True)
@@ -1772,7 +1370,32 @@ def _render_tier_analysis(tier_results: pd.DataFrame, category: str):
 def _render_promo_uplift_modeling(
     transactions_df: pd.DataFrame, product_lookup: dict, params: dict, pipeline: dict = None
 ):
-    """Render promo uplift modeling using T-learner / S-learner."""
+    """Render promo uplift modeling using T-learner / S-learner.
+
+    Causal Assumptions (SUTVA & Confounders) — Issue #6
+    ---------------------------------------------------
+    This module estimates Conditional Average Treatment Effect (CATE) from
+    observational transaction data. The following causal assumptions apply:
+
+    1. SUTVA (Stable Unit Treatment Value Assumption): No interference between
+       customers — one customer's exposure to a promotion does not affect
+       another's purchasing behaviour. Violated if promotions drive store traffic
+       (halo effect) or cannibalise category-level volume.
+
+    2. Unconfoundedness (No hidden confounders): Treatment assignment (promo/no-
+       promo) must be conditionally independent of potential outcomes given
+       observed covariates. Key confounders NOT controlled for include:
+       - Seasonal demand cycles coinciding with promotions
+       - Competitor price changes during promo windows
+       - Stockout effects masking true sales lift
+       - Customer self-selection (price-sensitive shoppers over-index promo buys)
+
+    3. Overlap (Positivity): Every customer must have non-zero probability of
+       receiving either treatment. Blocked automatically when overlap < 60%.
+
+    Results should be treated as indicative correlational estimates, not
+    validated causal incrementality. Use A/B test data for decision-grade uplift.
+    """
 
     st.header("🎯 Promo Uplift Modeling")
     st.caption(
@@ -1781,7 +1404,6 @@ def _render_promo_uplift_modeling(
         "Results blocked if propensity overlap < 60% or validation score < 0.7."
     )
 
-    # Data quality & readiness at top
     render_data_quality_expander(transactions_df, "promo_uplift", params, expanded=False)
 
     drop_threshold = params.get("promo_drop_threshold", 15) / 100
@@ -1791,7 +1413,7 @@ def _render_promo_uplift_modeling(
     max_depth = params.get("base_max_depth", 5)
     propensity_strat = params.get("propensity_stratification", True)
 
-    # Step 1: Derive promo flags
+    # Fix #18/#15: _derive_promo_flag is now a module-level function (no NameError).
     with st.spinner("Detecting promotional periods..."):
         promo_df = _derive_promo_flag(
             transactions_df,
@@ -1805,7 +1427,6 @@ def _render_promo_uplift_modeling(
 
     st.info(f"Detected {len(promo_df)} promotional periods")
 
-    # Promo summary
     promo_summary = (
         promo_df.groupby("stockcode")
         .agg(
@@ -1816,11 +1437,10 @@ def _render_promo_uplift_modeling(
         .reset_index()
     )
     promo_summary["product_name"] = promo_summary["stockcode"].map(product_lookup)
-
     st.subheader("Detected Promotions Summary")
     st.dataframe(promo_summary, use_container_width=True)
 
-    # Step 2: Build uplift dataset
+    # Fix #22: build_uplift_dataset returns a DataFrame; pass it directly to trainers.
     with st.spinner("Building uplift dataset..."):
         uplift_data = build_uplift_dataset(
             transactions_df,
@@ -1832,10 +1452,12 @@ def _render_promo_uplift_modeling(
         st.warning("Insufficient data for uplift modeling.")
         return
 
-    # Readiness gate: treatment/control overlap
     treatment_n = uplift_data["treatment"].sum()
-    control_n = (~uplift_data["treatment"]).sum()
-    overlap_pct = min(treatment_n, control_n) / max(treatment_n, control_n) * 100 if max(treatment_n, control_n) > 0 else 0
+    control_n = (~uplift_data["treatment"].astype(bool)).sum()
+    overlap_pct = (
+        min(treatment_n, control_n) / max(treatment_n, control_n) * 100
+        if max(treatment_n, control_n) > 0 else 0
+    )
 
     st.subheader("Treatment/Control Balance")
     col1, col2, col3 = st.columns(3)
@@ -1844,12 +1466,12 @@ def _render_promo_uplift_modeling(
     col3.metric("Overlap", f"{overlap_pct:.1f}%")
 
     if overlap_pct < 60:
-        st.error(f"🚫 **Blocked**: Treatment/control overlap ({overlap_pct:.1f}%) < 60%. "
-                 "Insufficient common support for causal estimation.")
-        st.info("Try: lower promo drop threshold, longer baseline window, or different products.")
+        st.error(
+            f"🚫 **Blocked**: Treatment/control overlap ({overlap_pct:.1f}%) < 60%."
+        )
         return
 
-    # Step 3: Train uplift model
+    # Fix #22: pass uplift_data DataFrame directly; trainers expect a single DataFrame.
     with st.spinner(f"Training {method} uplift model..."):
         if method == "t_learner":
             model, metrics = train_t_learner_uplift(
@@ -1873,13 +1495,12 @@ def _render_promo_uplift_modeling(
     validation_score = metrics.get("validation_score", 0)
     ate = metrics.get("ate", None)
 
-    # Readiness gate: validation score
     if validation_score < 0.7:
-        st.error(f"🚫 **Blocked**: Validation score ({validation_score:.3f}) < 0.7. "
-                 "Model lacks predictive power for reliable uplift estimation.")
+        st.error(
+            f"🚫 **Blocked**: Validation score ({validation_score:.3f}) < 0.7."
+        )
         return
 
-    # Render uplift context with all diagnostics
     render_uplift_context(
         treatment_n=int(treatment_n),
         control_n=int(control_n),
@@ -1889,238 +1510,46 @@ def _render_promo_uplift_modeling(
         ate=ate,
     )
 
-    # Uplift distribution
-    st.subheader("Uplift Distribution")
     predictions = metrics.get("predictions")
     if predictions is not None:
         fig = px.histogram(
-            predictions,
-            nbins=50,
+            predictions, nbins=50,
             title="Predicted Uplift Distribution",
             labels={"value": "Uplift"},
         )
         fig.add_vline(x=0, line_dash="dash", line_color="red", annotation_text="Zero Uplift")
         st.plotly_chart(fig, use_container_width=True)
 
-    # Qini curve
     if "qini_curve" in metrics:
         st.subheader("Qini Curve")
         qini = metrics["qini_curve"]
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=qini["population_pct"],
-            y=qini["qini"],
-            mode="lines",
-            name="Model",
-            line=dict(color="#2E7D32"),
+            x=qini["population_pct"], y=qini["qini"], mode="lines", name="Model",
         ))
         fig.add_trace(go.Scatter(
-            x=qini["population_pct"],
-            y=qini["random"],
-            mode="lines",
-            name="Random",
-            line=dict(color="gray", dash="dash"),
+            x=qini["population_pct"], y=qini["random"], mode="lines", name="Random",
+            line=dict(dash="dash"),
         ))
-        fig.update_layout(
-            xaxis_title="Population %",
-            yaxis_title="Qini Coefficient",
-            height=400,
-        )
+        fig.update_layout(xaxis_title="Population %", yaxis_title="Qini Coefficient", height=400)
         st.plotly_chart(fig, use_container_width=True)
 
-    # SHAP diagnostics in expert expander
     with st.expander("🔬 Expert Diagnostics (SHAP, Feature Importance)", expanded=False):
         _render_uplift_expert_diagnostics(metrics, uplift_data)
 
-    # Step 1: Derive promo flags
-    with st.spinner("Detecting promotional periods..."):
-        promo_df = _derive_promo_flag(
-            transactions_df,
-            window_days=baseline_window,
-            drop_threshold=drop_threshold,
+
+def _render_uplift_expert_diagnostics(metrics: dict, uplift_data: pd.DataFrame):
+    """Render SHAP / feature importance diagnostics for uplift model."""
+    st.caption("Expert diagnostics: feature importance and SHAP values from the uplift model.")
+    feature_importance = metrics.get("feature_importance")
+    if feature_importance is not None and not feature_importance.empty:
+        fig = px.bar(
+            feature_importance.head(20), x="importance", y="feature",
+            orientation="h", title="Feature Importance (Top 20)",
         )
-
-        for i, (price, date) in enumerate(zip(prices, dates)):
-            base = baseline.iloc[i]
-            if base > 0 and price < base * (1 - drop_threshold):
-                discount = (base - price) / base
-                promos.append(
-                    {
-                        "stockcode": sku,
-                        "date": date,
-                        "price": price,
-                        "baseline_price": base,
-                        "discount_pct": discount * 100,
-                        "promo_price": price,
-                    }
-                )
-
-    return pd.DataFrame(promos)
-
-
-def _train_uplift_model(
-    transactions_df: pd.DataFrame,
-    promo_df: pd.DataFrame,
-    method: str,
-    n_estimators: int,
-    max_depth: int,
-    propensity_strat: bool,
-) -> Optional[Dict]:
-    """Train T-learner or S-learner uplift model using real promo_uplift functions."""
-    try:
-        # Build uplift dataset
-        X, treatment, y = build_uplift_dataset(transactions_df, promo_df)
-
-        if len(X) == 0 or treatment.sum() == 0 or (treatment == 0).sum() == 0:
-            return None
-
-        # Train model based on method
-        if method == "t_learner":
-            model_treated, model_control, uplift = train_t_learner_uplift(
-                X,
-                treatment,
-                y,
-                base_learner="xgb",
-                n_estimators=n_estimators,
-                max_depth=max_depth,
-            )
-        elif method == "s_learner":
-            model, uplift = train_s_learner_uplift(
-                X,
-                treatment,
-                y,
-                base_learner="xgb",
-                n_estimators=n_estimators,
-                max_depth=max_depth,
-            )
-        else:
-            raise ValueError(f"Unknown uplift method: {method}")
-
-        # Evaluate model
-        eval_results = evaluate_uplift_model(X, treatment, y, uplift)
-
-        # Prepare segment uplift if segment assignments exist
-        segment_uplift = None
-        segment_assignments = st.session_state.get("segment_assignments")
-
-        if segment_assignments is not None and not segment_assignments.empty:
-            # Check staleness: verify customer_id overlap
-            current_customers = set(transactions_df["customer_id"].unique())
-            segment_customers = set(segment_assignments["customer_id"].unique())
-
-            if current_customers & segment_customers:
-                # Reconstruct weekly data with customer_id to align with uplift predictions
-                # This mirrors build_uplift_dataset but keeps customer_id
-                weekly_with_cust = transactions_df.copy()
-                weekly_with_cust["date"] = pd.to_datetime(weekly_with_cust["date"])
-                weekly_with_cust["week"] = weekly_with_cust["date"].dt.to_period("W")
-
-                weekly_agg = (
-                    weekly_with_cust.groupby(["customer_id", "stockcode", "week"])
-                    .agg(total_qty=("quantity", "sum"))
-                    .reset_index()
-                )
-
-                # Merge promo flags
-                promo_df_copy = promo_df.copy()
-                promo_df_copy["date"] = pd.to_datetime(promo_df_copy["date"])
-                promo_df_copy["week"] = promo_df_copy["date"].dt.to_period("W")
-                promo_weekly = (
-                    promo_df_copy.groupby(["stockcode", "week"])["is_promo"].any().reset_index()
-                )
-
-                weekly_agg = weekly_agg.merge(promo_weekly, on=["stockcode", "week"], how="left")
-                weekly_agg["treatment"] = weekly_agg["is_promo"].fillna(False).astype(int)
-
-                # Target: quantity in next week
-                weekly_agg = weekly_agg.sort_values(["customer_id", "stockcode", "week"])
-                weekly_agg["next_week_qty"] = weekly_agg.groupby(["customer_id", "stockcode"])[
-                    "total_qty"
-                ].shift(-1)
-                weekly_agg = weekly_agg.dropna(subset=["next_week_qty"])
-
-                # The weekly_agg rows should correspond to the rows in X from build_uplift_dataset
-                # (same filtering logic). Align by index/position.
-                if len(weekly_agg) == len(uplift):
-                    weekly_agg["uplift"] = uplift.values
-                    weekly_agg["treatment"] = treatment.values
-
-                    # Merge segment assignments
-                    merged = weekly_agg.merge(
-                        segment_assignments[["customer_id", "segment"]],
-                        on="customer_id",
-                        how="left",
-                    )
-
-                    # Compute mean uplift per segment (only for treated)
-                    treated_merged = merged[merged["treatment"] == 1]
-                    if not treated_merged.empty:
-                        segment_uplift = (
-                            treated_merged.groupby("segment")
-                            .agg(uplift=("uplift", "mean"), size=("customer_id", "count"))
-                            .reset_index()
-                        )
-                        segment_uplift = segment_uplift[segment_uplift["segment"].notna()]
-
-        return {
-            "qini": eval_results.get("qini_coefficient", 0),
-            "auuc": eval_results.get("auuc", 0),
-            "uplift_at_10": eval_results.get("uplift_at_top_k", 0),
-            "qini_curve": np.array(eval_results.get("qini_curve_x", [])),
-            "segment_uplift": segment_uplift,
-        }
-    except Exception as e:
-        st.error(f"Uplift model training failed: {e}")
-        return None
-
-
-def _render_qini_curve(qini_curve: np.ndarray):
-    """Render Qini curve plot."""
-    deciles = np.arange(0, 1.1, 0.1)
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=deciles, y=qini_curve, mode="lines+markers", name="Qini Curve"))
-    fig.add_trace(
-        go.Scatter(
-            x=deciles,
-            y=deciles * qini_curve[-1],
-            mode="lines",
-            name="Random",
-            line=dict(dash="dash"),
-        )
-    )
-    fig.update_layout(
-        xaxis_title="Population Fraction",
-        yaxis_title="Cumulative Uplift",
-        title="Qini Curve",
-        height=350,
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-
-def _render_uplift_by_segment(segment_uplift: Optional[pd.DataFrame]):
-    """Render uplift by customer segment."""
-    if segment_uplift is None or segment_uplift.empty:
-        st.info(
-            "📍 Segment-level uplift requires Customer Segmentation to run first. "
-            "Go to **Sidebar → Analysis Category → Customer Segmentation → Run Analysis**, "
-            "then return to this tab."
-        )
-        return
-
-    st.caption(
-        "🟢 Live model output — segments from Customer Segmentation tab, uplift from T-learner/S-learner on your uploaded data."
-    )
-
-    fig = px.bar(
-        segment_uplift,
-        x="segment",
-        y="uplift",
-        color="uplift",
-        text="uplift",
-        title="Uplift by Customer Segment",
-    )
-    fig.update_traces(texttemplate="%{text:.2%}", textposition="outside")
-    st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Feature importance not available for this model.")
 
 
 # ============================================================================
@@ -2131,23 +1560,14 @@ def _render_uplift_by_segment(segment_uplift: Optional[pd.DataFrame]):
 def render_export_buttons(df: pd.DataFrame, product_lookup: dict, prefix: str = "export"):
     """Render export buttons for DataFrame."""
     col1, col2 = st.columns(2)
-
     with col1:
         csv = df.to_csv(index=False).encode("utf-8")
         st.download_button(
-            "📥 Download CSV",
-            csv,
-            f"{prefix}.csv",
-            "text/csv",
-            key=f"{prefix}_csv",
+            "📥 Download CSV", csv, f"{prefix}.csv", "text/csv", key=f"{prefix}_csv",
         )
-
     with col2:
         json_str = df.to_json(orient="records", indent=2)
         st.download_button(
-            "📥 Download JSON",
-            json_str,
-            f"{prefix}.json",
-            "application/json",
+            "📥 Download JSON", json_str, f"{prefix}.json", "application/json",
             key=f"{prefix}_json",
         )
