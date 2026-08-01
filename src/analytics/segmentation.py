@@ -838,6 +838,11 @@ def predict_clv_bg_nbd(
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
 
+    # Filter out customers with zero/negative revenue
+    customer_revenue = df.groupby("customer_id")["revenue"].sum()
+    valid_customers = customer_revenue[customer_revenue > 0].index
+    df = df[df["customer_id"].isin(valid_customers)].copy()
+
     # Prepare summary data for BG/NBD
     observation_period_end = df["date"].max() - pd.Timedelta(prediction_horizon_days, unit="D")
 
@@ -852,6 +857,9 @@ def predict_clv_bg_nbd(
 
     # Filter customers with at least 1 repeat purchase for Gamma-Gamma
     summary_cal = summary[summary["frequency"] > 0].copy()
+
+    # Filter out non-positive monetary values for Gamma-Gamma
+    summary_cal = summary_cal[summary_cal["monetary_value"] > 0].copy()
 
     if len(summary_cal) < 10:
         raise ValueError("Insufficient repeat customers for BG/NBD (need >= 10)")
@@ -913,13 +921,13 @@ def predict_clv_bg_nbd(
             "alpha": float(bgf.params_["alpha"]),
             "a": float(bgf.params_["a"]),
             "b": float(bgf.params_["b"]),
-            "log_likelihood": float(bgf._log_likelihood),
+            "log_likelihood": float(-bgf._negative_log_likelihood_),
         },
         "ggf_params": {
             "p": float(ggf.params_["p"]),
             "q": float(ggf.params_["q"]),
             "v": float(ggf.params_["v"]),
-            "log_likelihood": float(ggf._log_likelihood),
+            "log_likelihood": float(-ggf._negative_log_likelihood_),
         },
         "n_customers_fit": len(summary_cal),
         "n_customers_total": len(summary),
@@ -1156,13 +1164,13 @@ def compute_bg_nbd_p_alive(
             "alpha": float(bgf.params_["alpha"]),
             "a": float(bgf.params_["a"]),
             "b": float(bgf.params_["b"]),
-            "log_likelihood": float(bgf._log_likelihood),
+            "log_likelihood": float(-bgf._negative_log_likelihood_),
         },
         "ggf_params": {
             "p": float(ggf.params_["p"]),
             "q": float(ggf.params_["q"]),
             "v": float(ggf.params_["v"]),
-            "log_likelihood": float(ggf._log_likelihood),
+            "log_likelihood": float(-ggf._negative_log_likelihood_),
         },
         "n_customers_fit": len(summary_cal),
         "n_customers_total": len(summary),

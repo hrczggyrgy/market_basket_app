@@ -752,11 +752,28 @@ def compute_promo_baseline_stl(
         avg_price=("price", "mean"),
     ).reset_index()
 
-    # Promo flag per product-week
+    # Promo flag per product-week from promo_periods (which has start_date, end_date)
     promo_weeks = promo_periods.copy()
-    promo_weeks["date"] = pd.to_datetime(promo_weeks["date"])
-    promo_weeks["week"] = promo_weeks["date"].dt.to_period("W")
-    promo_weekly = promo_weeks.groupby(["stockcode", "week"])["is_promo"].any().reset_index()
+    # Ensure date columns are datetime
+    promo_weeks["start_date"] = pd.to_datetime(promo_weeks["start_date"])
+    promo_weeks["end_date"] = pd.to_datetime(promo_weeks["end_date"])
+
+    # Create promo week flags by expanding each promo period to weeks
+    promo_week_list = []
+    for _, promo in promo_weeks.iterrows():
+        sku = promo["stockcode"]
+        start_week = promo["start_date"].to_period("W")
+        end_week = promo["end_date"].to_period("W")
+        # Generate all weeks in the promo period
+        current_week = start_week
+        while current_week <= end_week:
+            promo_week_list.append({"stockcode": sku, "week": current_week, "is_promo": True})
+            current_week = current_week + 1
+
+    if promo_week_list:
+        promo_weekly = pd.DataFrame(promo_week_list).drop_duplicates(subset=["stockcode", "week"])
+    else:
+        promo_weekly = pd.DataFrame(columns=["stockcode", "week", "is_promo"])
 
     weekly = weekly.merge(promo_weekly, on=["stockcode", "week"], how="left")
     weekly["is_promo"] = weekly["is_promo"].fillna(False)
@@ -786,8 +803,8 @@ def compute_promo_baseline_stl(
                 baseline_revenue = res_rev.trend + res_rev.seasonal
                 baseline_revenue = np.maximum(baseline_revenue, 0)
             except Exception:
-                baseline_units = sku_data["actual_units"].rolling(4, min_periods=1).mean().shift(1).fillna(0)
-                baseline_revenue = sku_data["actual_revenue"].rolling(4, min_periods=1).mean().shift(1).fillna(0)
+                baseline_units = sku_data["actual_units"].rolling(4, min_periods=1).mean().shift(1)
+                baseline_revenue = sku_data["actual_revenue"].rolling(4, min_periods=1).mean().shift(1)
 
         sku_data["baseline_units"] = baseline_units
         sku_data["baseline_revenue"] = baseline_revenue

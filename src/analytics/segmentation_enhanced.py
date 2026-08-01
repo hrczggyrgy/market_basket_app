@@ -422,13 +422,13 @@ def predict_clv_bg_nbd(
             "alpha": float(bgf.params_["alpha"]),
             "a": float(bgf.params_["a"]),
             "b": float(bgf.params_["b"]),
-            "log_likelihood": float(bgf._log_likelihood),
+            "log_likelihood": float(-bgf._negative_log_likelihood_),
         },
         "ggf_params": {
             "p": float(ggf.params_["p"]),
             "q": float(ggf.params_["q"]),
             "v": float(ggf.params_["v"]),
-            "log_likelihood": float(ggf._log_likelihood),
+            "log_likelihood": float(-ggf._negative_log_likelihood_),
         },
         "n_customers_fit": len(summary_cal),
         "n_customers_total": len(summary),
@@ -1961,11 +1961,12 @@ def compute_occasion_segments(
         "solo_trip_rate", "avg_basket_depth", "dominant_category_share",
     ]
 
-    # Normalize modal_day_of_week to 0-1
+    # Normalize modal_day_of_week to 0-1 in customer_features
     customer_features["modal_day_of_week_norm"] = customer_features["modal_day_of_week"] / 6.0
 
+    # Replace modal_day_of_week with normalized version in feature_cols
     X = customer_features[feature_cols].copy()
-    X["modal_day_of_week"] = X["modal_day_of_week_norm"]
+    X["modal_day_of_week"] = customer_features["modal_day_of_week_norm"]
 
     # Scale
     scaler = RobustScaler()
@@ -2016,23 +2017,25 @@ def compute_occasion_segment_profiles(
         occasion_df[["customer_id", "occasion_segment"]], on="customer_id", how="left"
     )
     df["revenue"] = df["price"] * df["quantity"]
+    has_category = "category" in df.columns
+
+    # Base aggregations that don't depend on category
+    agg_dict = {
+        "n_customers": ("customer_id", "nunique"),
+        "total_revenue": ("revenue", "sum"),
+        "avg_basket_value": ("revenue", "mean"),
+        "avg_basket_depth": ("stockcode", lambda x: df.loc[x.index, "stockcode"].nunique() / df.loc[x.index, "customer_id"].nunique()),
+        "median_basket_value": ("revenue", "median"),
+        "avg_ipt_cv": ("ipt_cv", "mean") if "ipt_cv" in df.columns else ("revenue", lambda x: np.nan),
+        "modal_day_of_week": ("date", lambda x: x.dt.dayofweek.mode().iloc[0] if not x.empty else -1),
+    }
+    
+    if has_category:
+        agg_dict["dominant_category"] = ("category", lambda x: x.mode().iloc[0] if not x.mode().empty else "N/A")
 
     profiles = (
         df.groupby("occasion_segment")
-        .agg(
-            n_customers=("customer_id", "nunique"),
-            total_revenue=("revenue", "sum"),
-            avg_basket_value=("revenue", "mean"),
-            avg_basket_depth=("stockcode", lambda x: df.loc[x.index, "stockcode"].nunique() / df.loc[x.index, "customer_id"].nunique()),
-            median_basket_value=("revenue", "median"),
-            avg_ipt_cv=("ipt_cv", "mean") if "ipt_cv" in df.columns else ("revenue", lambda x: np.nan),
-            solo_trip_rate=("stockcode", lambda x: 1.0),  # placeholder
-            modal_day_of_week=("date", lambda x: x.dt.dayofweek.mode().iloc[0] if not x.empty else -1),
-            dominant_category=(
-                "category",
-                lambda x: x.mode().iloc[0] if "category" in df.columns and not x.mode().empty else "N/A"
-            ),
-        )
+        .agg(**agg_dict)
         .reset_index()
     )
 

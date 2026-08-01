@@ -27,10 +27,23 @@ def compute_clv_customer_df(
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
 
+    # Filter out customers with zero/negative total revenue for BG/NBD
+    customer_revenue = df.groupby("customer_id")["revenue"].sum()
+    valid_customers = customer_revenue[customer_revenue > 0].index
+    df_valid = df[df["customer_id"].isin(valid_customers)].copy()
+
+    # Also ensure positive average revenue per transaction for Gamma-Gamma
+    customer_avg_revenue = df_valid.groupby("customer_id")["revenue"].mean()
+    valid_customers_gg = customer_avg_revenue[customer_avg_revenue > 0].index
+    df_valid = df_valid[df_valid["customer_id"].isin(valid_customers_gg)].copy()
+
+    if len(df_valid) == 0:
+        return pd.DataFrame()
+
     # 1. BG/NBD CLV prediction
     try:
         clv_result, diagnostics = predict_clv_bg_nbd(
-            transactions_df,
+            df_valid,
             prediction_horizon_days=prediction_horizon_days,
             freq=freq,
         )
@@ -38,14 +51,14 @@ def compute_clv_customer_df(
         raise ValueError(f"BG/NBD model failed: {e}")
 
     # 2. Customer entropy
-    entropy_df = compute_customer_entropy(transactions_df)
+    entropy_df = compute_customer_entropy(df_valid)
 
     # 3. IPT-CV
-    ipt_df = compute_ipt_cv(transactions_df)
+    ipt_df = compute_ipt_cv(df_valid)
 
     # 4. Base customer metrics
     customer_metrics = (
-        df.groupby("customer_id")
+        df_valid.groupby("customer_id")
         .agg(
             frequency=("transaction_id", "nunique"),
             total_revenue=("revenue", "sum"),
