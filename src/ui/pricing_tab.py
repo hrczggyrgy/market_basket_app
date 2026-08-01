@@ -1215,9 +1215,16 @@ def _render_price_curve_diagnostics(
 
         st.subheader(f"📦 Category: {cat}")
 
+        # Fix #29: diagnose_price_curves_1d() returns median_price, not avg_price.
+        # Use only columns that are guaranteed to exist in result_df.
+        price_hover_col = "median_price" if "median_price" in cat_data.columns else None
+        hover_cols = ["product_name", "pack_size_numeric"]
+        if price_hover_col:
+            hover_cols.append(price_hover_col)
+
         fig = px.scatter(
             cat_data, x="basket_penetration", y="price_per_unit",
-            hover_data=["product_name", "pack_size_numeric", "avg_price"],
+            hover_data=hover_cols,
             color="tier_label" if "tier_label" in cat_data.columns else None,
             title=f"{cat}: Price per Unit vs Basket Penetration",
         )
@@ -1226,7 +1233,6 @@ def _render_price_curve_diagnostics(
         if "pack_size_numeric" in cat_data.columns:
             fig2 = px.scatter(
                 cat_data, x="pack_size_numeric", y="price_per_unit",
-                # Fix #20: replaced invalid `pack_size` with `pack_size_numeric` in hover_data
                 hover_data=["product_name", "pack_size_numeric"],
                 title=f"{cat}: Pack Size vs Price per Unit (Monotonicity Check)",
             )
