@@ -1,5 +1,0 @@
-Requirement already satisfied: bottleneck in ./.venv/lib/python3.12/site-packages (1.6.0)
-Requirement already satisfied: polars[rtcompat] in ./.venv/lib/python3.12/site-packages (1.43.1)
-Requirement already satisfied: polars-runtime-32==1.43.1 in ./.venv/lib/python3.12/site-packages (from polars[rtcompat]) (1.43.1)
-Requirement already satisfied: polars-runtime-compat==1.43.1 in ./.venv/lib/python3.12/site-packages (from polars[rtcompat]) (1.43.1)
-Requirement already satisfied: numpy in ./.venv/lib/python3.12/site-packages (from bottleneck) (2.4.6)
