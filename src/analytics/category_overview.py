@@ -88,8 +88,12 @@ def compute_category_kpis(
     # Merge category info
     df = df.merge(categories_df[["stockcode", "category"]], on="stockcode", how="left")
     
-    # Fill missing categories with "Unknown" to avoid KeyError in groupby
-    df["category"] = df["category"].fillna("Unknown")
+    # Ensure category column exists (in case merge failed to create it)
+    if "category" not in df.columns:
+        df["category"] = "Unknown"
+    else:
+        # Fill missing categories with "Unknown" to avoid KeyError in groupby
+        df["category"] = df["category"].fillna("Unknown")
 
     total_revenue = df["revenue"].sum()
     total_baskets = df.groupby(["customer_id", "date"]).ngroups
@@ -98,10 +102,18 @@ def compute_category_kpis(
     # Get basket penetration per product
     basket_pen = compute_basket_penetration(df)
     basket_pen = basket_pen.merge(categories_df[["stockcode", "category"]], on="stockcode")
+    
+    # Ensure category column exists in basket_pen
+    if "category" not in basket_pen.columns:
+        basket_pen["category"] = "Unknown"
 
     # Get basket value uplift per product
     uplift = compute_basket_value_uplift(df, top_n=len(df["stockcode"].unique()))
     uplift = uplift.merge(categories_df[["stockcode", "category"]], on="stockcode")
+    
+    # Ensure category column exists in uplift
+    if "category" not in uplift.columns:
+        uplift["category"] = "Unknown"
 
     # Weekly revenue per category for trends and PoP
     df["week"] = df["date"].dt.to_period("W")

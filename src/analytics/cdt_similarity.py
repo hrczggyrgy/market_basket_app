@@ -13,8 +13,13 @@ import pandas as pd
 import streamlit as st
 
 
-def _hash_dataframe(df: pd.DataFrame, cols: List[str]) -> str:
-    """Create hash of dataframe for caching."""
+def _hash_dataframe(df: pd.DataFrame) -> str:
+    """Create hash of dataframe for caching.
+    
+    Uses all columns for hashing. For large DataFrames, this may be slow.
+    """
+    # Use a sample of columns for faster hashing if DataFrame is large
+    cols = df.columns.tolist()
     subset = df[cols].copy()
     subset = subset.sort_values(cols).reset_index(drop=True)
     return hashlib.md5(subset.to_json().encode()).hexdigest()[:16]
