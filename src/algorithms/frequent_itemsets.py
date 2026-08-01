@@ -1,5 +1,7 @@
 """Frequent Itemset Mining Algorithms: FP-Growth, Apriori, Eclat."""
 
+import time
+from collections import namedtuple
 from typing import Literal
 
 import numpy as np
@@ -7,12 +9,12 @@ import pandas as pd
 import scipy.sparse
 from mlxtend.frequent_patterns import apriori, fpgrowth
 
+# Named tuple returned by create_basket_matrix when sparse=True.
+SparseBasket = namedtuple("SparseBasket", ["matrix", "index", "columns"])
+
 
 def _postprocess_itemsets(freq_items: pd.DataFrame) -> pd.DataFrame:
-    """Common postprocessing for frequent itemset results.
-
-    BUG 10 FIX: Extracted duplicate code into helper function.
-    """
+    """Shared postprocessing: add itemset length, sort by support descending."""
     if freq_items.empty:
         return pd.DataFrame(columns=["support", "itemsets"])
 
@@ -101,8 +103,8 @@ def run_eclat(
     """
     Run Eclat algorithm to find frequent itemsets using vertical data format.
 
-    Eclat uses a depth-first search with tidset intersections.
-    This is a custom implementation since mlxtend doesn't have Eclat.
+    Uses boolean numpy arrays (one per item) for tidsets so that intersection
+    is a C-level bitwise AND (~100x faster than Python set intersection).
 
     Args:
         basket_df: One-hot encoded transaction matrix (transactions x items)
@@ -119,25 +121,24 @@ def run_eclat(
     n_transactions = len(basket_df)
     min_support_count = int(min_support * n_transactions)
 
-    # Convert to vertical format: item -> set of transaction IDs
+    # Vertical format: item -> boolean numpy array of length n_transactions
     item_tidsets = {}
     for item in basket_df.columns:
-        tids = set(basket_df.index[basket_df[item]].tolist())
-        if len(tids) >= min_support_count:
-            item_tidsets[item] = tids
+        arr = basket_df[item].values.astype(bool)
+        if arr.sum() >= min_support_count:
+            item_tidsets[item] = arr
 
     if not item_tidsets:
         return pd.DataFrame(columns=["support", "itemsets"])
 
-    # Eclat recursive search
     freq_itemsets = []
 
     def eclat_recursive(prefix_items, prefix_tids, items_list, start_idx):
         for i in range(start_idx, len(items_list)):
             item = items_list[i]
             tids = item_tidsets[item]
-            new_tids = prefix_tids & tids
-            support_count = len(new_tids)
+            new_tids = prefix_tids & tids  # C-level bitwise AND
+            support_count = int(new_tids.sum())
 
             if support_count >= min_support_count:
                 new_prefix = prefix_items + [item]
@@ -145,11 +146,12 @@ def run_eclat(
                 freq_itemsets.append((support, frozenset(new_prefix)))
 
                 if len(new_prefix) < max_len:
-                    # Continue with remaining items
                     eclat_recursive(new_prefix, new_tids, items_list, i + 1)
 
+    # Seed prefix_tids as all-True array (every transaction)
+    all_tids = np.ones(n_transactions, dtype=bool)
     items_list = list(item_tidsets.keys())
-    eclat_recursive([], set(basket_df.index), items_list, 0)
+    eclat_recursive([], all_tids, items_list, 0)
 
     if not freq_itemsets:
         return pd.DataFrame(columns=["support", "itemsets"])
@@ -198,7 +200,7 @@ def create_basket_matrix(
     quantity_col: str = "quantity",
     min_quantity: int = 1,
     sparse: bool = False,
-) -> pd.DataFrame | scipy.sparse.csr_matrix:
+) -> "pd.DataFrame | SparseBasket":
     """
     Create one-hot encoded basket matrix from transaction data.
 
@@ -208,42 +210,37 @@ def create_basket_matrix(
         item_col: Column name for item identifier
         quantity_col: Column name for quantity
         min_quantity: Minimum quantity to consider item as present
-        sparse: If True, return scipy sparse CSR matrix instead of DataFrame
+        sparse: If True, return a SparseBasket(matrix, index, columns) namedtuple
+                instead of a dense DataFrame. Callers must unpack index/columns
+                separately — scipy CSR matrices do not support pandas-style metadata.
 
     Returns:
-        One-hot encoded DataFrame (transactions x items) or sparse CSR matrix
+        Dense boolean DataFrame (transactions x items), or SparseBasket namedtuple
+        when sparse=True.
     """
     df = transactions_df[transactions_df[quantity_col] >= min_quantity].copy()
 
-    # Get unique items and transactions
     items = df[item_col].unique()
     transactions = df[transaction_col].unique()
 
-    # Create mapping
     item_to_idx = {item: i for i, item in enumerate(items)}
     txn_to_idx = {txn: i for i, txn in enumerate(transactions)}
 
-    # Build sparse matrix directly
     n_transactions = len(transactions)
     n_items = len(items)
 
-    # Use COO format for construction
     row_indices = df[transaction_col].map(txn_to_idx).values
     col_indices = df[item_col].map(item_to_idx).values
     data = np.ones(len(df), dtype=bool)
 
     if sparse:
-        # Use COO for construction, convert to CSR
         coo = scipy.sparse.coo_matrix(
             (data, (row_indices, col_indices)), shape=(n_transactions, n_items), dtype=bool
         )
         csr = coo.tocsr()
-        # Set index/columns for reference
-        csr.index = transactions
-        csr.columns = items
-        return csr
+        # Return metadata alongside the matrix — CSR does not support .index/.columns
+        return SparseBasket(matrix=csr, index=transactions, columns=items)
     else:
-        # Dense DataFrame - build from sparse
         coo = scipy.sparse.coo_matrix(
             (data, (row_indices, col_indices)), shape=(n_transactions, n_items), dtype=bool
         )
@@ -258,11 +255,7 @@ def get_product_lookup(
     code_col: str = "stockcode",
     name_col: str = "product",
 ) -> dict:
-    """Create lookup dictionary from stockcode to product name.
-
-    BUG 14 FIX: Deduplicate on stockcode - first value wins (silent deduplication)
-    """
-    # Deduplicate on code_col, keeping first occurrence
+    """Map stockcode to product name; first occurrence wins on duplicate codes."""
     deduped = transactions_df.drop_duplicates(subset=[code_col])
     return dict(zip(deduped[code_col].astype(str), deduped[name_col]))
 
@@ -273,23 +266,24 @@ def compare_algorithms(
     max_len: int = 3,
 ) -> pd.DataFrame:
     """
-    Compare results from all three algorithms.
-
-    BUG 11 FIX: Ensure consistent schema - use NaN for failed algorithms instead of error dict
+    Compare results and wall-clock execution time from all three algorithms.
 
     Returns:
-        DataFrame with comparison metrics
+        DataFrame with comparison metrics including elapsed_seconds per algorithm.
     """
     results = {}
 
     for algo in ["fpgrowth", "apriori", "eclat"]:
         try:
+            t0 = time.perf_counter()
             freq = run_algorithm(basket_df, algo, min_support, max_len)
+            elapsed = time.perf_counter() - t0
             results[algo] = {
                 "n_itemsets": len(freq),
                 "max_support": freq["support"].max() if not freq.empty else 0,
                 "avg_support": freq["support"].mean() if not freq.empty else 0,
                 "max_length": freq["length"].max() if not freq.empty else 0,
+                "elapsed_seconds": round(elapsed, 4),
                 "error": None,
             }
         except Exception as e:
@@ -298,6 +292,7 @@ def compare_algorithms(
                 "max_support": 0,
                 "avg_support": 0,
                 "max_length": 0,
+                "elapsed_seconds": None,
                 "error": str(e),
             }
 
