@@ -269,3 +269,37 @@ def _basket_df(M: np.ndarray, products: list[str]) -> pd.DataFrame:
                     }
                 )
     return pd.DataFrame(rows)
+
+
+def test_compute_cooccurrence_matrix(sample_df: pd.DataFrame) -> None:
+    from src.analytics.copurchase import compute_cooccurrence_matrix
+
+    cooccur = compute_cooccurrence_matrix(sample_df)
+    assert cooccur.index.tolist() == cooccur.columns.tolist()
+    assert (cooccur.dtypes == "int64").all()
+    np.testing.assert_array_equal(cooccur.to_numpy(), cooccur.to_numpy().T)
+    assert cooccur.to_numpy()[np.diag_indices_from(cooccur)].min() >= 0
+
+
+def test_compute_pair_trend(sample_df: pd.DataFrame) -> None:
+    from src.analytics.copurchase import compute_pair_trend
+
+    pairs = get_top_affinity_pairs(sample_df, top_n=5, min_cooccurrence=2, top_n_products=50)
+    if pairs.empty:
+        return
+    row = pairs.iloc[0]
+    trend = compute_pair_trend(sample_df, row["product_a"], row["product_b"])
+    if trend.empty:
+        return
+    assert set(trend.columns) == {"period", "cooccurrence"}
+    assert (trend["cooccurrence"] > 0).all()
+
+
+def test_compute_pair_centrality(sample_df: pd.DataFrame) -> None:
+    from src.analytics.copurchase import compute_pair_centrality
+
+    centrality = compute_pair_centrality(sample_df, top_n_products=50, min_cooccurrence=2)
+    assert set(["stockcode", "pagerank", "betweenness", "degree"]).issubset(centrality.columns)
+    if not centrality.empty:
+        assert (centrality["pagerank"] >= 0).all()
+        assert centrality["stockcode"].is_unique

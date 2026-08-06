@@ -13,6 +13,79 @@ from src.analytics.rules import create_basket_matrix
 from src.analytics.schemas import AFFINITY_PAIRS, check
 
 
+def compute_cooccurrence_matrix(
+    df: pd.DataFrame,
+    top_n_products: int | None = None,
+) -> pd.DataFrame:
+    """Raw count of shared transactions per stockcode pair."""
+    basket = create_basket_matrix(df)
+    if top_n_products is not None:
+        counts = basket.sum().sort_values(ascending=False)
+        basket = basket[counts.head(top_n_products).index]
+    matrix = basket.to_numpy(dtype=np.int64)
+    cooccurrence = (matrix.T @ matrix).astype(int)
+    return pd.DataFrame(cooccurrence, index=basket.columns, columns=basket.columns)
+
+
+def compute_pair_trend(
+    df: pd.DataFrame,
+    product_a: str,
+    product_b: str,
+    period: str = "W",
+) -> pd.DataFrame:
+    """Per-period co-occurrence count for a product pair."""
+    both = df[df["stockcode"].isin([product_a, product_b])]
+    if both.empty:
+        return pd.DataFrame(columns=["period", "cooccurrence"])
+    pivot = both.pivot_table(
+        index="transaction_id",
+        columns="stockcode",
+        values="quantity",
+        aggfunc="count",
+        fill_value=0,
+    ).reset_index()
+    if not {product_a, product_b}.issubset(pivot.columns):
+        return pd.DataFrame(columns=["period", "cooccurrence"])
+    shared = pivot[(pivot[product_a] > 0) & (pivot[product_b] > 0)]
+    if shared.empty:
+        return pd.DataFrame(columns=["period", "cooccurrence"])
+    periods = both[both["transaction_id"].isin(shared["transaction_id"])].set_index("transaction_id")
+    trend = periods["date"].groupby(periods.index).first().dt.to_period(period).astype(str).value_counts().sort_index()
+    return pd.DataFrame({"period": trend.index, "cooccurrence": trend.values})
+
+
+def compute_pair_centrality(
+    df: pd.DataFrame,
+    top_n_products: int = 100,
+    min_cooccurrence: int = 5,
+) -> pd.DataFrame:
+    """PageRank centrality over the weighted co-occurrence graph."""
+    import networkx as nx
+
+    cooccurrence = compute_cooccurrence_matrix(df, top_n_products=top_n_products)
+    graph = nx.Graph()
+    products = cooccurrence.index
+    values = cooccurrence.to_numpy()
+    for i in range(len(products)):
+        for j in range(i + 1, len(products)):
+            if values[i, j] >= min_cooccurrence:
+                graph.add_edge(products[i], products[j], weight=float(values[i, j]))
+
+    if graph.number_of_nodes() == 0:
+        return pd.DataFrame(columns=["stockcode", "pagerank", "betweenness", "degree"])
+
+    pagerank = nx.pagerank(graph, weight="weight")
+    betweenness = nx.betweenness_centrality(graph, weight="weight")
+    return pd.DataFrame(
+        {
+            "stockcode": list(graph.nodes()),
+            "pagerank": [pagerank.get(n, 0.0) for n in graph.nodes()],
+            "betweenness": [betweenness.get(n, 0.0) for n in graph.nodes()],
+            "degree": [graph.degree(n) for n in graph.nodes()],
+        }
+    ).sort_values("pagerank", ascending=False).reset_index(drop=True)
+
+
 def _affinity_and_cooccurrence(
     df: pd.DataFrame,
     min_cooccurrence: int,
