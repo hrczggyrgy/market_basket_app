@@ -119,6 +119,100 @@ def filter_rules(
     return check(rules.loc[mask].reset_index(drop=True), RULES, allow_empty=True)
 
 
+def flag_redundant_rules(rules: pd.DataFrame) -> pd.DataFrame:
+    """Mark rules subsumed by a shorter, equally-strong rule (same consequent).
+
+    A rule ``X -> Y`` is flagged redundant when a strict subset of its
+    antecedent ``X' ⊂ X`` yields the same consequent with confidence and lift
+    that are at least as high.
+    """
+    check(rules, RULES, allow_empty=True)
+    result = rules.copy()
+    if result.empty:
+        return result
+
+    by_consequent: dict[frozenset, list[int]] = {}
+    for idx, row in result.iterrows():
+        by_consequent.setdefault(row["consequents"], []).append(idx)
+
+    for idxs in by_consequent.values():
+        order = sorted(
+            idxs,
+            key=lambda i: (len(result.loc[i, "antecedents"]), -result.loc[i, "confidence"]),
+        )
+        for i in order:
+            ante_i = result.loc[i, "antecedents"]
+            if len(ante_i) < 2:
+                continue
+            for j in order:
+                ante_j = result.loc[j, "antecedents"]
+                if i == j or len(ante_j) >= len(ante_i):
+                    continue
+                if ante_j.issubset(ante_i) and (
+                    result.loc[j, "confidence"] >= result.loc[i, "confidence"]
+                    and result.loc[j, "lift"] >= result.loc[i, "lift"]
+                ):
+                    result.loc[i, "is_redundant"] = True
+                    break
+    return check(result, RULES)
+
+
+def bootstrap_lift_ci(
+    df: pd.DataFrame,
+    rules: pd.DataFrame,
+    metric: str = "confidence",
+    min_threshold: float = 0.05,
+    max_len: int = 3,
+    n_resamples: int = 25,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """Customer-level bootstrap CI on lift for each rule.
+
+    Resamples the customer base with replacement, re-mines rules from the
+    resampled baskets, and records each rule's lift across resamples. Returns a
+    copy of ``rules`` with ``lift_ci_lower`` / ``lift_ci_upper`` filled from the
+    bootstrap percentiles (NaN when a rule has fewer than 3 valid resamples).
+    """
+    check(rules, RULES, allow_empty=True)
+    result = rules.copy()
+    if result.empty or len(df) == 0:
+        return result
+
+    rng = np.random.default_rng(seed)
+    customers = np.asarray(df["customer_id"].unique())
+
+    def rule_key(row: pd.Series) -> tuple[frozenset, frozenset]:
+        return (frozenset(row["antecedents"]), frozenset(row["consequents"]))
+
+    target_keys: list[tuple[frozenset, frozenset]] = [rule_key(row) for _, row in rules.iterrows()]
+
+    lifts: dict[int, list[float]] = {i: [] for i in rules.index}
+    for _ in range(n_resamples):
+        sample = df[df["customer_id"].isin(rng.choice(customers, size=len(customers), replace=True))]
+        if sample.empty:
+            continue
+        basket = create_basket_matrix(sample)
+        if basket.empty:
+            continue
+        freq = run_fpgrowth(basket, min_support=rules["support"].min(), max_len=max_len)
+        if freq.empty:
+            continue
+        resampled = association_rules(freq, metric=metric, min_threshold=min_threshold)
+        if resampled.empty:
+            continue
+        resampled["_key"] = [rule_key(row) for _, row in resampled.iterrows()]
+        lookup = resampled.set_index("_key")["lift"]
+        for idx, key in zip(rules.index, target_keys, strict=True):
+            if key in lookup.index and np.isfinite(lookup[key]):
+                lifts[idx].append(float(lookup[key]))
+
+    for idx, values in lifts.items():
+        if len(values) >= 3:
+            result.loc[idx, "lift_ci_lower"] = float(np.percentile(values, 5))
+            result.loc[idx, "lift_ci_upper"] = float(np.percentile(values, 95))
+    return check(result, RULES)
+
+
 def rules_to_table(rules: pd.DataFrame, product_lookup: pd.DataFrame | None = None) -> pd.DataFrame:
     """Human-readable rule table with joined product names."""
     check(rules, RULES, allow_empty=True)

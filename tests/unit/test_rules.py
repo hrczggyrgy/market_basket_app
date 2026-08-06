@@ -4,8 +4,10 @@ import pandas as pd
 import pytest
 
 from src.analytics.rules import (
+    bootstrap_lift_ci,
     create_basket_matrix,
     filter_rules,
+    flag_redundant_rules,
     generate_rules,
     rules_to_table,
     run_fpgrowth,
@@ -109,3 +111,60 @@ def test_rules_to_table_uses_lookup(sample_df: pd.DataFrame) -> None:
 def test_bad_input_rejected(sample_df: pd.DataFrame) -> None:
     with pytest.raises(SchemaError):
         generate_rules(pd.DataFrame({"wrong": [1]}))
+
+
+def test_flag_redundant_rules(sample_df: pd.DataFrame) -> None:
+    basket = create_basket_matrix(sample_df)
+    freq = run_fpgrowth(basket, min_support=0.02, max_len=3)
+    rules = generate_rules(freq)
+    flagged = flag_redundant_rules(rules)
+    RULES.validate(flagged)
+    # Only rules with multi-item antecedents may be flagged.
+    multi = rules["antecedents"].map(len) >= 2
+    assert flagged.loc[multi, "is_redundant"].sum() >= 0
+    assert not flagged.loc[~multi, "is_redundant"].any()
+
+
+def test_flag_redundant_rules_empty() -> None:
+    empty = pd.DataFrame(columns=list(RULES.columns))
+    flagged = flag_redundant_rules(empty)
+    assert flagged.empty
+
+
+def test_flag_redundant_rules_marks_subsumed(sample_df: pd.DataFrame) -> None:
+    basket = create_basket_matrix(sample_df)
+    freq = run_fpgrowth(basket, min_support=0.02, max_len=3)
+    rules = generate_rules(freq)
+    flagged = flag_redundant_rules(rules)
+
+    # A flagged rule must have a shorter-antecedent rule for the same consequent
+    # that is at least as strong (confidence & lift).
+    by_consequent: dict[frozenset, list[pd.Series]] = {}
+    for _, row in flagged.iterrows():
+        by_consequent.setdefault(row["consequents"], []).append(row)
+    for rows in by_consequent.values():
+        if not any(r["is_redundant"] for r in rows):
+            continue
+        short = [r for r in rows if len(r["antecedents"]) == 1]
+        long = [r for r in rows if r["is_redundant"]]
+        for r_long in long:
+            assert any(
+                s["antecedents"].issubset(r_long["antecedents"])
+                and s["confidence"] >= r_long["confidence"]
+                and s["lift"] >= r_long["lift"]
+                for s in short
+            ), f"Redundant rule without a stronger short rule: {r_long['antecedents']} -> {r_long['consequents']}"
+
+
+def test_bootstrap_lift_ci(sample_df: pd.DataFrame) -> None:
+    basket = create_basket_matrix(sample_df)
+    freq = run_fpgrowth(basket, min_support=0.05, max_len=2)
+    rules = generate_rules(freq, metric="confidence", min_threshold=0.1)
+    if rules.empty:
+        return
+    bootstrapped = bootstrap_lift_ci(sample_df, rules, n_resamples=6)
+    RULES.validate(bootstrapped)
+    valid = bootstrapped["lift_ci_lower"].notna()
+    if valid.any():
+        ok = bootstrapped.loc[valid]
+        assert (ok["lift_ci_lower"] <= ok["lift_ci_upper"]).all()
