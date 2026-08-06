@@ -1,0 +1,1138 @@
+{
+  "abc_analysis": {
+    "columns": [
+      "stockcode",
+      "revenue",
+      "cumulative_share",
+      "abc_class"
+    ],
+    "shape": [
+      60,
+      4
+    ],
+    "success": true
+  },
+  "behavioral_segmentation": {
+    "columns": [
+      "customer_id",
+      "days_active",
+      "purchase_frequency",
+      "avg_days_between",
+      "total_revenue",
+      "avg_order_value",
+      "revenue_std",
+      "n_products",
+      "n_categories",
+      "avg_basket_size",
+      "max_basket_size",
+      "avg_price",
+      "price_cv",
+      "weekend_ratio",
+      "cluster",
+      "cluster_distance",
+      "cluster_confidence",
+      "segment"
+    ],
+    "shape": [
+      119,
+      18
+    ],
+    "success": true
+  },
+  "build_cdt": {
+    "columns": null,
+    "shape": null,
+    "success": true
+  },
+  "build_customer_features": {
+    "columns": [
+      "customer_id",
+      "recency_days",
+      "frequency",
+      "monetary",
+      "n_baskets",
+      "n_distinct_products",
+      "favorite_category",
+      "avg_basket_size",
+      "target_product"
+    ],
+    "shape": [
+      83,
+      9
+    ],
+    "success": true
+  },
+  "build_similarity_matrix": {
+    "columns": [
+      "SKU000",
+      "SKU001",
+      "SKU002",
+      "SKU003",
+      "SKU004",
+      "SKU005",
+      "SKU006",
+      "SKU007",
+      "SKU008",
+      "SKU009",
+      "SKU010",
+      "SKU011",
+      "SKU012",
+      "SKU013",
+      "SKU014",
+      "SKU015",
+      "SKU016",
+      "SKU017",
+      "SKU018",
+      "SKU019",
+      "SKU020",
+      "SKU021",
+      "SKU022",
+      "SKU023",
+      "SKU024",
+      "SKU025",
+      "SKU026",
+      "SKU027",
+      "SKU028",
+      "SKU029",
+      "SKU030",
+      "SKU031",
+      "SKU032",
+      "SKU033",
+      "SKU034",
+      "SKU035",
+      "SKU036",
+      "SKU037",
+      "SKU038",
+      "SKU039",
+      "SKU040",
+      "SKU041",
+      "SKU042",
+      "SKU043",
+      "SKU044",
+      "SKU045",
+      "SKU046",
+      "SKU047",
+      "SKU048",
+      "SKU049",
+      "SKU050",
+      "SKU051",
+      "SKU052",
+      "SKU053",
+      "SKU054",
+      "SKU055",
+      "SKU056",
+      "SKU057",
+      "SKU058",
+      "SKU059"
+    ],
+    "shape": [
+      60,
+      60
+    ],
+    "success": true
+  },
+  "build_substitution_matrix_mnl": {
+    "columns": [
+      "SKU000",
+      "SKU001",
+      "SKU002",
+      "SKU003",
+      "SKU004",
+      "SKU005",
+      "SKU006",
+      "SKU007",
+      "SKU008",
+      "SKU009",
+      "SKU010",
+      "SKU011",
+      "SKU012",
+      "SKU013",
+      "SKU014",
+      "SKU015",
+      "SKU016",
+      "SKU017",
+      "SKU018",
+      "SKU019",
+      "SKU020",
+      "SKU021",
+      "SKU022",
+      "SKU023",
+      "SKU024",
+      "SKU025",
+      "SKU026",
+      "SKU027",
+      "SKU028",
+      "SKU029",
+      "SKU030",
+      "SKU031",
+      "SKU032",
+      "SKU033",
+      "SKU034",
+      "SKU035",
+      "SKU036",
+      "SKU037",
+      "SKU038",
+      "SKU039",
+      "SKU040",
+      "SKU041",
+      "SKU042",
+      "SKU043",
+      "SKU044",
+      "SKU045",
+      "SKU046",
+      "SKU047",
+      "SKU048",
+      "SKU049",
+      "SKU050",
+      "SKU051",
+      "SKU052",
+      "SKU053",
+      "SKU054",
+      "SKU055",
+      "SKU056",
+      "SKU057",
+      "SKU058",
+      "SKU059"
+    ],
+    "shape": [
+      60,
+      60
+    ],
+    "success": true
+  },
+  "build_transaction_derived_attributes": {
+    "columns": [
+      "stockcode",
+      "price_tier",
+      "velocity_tier",
+      "seasonality_class",
+      "basket_size_affinity",
+      "substitution_tier"
+    ],
+    "shape": [
+      60,
+      6
+    ],
+    "success": true
+  },
+  "calculate_promotional_lift": {
+    "columns": [
+      "promo_id",
+      "stockcode",
+      "start_date",
+      "end_date",
+      "treated_revenue",
+      "control_revenue",
+      "treated_qty",
+      "control_qty",
+      "treated_orders",
+      "control_orders",
+      "lift_revenue_pct",
+      "lift_qty_pct",
+      "lift_orders_pct",
+      "p_value",
+      "significant"
+    ],
+    "shape": [
+      6,
+      15
+    ],
+    "success": true
+  },
+  "compare_assortment_scenarios": {
+    "columns": [
+      "scenario_id",
+      "method",
+      "n_skus",
+      "kept_revenue",
+      "recovered_revenue",
+      "lost_revenue",
+      "unmet_demand",
+      "expected_revenue",
+      "coverage",
+      "recovery_rate"
+    ],
+    "shape": [
+      6,
+      10
+    ],
+    "success": true
+  },
+  "compute_affinity_matrix": {
+    "columns": [
+      "SKU000",
+      "SKU001",
+      "SKU002",
+      "SKU003",
+      "SKU004",
+      "SKU005",
+      "SKU006",
+      "SKU007",
+      "SKU008",
+      "SKU009",
+      "SKU010",
+      "SKU011",
+      "SKU012",
+      "SKU013",
+      "SKU014",
+      "SKU015",
+      "SKU016",
+      "SKU017",
+      "SKU018",
+      "SKU019",
+      "SKU020",
+      "SKU021",
+      "SKU022",
+      "SKU023",
+      "SKU024",
+      "SKU025",
+      "SKU026",
+      "SKU027",
+      "SKU028",
+      "SKU029",
+      "SKU030",
+      "SKU031",
+      "SKU032",
+      "SKU033",
+      "SKU034",
+      "SKU035",
+      "SKU036",
+      "SKU037",
+      "SKU038",
+      "SKU039",
+      "SKU040",
+      "SKU041",
+      "SKU042",
+      "SKU043",
+      "SKU044",
+      "SKU045",
+      "SKU046",
+      "SKU047",
+      "SKU048",
+      "SKU049",
+      "SKU050",
+      "SKU051",
+      "SKU052",
+      "SKU053",
+      "SKU054",
+      "SKU055",
+      "SKU056",
+      "SKU057",
+      "SKU058",
+      "SKU059"
+    ],
+    "shape": [
+      60,
+      60
+    ],
+    "success": true
+  },
+  "compute_basket_penetration": {
+    "columns": [
+      "stockcode",
+      "basket_count",
+      "penetration",
+      "revenue_share"
+    ],
+    "shape": [
+      60,
+      4
+    ],
+    "success": true
+  },
+  "compute_category_kpis": {
+    "columns": [
+      "category",
+      "revenue",
+      "transactions",
+      "customers",
+      "penetration",
+      "aov",
+      "revenue_share",
+      "growth_pct"
+    ],
+    "shape": [
+      8,
+      8
+    ],
+    "success": true
+  },
+  "compute_category_scorecard": {
+    "columns": [
+      "category",
+      "revenue",
+      "revenue_share",
+      "transactions",
+      "customers",
+      "aov",
+      "growth_pct",
+      "role",
+      "rag"
+    ],
+    "shape": [
+      8,
+      9
+    ],
+    "success": true
+  },
+  "compute_clv_customer_df": {
+    "columns": [
+      "customer_id",
+      "frequency",
+      "recency_days",
+      "customer_lifetime_days",
+      "total_revenue",
+      "avg_order_value",
+      "p_alive",
+      "predicted_purchases",
+      "expected_avg_value",
+      "predicted_clv",
+      "clv_12m",
+      "clv_segment",
+      "entropy",
+      "normalized_entropy"
+    ],
+    "shape": [
+      88,
+      14
+    ],
+    "success": true
+  },
+  "compute_cohorts": {
+    "columns": [
+      "cohort",
+      "period_index",
+      "retained",
+      "cohort_size",
+      "retention_rate"
+    ],
+    "shape": [
+      20,
+      5
+    ],
+    "success": true
+  },
+  "compute_cross_price_elasticity": {
+    "columns": [
+      "product_a",
+      "product_b",
+      "own_elasticity",
+      "own_elasticity_se",
+      "own_elasticity_p",
+      "cross_elasticity",
+      "cross_elasticity_se",
+      "cross_elasticity_p",
+      "r_squared",
+      "n_obs",
+      "avg_price_a",
+      "avg_price_b"
+    ],
+    "shape": [
+      0,
+      12
+    ],
+    "success": true
+  },
+  "compute_customer_entropy": {
+    "columns": [
+      "customer_id",
+      "n_distinct_products",
+      "n_purchases",
+      "entropy",
+      "normalized_entropy"
+    ],
+    "shape": [
+      119,
+      5
+    ],
+    "success": true
+  },
+  "compute_demand_transference_matrix": {
+    "columns": [
+      "from_product",
+      "to_product",
+      "switch_rate",
+      "revenue_share_from",
+      "demand_transference",
+      "revenue_at_risk"
+    ],
+    "shape": [
+      2307,
+      6
+    ],
+    "success": true
+  },
+  "compute_incrementality_waterfall": {
+    "columns": [
+      "stockcode",
+      "baseline_revenue",
+      "actual_revenue",
+      "incremental_revenue",
+      "halo_revenue",
+      "cannibalization_revenue",
+      "acceleration_revenue",
+      "switching_revenue",
+      "stockpiling_revenue",
+      "net_incremental_revenue",
+      "roi"
+    ],
+    "shape": [
+      60,
+      11
+    ],
+    "success": true
+  },
+  "compute_ipt_cv": {
+    "columns": [
+      "stockcode",
+      "mean_ipt",
+      "std_ipt",
+      "cv_ipt",
+      "n_transactions"
+    ],
+    "shape": [
+      60,
+      5
+    ],
+    "success": true
+  },
+  "compute_kvi_score": {
+    "columns": [
+      "stockcode",
+      "category",
+      "kvi_score",
+      "total_revenue",
+      "basket_penetration",
+      "trip_incidence",
+      "abs_elasticity"
+    ],
+    "shape": [
+      60,
+      7
+    ],
+    "success": true
+  },
+  "compute_product_metrics": {
+    "columns": [
+      "stockcode",
+      "revenue",
+      "units",
+      "transactions",
+      "customers",
+      "avg_price",
+      "penetration"
+    ],
+    "shape": [
+      60,
+      7
+    ],
+    "success": true
+  },
+  "compute_promo_baseline": {
+    "columns": [
+      "stockcode",
+      "week",
+      "actual_units",
+      "actual_revenue",
+      "avg_price",
+      "is_promo",
+      "baseline_units",
+      "baseline_revenue",
+      "incremental_units",
+      "incremental_revenue",
+      "incrementality_pct"
+    ],
+    "shape": [
+      1202,
+      11
+    ],
+    "success": true
+  },
+  "compute_recovery_hhi": {
+    "columns": [
+      "delisted_product",
+      "recovery_hhi",
+      "n_substitutes",
+      "total_revenue_at_risk",
+      "top_substitute",
+      "top_share"
+    ],
+    "shape": [
+      60,
+      6
+    ],
+    "success": true
+  },
+  "compute_repeat_rate": {
+    "columns": [
+      "stockcode",
+      "n_customers",
+      "repeat_customers",
+      "repeat_rate"
+    ],
+    "shape": [
+      60,
+      4
+    ],
+    "success": true
+  },
+  "compute_rfm_features": {
+    "columns": [
+      "customer_id",
+      "recency_days",
+      "frequency",
+      "monetary",
+      "avg_order_value",
+      "max_order_value",
+      "n_items",
+      "n_unique_products",
+      "n_unique_categories",
+      "first_purchase",
+      "last_purchase",
+      "avg_price_paid",
+      "std_order_value",
+      "customer_lifetime_days",
+      "purchase_interval",
+      "items_per_order",
+      "revenue_per_item",
+      "order_value_cv",
+      "recency_segment",
+      "frequency_segment",
+      "monetary_segment"
+    ],
+    "shape": [
+      119,
+      21
+    ],
+    "success": true
+  },
+  "compute_substitutable_demand_percentage": {
+    "columns": [
+      "stockcode",
+      "sdp"
+    ],
+    "shape": [
+      60,
+      2
+    ],
+    "success": true
+  },
+  "compute_switching_matrix": {
+    "columns": [
+      "from_product",
+      "to_product",
+      "count",
+      "pct"
+    ],
+    "shape": [
+      2307,
+      4
+    ],
+    "success": true
+  },
+  "compute_time_to_second_purchase": {
+    "columns": [
+      "stockcode",
+      "n_second_purchasers",
+      "median_days_to_second",
+      "mean_days_to_second"
+    ],
+    "shape": [
+      58,
+      4
+    ],
+    "success": true
+  },
+  "compute_velocity": {
+    "columns": [
+      "stockcode",
+      "units",
+      "active_days",
+      "velocity"
+    ],
+    "shape": [
+      60,
+      4
+    ],
+    "success": true
+  },
+  "create_basket_matrix": {
+    "columns": [
+      "SKU000",
+      "SKU001",
+      "SKU002",
+      "SKU003",
+      "SKU004",
+      "SKU005",
+      "SKU006",
+      "SKU007",
+      "SKU008",
+      "SKU009",
+      "SKU010",
+      "SKU011",
+      "SKU012",
+      "SKU013",
+      "SKU014",
+      "SKU015",
+      "SKU016",
+      "SKU017",
+      "SKU018",
+      "SKU019",
+      "SKU020",
+      "SKU021",
+      "SKU022",
+      "SKU023",
+      "SKU024",
+      "SKU025",
+      "SKU026",
+      "SKU027",
+      "SKU028",
+      "SKU029",
+      "SKU030",
+      "SKU031",
+      "SKU032",
+      "SKU033",
+      "SKU034",
+      "SKU035",
+      "SKU036",
+      "SKU037",
+      "SKU038",
+      "SKU039",
+      "SKU040",
+      "SKU041",
+      "SKU042",
+      "SKU043",
+      "SKU044",
+      "SKU045",
+      "SKU046",
+      "SKU047",
+      "SKU048",
+      "SKU049",
+      "SKU050",
+      "SKU051",
+      "SKU052",
+      "SKU053",
+      "SKU054",
+      "SKU055",
+      "SKU056",
+      "SKU057",
+      "SKU058",
+      "SKU059"
+    ],
+    "shape": [
+      1157,
+      60
+    ],
+    "success": true
+  },
+  "delist_impact_analysis": {
+    "columns": [
+      "stockcode",
+      "product_revenue",
+      "estimated_revenue_recovered",
+      "net_revenue_impact",
+      "recovery_rate"
+    ],
+    "shape": [
+      5,
+      5
+    ],
+    "success": true
+  },
+  "detect_promotions": {
+    "columns": [
+      "stockcode",
+      "product_name",
+      "start_date",
+      "end_date",
+      "duration_days",
+      "avg_discount_pct",
+      "promo_revenue",
+      "baseline_revenue",
+      "promo_qty",
+      "baseline_qty",
+      "promo_orders",
+      "baseline_orders",
+      "promo_customers",
+      "baseline_customers",
+      "qty_lift",
+      "revenue_lift",
+      "avg_promo_price",
+      "avg_baseline_price"
+    ],
+    "shape": [
+      6,
+      18
+    ],
+    "success": true
+  },
+  "diagnose_price_curves_1d": {
+    "columns": [
+      "stockcode",
+      "product_name",
+      "category",
+      "brand",
+      "median_price",
+      "pack_size_numeric",
+      "price_per_unit",
+      "tier",
+      "tier_label",
+      "has_violation"
+    ],
+    "shape": [
+      60,
+      10
+    ],
+    "success": true
+  },
+  "estimate_hierarchical_elasticity": {
+    "columns": [
+      "stockcode",
+      "category",
+      "elasticity_ols",
+      "elasticity_cat",
+      "elasticity_shrunk",
+      "shrink_weight",
+      "r_squared",
+      "p_value",
+      "n_obs",
+      "avg_price",
+      "std_err"
+    ],
+    "shape": [
+      8,
+      11
+    ],
+    "success": true
+  },
+  "estimate_iv_elasticity": {
+    "columns": [
+      "stockcode",
+      "iv_elasticity",
+      "iv_elasticity_se",
+      "iv_elasticity_p",
+      "iv_r_squared",
+      "first_stage_f",
+      "weak_instrument",
+      "n_obs",
+      "avg_price",
+      "avg_weekly_qty",
+      "avg_instrument"
+    ],
+    "shape": [
+      0,
+      11
+    ],
+    "success": true
+  },
+  "estimate_loglog_elasticity": {
+    "columns": [
+      "stockcode",
+      "elasticity",
+      "r_squared",
+      "p_value",
+      "std_err",
+      "ci_lower",
+      "ci_upper",
+      "n_obs",
+      "avg_price",
+      "avg_weekly_qty",
+      "price_cv"
+    ],
+    "shape": [
+      8,
+      11
+    ],
+    "success": true
+  },
+  "estimate_rdd_elasticity": {
+    "columns": [
+      "product_a",
+      "product_b",
+      "threshold_price",
+      "cross_elasticity",
+      "n_obs",
+      "bandwidth"
+    ],
+    "shape": [
+      9,
+      6
+    ],
+    "success": true
+  },
+  "evaluate_assortment": {
+    "columns": null,
+    "shape": null,
+    "success": true
+  },
+  "generate_rules": {
+    "columns": [
+      "antecedents",
+      "consequents",
+      "antecedent support",
+      "consequent support",
+      "support",
+      "confidence",
+      "lift",
+      "representativity",
+      "leverage",
+      "conviction",
+      "zhangs_metric",
+      "jaccard",
+      "certainty",
+      "kulczynski",
+      "lift_ci_lower",
+      "lift_ci_upper",
+      "q_value",
+      "is_redundant"
+    ],
+    "shape": [
+      519,
+      18
+    ],
+    "success": true
+  },
+  "get_addon_recommendations": {
+    "columns": [
+      "anchor",
+      "addon",
+      "support",
+      "confidence",
+      "lift",
+      "cooccurrence"
+    ],
+    "shape": [
+      10,
+      6
+    ],
+    "success": true
+  },
+  "get_cluster_assignments": {
+    "columns": [
+      "stockcode",
+      "cluster"
+    ],
+    "shape": [
+      60,
+      2
+    ],
+    "success": true
+  },
+  "get_customer_loyalty_metrics": {
+    "columns": [
+      "customer_id",
+      "n_transactions",
+      "avg_basket_size",
+      "repeat_purchase_rate",
+      "n_distinct_products",
+      "switching_count",
+      "switching_rate"
+    ],
+    "shape": [
+      119,
+      7
+    ],
+    "success": true
+  },
+  "get_top_affinity_pairs": {
+    "columns": [
+      "product_a",
+      "product_b",
+      "affinity",
+      "cooccurrence",
+      "support_a",
+      "support_b"
+    ],
+    "shape": [
+      20,
+      6
+    ],
+    "success": true
+  },
+  "load_transactions": {
+    "columns": [
+      "date",
+      "transaction_id",
+      "stockcode",
+      "product",
+      "customer_id",
+      "price",
+      "quantity",
+      "category",
+      "brand",
+      "size",
+      "flavor",
+      "promo_flag",
+      "cost"
+    ],
+    "shape": [
+      4618,
+      13
+    ],
+    "success": true
+  },
+  "optimize_assortment_heuristic": {
+    "columns": null,
+    "shape": null,
+    "success": true
+  },
+  "predict_clv_bg_nbd": {
+    "columns": [
+      "customer_id",
+      "frequency",
+      "recency",
+      "T",
+      "monetary_value",
+      "predicted_purchases",
+      "expected_avg_value",
+      "predicted_clv",
+      "ci_lower",
+      "ci_upper",
+      "p_alive",
+      "clv_segment"
+    ],
+    "shape": [
+      88,
+      12
+    ],
+    "success": true
+  },
+  "product_lifecycle_stage": {
+    "columns": [
+      "stockcode",
+      "recent_revenue",
+      "prior_revenue",
+      "growth_pct",
+      "stage"
+    ],
+    "shape": [
+      60,
+      5
+    ],
+    "success": true
+  },
+  "promo_roi_analysis": {
+    "columns": [
+      "stockcode",
+      "incremental_revenue",
+      "ci_low",
+      "ci_high",
+      "incremental_profit",
+      "promo_cost",
+      "roi_pct"
+    ],
+    "shape": [
+      6,
+      7
+    ],
+    "success": true
+  },
+  "rfm_segmentation": {
+    "columns": [
+      "customer_id",
+      "recency_days",
+      "frequency",
+      "monetary",
+      "avg_order_value",
+      "max_order_value",
+      "n_items",
+      "n_unique_products",
+      "n_unique_categories",
+      "first_purchase",
+      "last_purchase",
+      "avg_price_paid",
+      "std_order_value",
+      "customer_lifetime_days",
+      "purchase_interval",
+      "items_per_order",
+      "revenue_per_item",
+      "order_value_cv",
+      "recency_segment",
+      "frequency_segment",
+      "monetary_segment",
+      "recency_score",
+      "frequency_score",
+      "monetary_score",
+      "rfm_score",
+      "segment",
+      "cluster"
+    ],
+    "shape": [
+      119,
+      27
+    ],
+    "success": true
+  },
+  "run_fpgrowth": {
+    "columns": [
+      "support",
+      "itemsets",
+      "length"
+    ],
+    "shape": [
+      262,
+      3
+    ],
+    "success": true
+  },
+  "train_choice_model": {
+    "columns": [
+      "metric",
+      "value"
+    ],
+    "shape": [
+      6,
+      2
+    ],
+    "success": true
+  },
+  "tree_to_dataframe": {
+    "columns": [
+      "node_id",
+      "name",
+      "attribute",
+      "attribute_value",
+      "size",
+      "is_leaf",
+      "similarity_within",
+      "parent_id"
+    ],
+    "shape": [
+      1,
+      8
+    ],
+    "success": true
+  },
+  "value_based_segmentation": {
+    "columns": [
+      "customer_id",
+      "recency",
+      "frequency",
+      "monetary",
+      "avg_order",
+      "n_products",
+      "lifetime_days",
+      "future_revenue",
+      "predicted_clv",
+      "value_segment"
+    ],
+    "shape": [
+      107,
+      10
+    ],
+    "success": true
+  },
+  "xyz_analysis": {
+    "columns": [
+      "stockcode",
+      "revenue",
+      "cv",
+      "xyz_class"
+    ],
+    "shape": [
+      60,
+      4
+    ],
+    "success": true
+  }
+}

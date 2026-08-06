@@ -1,0 +1,197 @@
+"""Unit tests for the Pricing package."""
+
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from src.analytics.pricing import (
+    compute_kvi_score,
+    diagnose_price_curves_1d,
+    diagnose_price_curves_multivariate,
+    estimate_cross_price_elasticity,
+    estimate_hierarchical_elasticity,
+    estimate_iv_elasticity,
+    estimate_loglog_elasticity,
+    estimate_rdd_elasticity,
+    estimate_synthetic_control_elasticity,
+)
+from src.analytics.schemas import (
+    CROSS_ELASTICITY,
+    ELASTICITY,
+    HIERARCHICAL_ELASTICITY,
+    IV_ELASTICITY,
+    KVI_SCORES,
+    PRICE_CURVE_1D,
+    PRICE_CURVE_MULTI,
+    RDD_ELASTICITY,
+    SYNTHETIC_CONTROL,
+)
+
+
+@pytest.fixture(scope="module")
+def sample_df() -> pd.DataFrame:
+    from src.analytics.data import load_transactions
+
+    df, _, _, _ = load_transactions("sample_data/sample_transactions.csv")
+    return df
+
+
+def test_loglog_elasticity(sample_df: pd.DataFrame) -> None:
+    elast = estimate_loglog_elasticity(sample_df, min_periods=5)
+    ELASTICITY.validate(elast, allow_empty=True)
+    if not elast.empty:
+        assert elast["elasticity"].notna().all()
+        assert elast["n_obs"].ge(5).all()
+
+
+def test_hierarchical_elasticity(sample_df: pd.DataFrame) -> None:
+    elast = estimate_hierarchical_elasticity(sample_df, min_periods=5)
+    HIERARCHICAL_ELASTICITY.validate(elast, allow_empty=True)
+    if not elast.empty:
+        assert elast["elasticity_shrunk"].notna().all()
+        assert elast["shrink_weight"].between(0.05, 0.95).all()
+
+
+def test_cross_price_elasticity(sample_df: pd.DataFrame) -> None:
+    revenue = (sample_df["price"] * sample_df["quantity"]).groupby(sample_df["stockcode"]).sum()
+    top5 = revenue.nlargest(5).index.tolist()
+    pairs = [(top5[i], top5[j]) for i in range(len(top5)) for j in range(i + 1, len(top5))][:5]
+    cross = estimate_cross_price_elasticity(sample_df, pairs, min_periods=5)
+    CROSS_ELASTICITY.validate(cross, allow_empty=True)
+    if not cross.empty:
+        assert cross["n_obs"].ge(5).all()
+
+
+def test_kvi_heuristic(sample_df: pd.DataFrame) -> None:
+    kvi = compute_kvi_score(sample_df, method="heuristic")
+    KVI_SCORES.validate(kvi, allow_empty=True)
+    if not kvi.empty:
+        assert kvi["kvi_score"].notna().all()
+
+
+def test_kvi_xgb_requires_xgboost(sample_df: pd.DataFrame, monkeypatch) -> None:
+    import sys
+    import src.analytics.pricing.kvi as kvi_mod
+    # If xgboost/shap not installed, should fall back to heuristic
+    monkeypatch.setitem(sys.modules, "xgboost", None)
+    monkeypatch.setitem(sys.modules, "shap", None)
+    kvi = compute_kvi_score(sample_df, method="xgb")
+    KVI_SCORES.validate(kvi, allow_empty=True)
+
+
+def test_price_curves_1d(sample_df: pd.DataFrame) -> None:
+    curves = diagnose_price_curves_1d(sample_df, n_tiers=3)
+    PRICE_CURVE_1D.validate(curves, allow_empty=True)
+    if not curves.empty:
+        assert curves["tier_label"].isin({"Value", "Mainstream", "Premium", "Ultra", "Luxury"}).all()
+        assert "has_violation" in curves.columns
+
+
+def test_price_curves_1d_empty_categories() -> None:
+    """Test diagnose_price_curves_1d with categories having fewer than n_tiers products.
+    
+    This regression test ensures the fix for KeyError: "['tier', 'tier_label'] not in index"
+    when categories have fewer products than n_tiers.
+    """
+    # Create synthetic data where each category has only 1 product (less than n_tiers=3)
+    df = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=20, freq="D"),
+        "transaction_id": [f"T{i}" for i in range(20)],
+        "stockcode": [f"SKU{i}" for i in range(20)],
+        "product": [f"Product {i}" for i in range(20)],
+        "customer_id": [f"C{i}" for i in range(20)],
+        "price": [10.0 + i * 0.5 for i in range(20)],
+        "quantity": [1] * 20,
+        "category": [f"Cat{i}" for i in range(20)],  # Each product in its own category
+        "brand": ["Brand A"] * 20,
+        "size": ["1L"] * 20,
+    })
+    
+    curves = diagnose_price_curves_1d(df, n_tiers=3)
+    PRICE_CURVE_1D.validate(curves, allow_empty=True)
+    
+    # Should not crash and should have correct columns even with 0 rows or categories < n_tiers
+    assert "tier" in curves.columns
+    assert "tier_label" in curves.columns
+    assert "has_violation" in curves.columns
+    assert "stockcode" in curves.columns
+    assert "product_name" in curves.columns
+    assert "category" in curves.columns
+    assert "tier_label" in curves.columns
+
+
+def test_price_curves_1d_normal_categories() -> None:
+    """Test diagnose_price_curves_1d with categories having enough products for tiering."""
+    # Create synthetic data where categories have enough products for tiering
+    np.random.seed(42)
+    n_products = 15
+    n_customers = 10
+    n_transactions = 30 * n_products
+    
+    stockcodes = [f"SKU{i}" for i in range(n_products)]
+    products = [f"Product {i}" for i in range(n_products)]
+    categories = [f"Cat{i % 3}" for i in range(n_products)]
+    
+    # Generate transactions
+    np.random.seed(42)
+    rows = []
+    for _ in range(n_transactions):
+        idx = np.random.randint(0, n_products)
+        rows.append({
+            "date": pd.Timestamp("2024-01-01") + pd.Timedelta(days=np.random.randint(0, 30)),
+            "transaction_id": f"T{np.random.randint(100000, 999999)}",
+            "stockcode": stockcodes[idx],
+            "product": products[idx],
+            "customer_id": f"C{np.random.randint(0, 10)}",
+            "price": np.random.uniform(5.0, 20.0),
+            "quantity": np.random.randint(1, 5),
+            "category": categories[idx],
+            "brand": "Brand A",
+            "size": "1L",
+        })
+    df = pd.DataFrame(rows)
+    
+    curves = diagnose_price_curves_1d(df, n_tiers=3)
+    PRICE_CURVE_1D.validate(curves, allow_empty=True)
+    
+    if not curves.empty:
+        # With 15 products across 3 categories (5 per category), should have tiering
+        assert "tier" in curves.columns
+        assert "tier_label" in curves.columns
+        # Should have tier labels from the expected set
+        assert curves["tier_label"].isin({"Value", "Mainstream", "Premium", "Ultra", "Luxury"}).all()
+
+
+def test_price_curves_multivariate(sample_df: pd.DataFrame) -> None:
+    elast = estimate_loglog_elasticity(sample_df, min_periods=5)
+    curves = diagnose_price_curves_multivariate(sample_df, elasticity_df=elast, n_tiers=3)
+    PRICE_CURVE_MULTI.validate(curves, allow_empty=True)
+    if not curves.empty:
+        assert curves["tier_label"].notna().all()
+
+
+def test_iv_elasticity(sample_df: pd.DataFrame) -> None:
+    iv = estimate_iv_elasticity(sample_df, instrument_col="cost", min_periods=5)
+    IV_ELASTICITY.validate(iv, allow_empty=True)
+    if not iv.empty:
+        assert iv["weak_instrument"].notna().all()
+
+
+def test_rdd_elasticity(sample_df: pd.DataFrame) -> None:
+    rdd = estimate_rdd_elasticity(sample_df, min_periods=5, bandwidth=0.5)
+    RDD_ELASTICITY.validate(rdd, allow_empty=True)
+
+
+def test_synthetic_control_elasticity(sample_df: pd.DataFrame) -> None:
+    revenue = (sample_df["price"] * sample_df["quantity"]).groupby(sample_df["stockcode"]).sum()
+    top_products = revenue.nlargest(5).index.tolist()
+    treatment = top_products[0]
+    donors = top_products[1:4]
+    sc = estimate_synthetic_control_elasticity(
+        sample_df, treatment, donors, pre_periods=5, post_periods=3
+    )
+    SYNTHETIC_CONTROL.validate(sc)
+    required = {"treatment_effect_log", "treatment_effect_pct", "pre_period_rmse", "n_donors"}
+    assert required <= set(sc["metric"])

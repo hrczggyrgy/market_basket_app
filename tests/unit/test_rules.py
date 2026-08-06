@@ -1,0 +1,111 @@
+"""Tests for association rules (mlxtend FP-Growth orchestration)."""
+
+import pandas as pd
+import pytest
+
+from src.analytics.rules import (
+    create_basket_matrix,
+    filter_rules,
+    generate_rules,
+    rules_to_table,
+    run_fpgrowth,
+)
+from src.analytics.schemas import FREQUENT_ITEMSETS, RULES, RULES_TABLE, SchemaError
+
+
+def test_create_basket_matrix(sample_df: pd.DataFrame) -> None:
+    basket = create_basket_matrix(sample_df)
+    n_txn = sample_df["transaction_id"].nunique()
+    n_sku = sample_df["stockcode"].nunique()
+    assert basket.shape == (n_txn, n_sku)
+    assert basket.dtypes.eq("bool").all()
+    assert basket.sum(axis=1).min() >= 2
+
+
+def test_create_basket_matrix_binary_no_duplicates(sample_df: pd.DataFrame) -> None:
+    basket = create_basket_matrix(sample_df)
+    assert basket.index.is_unique
+    assert basket.columns.is_unique
+    assert basket.values.sum() == basket.values.astype(bool).sum()
+
+
+def test_run_fpgrowth_contract(sample_df: pd.DataFrame) -> None:
+    basket = create_basket_matrix(sample_df)
+    freq = run_fpgrowth(basket, min_support=0.02, max_len=3)
+    FREQUENT_ITEMSETS.validate(freq)
+    assert len(freq) > 0
+    assert freq["support"].between(0.02, 1.0).all()
+    assert freq["length"].between(1, 3).all()
+
+
+def test_run_fpgrowth_empty_returns_contract() -> None:
+    basket = create_basket_matrix(pd.DataFrame(
+        {
+            "transaction_id": ["T1", "T2"],
+            "stockcode": ["A", "B"],
+        }
+    ))
+    freq = run_fpgrowth(basket, min_support=0.9, max_len=3)
+    FREQUENT_ITEMSETS.validate(freq, allow_empty=True)
+    assert freq.empty
+
+
+def test_run_fpgrowth_respects_max_len(sample_df: pd.DataFrame) -> None:
+    basket = create_basket_matrix(sample_df)
+    freq = run_fpgrowth(basket, min_support=0.01, max_len=2)
+    assert freq["length"].max() <= 2
+
+
+def test_generate_rules_contract(sample_df: pd.DataFrame) -> None:
+    basket = create_basket_matrix(sample_df)
+    freq = run_fpgrowth(basket, min_support=0.02, max_len=3)
+    rules = generate_rules(freq, metric="confidence", min_threshold=0.2)
+    RULES.validate(rules)
+    assert (rules["confidence"] >= 0.2 - 1e-9).all()
+    assert (rules["support"] >= 0.02 - 1e-9).all()
+
+
+def test_generate_rules_empty(sample_df: pd.DataFrame) -> None:
+    basket = create_basket_matrix(sample_df)
+    freq = run_fpgrowth(basket, min_support=0.02, max_len=3)
+    rules = generate_rules(freq, metric="confidence", min_threshold=0.99)
+    RULES.validate(rules, allow_empty=True)
+
+
+def test_filter_rules_contract(sample_df: pd.DataFrame) -> None:
+    basket = create_basket_matrix(sample_df)
+    freq = run_fpgrowth(basket, min_support=0.02, max_len=3)
+    rules = generate_rules(freq)
+    filtered = filter_rules(rules, min_support=0.03, min_confidence=0.25, min_lift=1.2, max_lift=50.0)
+    RULES.validate(filtered, allow_empty=True)
+    if not filtered.empty:
+        assert filtered["support"].min() >= 0.03 - 1e-9
+        assert filtered["confidence"].min() >= 0.25 - 1e-9
+        assert filtered["lift"].min() >= 1.2 - 1e-9
+
+
+def test_rules_to_table(sample_df: pd.DataFrame) -> None:
+    basket = create_basket_matrix(sample_df)
+    freq = run_fpgrowth(basket, min_support=0.02, max_len=3)
+    rules = generate_rules(freq)
+    table = rules_to_table(rules)
+    RULES_TABLE.validate(table, allow_empty=True)
+    if not table.empty:
+        assert table["antecedent"].dtype == object
+        assert table["consequent"].dtype == object
+
+
+def test_rules_to_table_uses_lookup(sample_df: pd.DataFrame) -> None:
+    from src.analytics.data import derive_product_lookup
+
+    basket = create_basket_matrix(sample_df)
+    freq = run_fpgrowth(basket, min_support=0.02, max_len=3)
+    rules = generate_rules(freq)
+    lookup = derive_product_lookup(sample_df)
+    table = rules_to_table(rules, lookup)
+    RULES_TABLE.validate(table, allow_empty=True)
+
+
+def test_bad_input_rejected(sample_df: pd.DataFrame) -> None:
+    with pytest.raises(SchemaError):
+        generate_rules(pd.DataFrame({"wrong": [1]}))
