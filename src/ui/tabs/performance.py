@@ -7,6 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+from src.analytics.category import compute_category_roles
 from src.analytics.performance import (
     abc_analysis,
     compute_product_metrics,
@@ -166,6 +167,60 @@ def _render_sku_rationalization(perf: pd.DataFrame) -> None:
     )
 
 
+def _render_category_roles(df: pd.DataFrame) -> None:
+    st.subheader(":material/category: Category Role Classification")
+    if "category" not in df.columns:
+        show(empty_state("No category column in data"))
+        return
+
+    try:
+        roles = compute_category_roles(df)
+    except Exception as e:
+        show(empty_state(f"Error computing category roles: {e}"))
+        return
+
+    if roles.empty:
+        show(empty_state("No category roles computed"))
+        return
+
+    # Treemap: categories sized by revenue, colored by role
+    # Need to get revenue per category
+    revenue_per_cat = df.copy()
+    revenue_per_cat["revenue"] = revenue_per_cat["price"] * revenue_per_cat["quantity"]
+    cat_revenue = revenue_per_cat.groupby("category")["revenue"].sum().reset_index()
+    roles_with_rev = roles.merge(cat_revenue, on="category", how="left")
+
+    role_colors = {
+        "Destination": PALETTE[0],
+        "Routine": PALETTE[2],
+        "Seasonal": PALETTE[3],
+        "Convenience": PALETTE[4],
+    }
+    colors = roles_with_rev["role"].map(role_colors)
+
+    fig = px.treemap(
+        roles_with_rev,
+        path=["category"],
+        values="revenue",
+        color="role",
+        color_discrete_map=role_colors,
+        hover_data=["trip_generation_rate", "demand_cv", "seasonality_amplitude", "attachment_rate"],
+    )
+    fig.update_layout(height=400)
+    show(fig)
+    st.caption("Categories sized by revenue, colored by role. Destination = high trip generation + stable demand; Seasonal = high seasonal amplitude; Convenience = low trip gen + high attachment to Destination; Routine = stable, frequent, not strongly seasonal/destination.")
+
+    # Signal table
+    st.subheader(":material/table_rows: Category Role Signals")
+    display_cols = ["category", "role", "trip_generation_rate", "demand_cv", "seasonality_amplitude", "attachment_rate", "destination_categories"]
+    display_cols = [c for c in display_cols if c in roles.columns]
+    st.dataframe(
+        roles[display_cols].sort_values(["role", "category"]),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
 def render(df: pd.DataFrame) -> None:
     st.subheader(":material/insights: Product Performance")
 
@@ -208,6 +263,9 @@ def render(df: pd.DataFrame) -> None:
 
     st.divider()
     _render_velocity_repeat(df)
+
+    st.divider()
+    _render_category_roles(df)
 
     st.divider()
     _render_sku_rationalization(df)

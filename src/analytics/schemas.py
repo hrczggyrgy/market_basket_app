@@ -527,6 +527,25 @@ INFERRED_CATEGORIES = DataContract(
     columns=("stockcode", "product", "inferred_category"),
 )
 
+CATEGORY_ROLES = DataContract(
+    name="category_roles",
+    columns=(
+        "category",
+        "role",
+        "trip_generation_rate",
+        "demand_cv",
+        "seasonality_amplitude",
+        "attachment_rate",
+        "destination_categories",
+    ),
+    validators=(
+        ValueValidator("trip_generation_rate", lambda s: (s >= 0) & (s <= 1), "trip_generation_rate must be in [0, 1]"),
+        ValueValidator("demand_cv", lambda s: s >= 0, "demand_cv must be non-negative"),
+        ValueValidator("seasonality_amplitude", lambda s: s >= 0, "seasonality_amplitude must be non-negative"),
+        ValueValidator("attachment_rate", lambda s: (s >= 0) & (s <= 1), "attachment_rate must be in [0, 1]"),
+    ),
+)
+
 PRODUCT_METRICS = DataContract(
     name="product_metrics",
     columns=("stockcode", "revenue", "units", "transactions", "customers", "avg_price", "penetration"),

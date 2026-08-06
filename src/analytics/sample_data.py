@@ -1,9 +1,14 @@
 """Seeded synthetic transaction generator.
 
-Used to produce the checked-in sample fixture and to build ground-truth
-datasets for the validation benchmarks. The generator is deterministic and
-produces realistic structure: customer segments with different purchase
-rates, category affinity themes, and promo price windows.
+Produces realistic retail transaction data with:
+- Customer segments (champions/regulars/occasional/at-risk/churned) with lifecycle
+- Category affinity themes and substitution/complement relationships
+- Seasonal and weekly purchasing patterns
+- Realistic price distributions (log-normal per category)
+- Pareto revenue concentrations (20% SKUs = 80% revenue)
+- Promotion windows (seasonal, BOGO, multi-buy, clearance)
+- Customer churn and new acquisition over time
+- Basket composition with category affinity logic
 """
 
 from __future__ import annotations
@@ -22,62 +27,288 @@ CATEGORIES = (
     "Pet",
 )
 
+# Legacy themes for test compatibility
 THEMES = (
-    ("Coffee 01", "Dairy 01", "Bakery 01"),
-    ("Coffee 02", "Dairy 02", "Snacks 01"),
-    ("Beverages 01", "Snacks 02", "Snacks 03"),
-    ("Beverages 02", "Snacks 04"),
-    ("Bakery 02", "Dairy 03", "Coffee 03"),
-    ("Household 01", "Household 02"),
-    ("Personal Care 01", "Personal Care 02"),
-    ("Pet 01", "Pet 02", "Household 03"),
-    ("Coffee 04", "Bakery 03", "Dairy 04"),
-    ("Beverages 03", "Snacks 05", "Snacks 06"),
+    ("Coffee", "Dairy"),
+    ("Snacks", "Beverages"),
+    ("Bakery", "Coffee"),
+    ("Pet", "Household"),
 )
 
-SEGMENT_LAMBDA = {"champion": (18, 0.10), "regular": (8, 0.20), "occasional": (3, 0.30)}
+# Category-specific price parameters (log-normal mu, sigma)
+CATEGORY_PRICE_PARAMS = {
+    "Coffee": (2.5, 0.4),      # $8-20
+    "Snacks": (1.5, 0.35),     # $3-8
+    "Beverages": (1.8, 0.3),   # $4-12
+    "Bakery": (1.2, 0.25),     # $2-6
+    "Dairy": (1.6, 0.3),       # $3-9
+    "Household": (2.0, 0.5),   # $5-25
+    "Personal Care": (2.3, 0.45), # $7-20
+    "Pet": (2.2, 0.4),         # $6-20
+}
+
+# Segment definitions with realistic parameters
+SEGMENTS = {
+    "champion": {
+        "weight": 0.10,
+        "purchase_rate": 0.35,      # purchases per day
+        "avg_basket_size": 5.2,
+        "loyalty": 0.85,
+        "price_sensitivity": 0.7,
+        "promo_responsiveness": 0.3,
+        "churn_prob": 0.0001,
+    },
+    "regular": {
+        "weight": 0.25,
+        "purchase_rate": 0.15,
+        "avg_basket_size": 3.8,
+        "loyalty": 0.65,
+        "price_sensitivity": 1.0,
+        "promo_responsiveness": 0.5,
+        "churn_prob": 0.0005,
+    },
+    "occasional": {
+        "weight": 0.35,
+        "purchase_rate": 0.05,
+        "avg_basket_size": 2.5,
+        "loyalty": 0.35,
+        "price_sensitivity": 1.3,
+        "promo_responsiveness": 0.8,
+        "churn_prob": 0.002,
+    },
+    "at_risk": {
+        "weight": 0.20,
+        "purchase_rate": 0.02,
+        "avg_basket_size": 2.0,
+        "loyalty": 0.15,
+        "price_sensitivity": 1.5,
+        "promo_responsiveness": 1.0,
+        "churn_prob": 0.01,
+    },
+    "new": {
+        "weight": 0.10,
+        "purchase_rate": 0.08,
+        "avg_basket_size": 2.8,
+        "loyalty": 0.40,
+        "price_sensitivity": 1.1,
+        "promo_responsiveness": 0.6,
+        "churn_prob": 0.001,
+    },
+}
+
+# Category affinity themes (products often bought together)
+AFFINITY_THEMES = {
+    "morning_routine": ["Coffee", "Bakery", "Dairy"],
+    "snack_time": ["Snacks", "Beverages"],
+    "grocery_trip": ["Dairy", "Bakery", "Household", "Pet"],
+    "personal_care": ["Personal Care", "Household"],
+    "pet_care": ["Pet", "Household"],
+    "weekend_treat": ["Coffee", "Bakery", "Snacks", "Beverages"],
+}
+
+# Substitution groups (products that substitute for each other)
+SUBSTITUTION_GROUPS = [
+    ["Coffee", "Beverages"],
+    ["Snacks", "Bakery"],
+    ["Household", "Personal Care"],
+]
 
 
-def _product_catalog(n_products: int) -> pd.DataFrame:
-    rng = np.random.default_rng(7)
-    cats = [CATEGORIES[i % len(CATEGORIES)] for i in range(n_products)]
-    brands = [f"B{(i % 3) + 1}" for i in range(n_products)]
-    sizes = [rng.choice(["S", "M", "L"], p=[0.3, 0.5, 0.2]) for _ in range(n_products)]
-    flavors = [f"F{i % 4 + 1}" for i in range(n_products)]
-    price = np.exp(rng.normal(2.0, 0.55, n_products)).round(2)
-    popularity = 1.0 / (np.arange(n_products) + 1)
+def _product_catalog(n_products: int, seed: int = 7) -> pd.DataFrame:
+    """Generate product catalog with realistic price distributions and Pareto popularity."""
+    rng = np.random.default_rng(seed)
+
+    # Assign categories with realistic distribution (some categories have more SKUs)
+    cat_probs = np.array([0.15, 0.20, 0.15, 0.12, 0.10, 0.12, 0.08, 0.08])
+    cats = rng.choice(CATEGORIES, size=n_products, p=cat_probs)
+
+    brands = [f"B{(i % 5) + 1}" for i in range(n_products)]
+    sizes = rng.choice(["S", "M", "L", "XL"], size=n_products, p=[0.2, 0.45, 0.25, 0.1])
+    flavors = [f"F{i % 5 + 1}" for i in range(n_products)]
+
+    # Realistic log-normal prices per category
+    price = np.zeros(n_products)
+    for i, cat in enumerate(cats):
+        mu, sigma = CATEGORY_PRICE_PARAMS[cat]
+        price[i] = round(rng.lognormal(mu, sigma), 2)
+    price = np.clip(price, 0.99, 99.99)
+
+    # Pareto popularity: top 20% SKUs get 80% of demand
+    # Use Zipf distribution for rank-based popularity
+    ranks = np.arange(1, n_products + 1)
+    zipf_exp = 1.15
+    popularity = 1.0 / (ranks ** zipf_exp)
+    popularity = popularity / popularity.sum()
+
+    # Cost as 55-70% of price
+    cost_margin = rng.uniform(0.55, 0.70, n_products)
+    cost = (price * cost_margin).round(2)
+
     catalog = pd.DataFrame(
         {
-            "stockcode": [f"SKU{i:03d}" for i in range(n_products)],
-            "product": [f"{cats[i]} {(i // len(CATEGORIES)) + 1:02d}" for i in range(n_products)],
+            "stockcode": [f"SKU{i:04d}" for i in range(n_products)],
+            "product": [f"{cats[i]} {i+1:03d}" for i in range(n_products)],
             "category": cats,
             "brand": brands,
             "size": sizes,
             "flavor": flavors,
             "price": price,
-            "cost": (price * 0.6).round(2),
-            "popularity": popularity / popularity.sum(),
+            "cost": cost,
+            "popularity": popularity,
         }
     )
-    promo_mask = rng.random(n_products) < 0.2
+
+    # 25% of SKUs are promo-capable
+    promo_mask = rng.random(n_products) < 0.25
     catalog["promo_capable"] = promo_mask
+
+    # Substitution group mapping
+    cat_to_sub = {}
+    for i, group in enumerate(SUBSTITUTION_GROUPS):
+        for cat in group:
+            cat_to_sub[cat] = i
+    catalog["sub_group"] = catalog["category"].map(cat_to_sub).fillna(-1).astype(int)
+
     return catalog
 
 
-def _promo_windows(catalog: pd.DataFrame, n_days: int, seed: int) -> dict[str, list[tuple[int, int]]]:
+def _promo_windows(catalog: pd.DataFrame, n_days: int, seed: int) -> dict[str, list[dict]]:
+    """Generate realistic promotion windows with different types."""
     rng = np.random.default_rng(seed)
-    windows: dict[str, list[tuple[int, int]]] = {}
+    windows: dict[str, list[dict]] = {}
+
+    promo_types = ["discount", "bogo", "multibuy", "clearance"]
+    promo_probs = [0.55, 0.20, 0.15, 0.10]  # Most are simple discounts
+
     for sku in catalog.loc[catalog["promo_capable"], "stockcode"]:
-        n_win = int(rng.integers(1, 4))
-        starts = rng.integers(5, max(6, n_days - 25), size=n_win)
-        windows[sku] = [(int(s), int(min(s + rng.integers(7, 12), n_days))) for s in starts]
+        n_win = int(rng.integers(1, 5))
+        windows[sku] = []
+        for _ in range(n_win):
+            ptype = rng.choice(promo_types, p=promo_probs)
+            duration = int(rng.integers(5, 21))  # 5-20 days
+            max_start = max(5, n_days - duration - 5)
+            if max_start <= 5:
+                continue
+            start = int(rng.integers(5, max_start))
+            end = min(start + duration, n_days - 1)
+
+            if ptype == "discount":
+                discount = round(rng.uniform(0.15, 0.40), 2)  # 15-40% off
+                params = {"discount": discount}
+            elif ptype == "bogo":
+                params = {"bogo_qty": 1}  # Buy 1 Get 1
+            elif ptype == "multibuy":
+                params = {"min_qty": int(rng.integers(2, 4)), "discount": round(rng.uniform(0.10, 0.25), 2)}
+            else:  # clearance
+                params = {"discount": round(rng.uniform(0.40, 0.70), 2)}
+
+            windows[sku].append({
+                "start": start,
+                "end": end,
+                "type": ptype,
+                "params": params,
+            })
+
     return windows
 
 
+def _seasonal_demand(day_of_year: int, category: str) -> float:
+    """Return seasonal multiplier for category on given day (1-365)."""
+    # Convert to radians (2π per year)
+    t = 2 * np.pi * day_of_year / 365.0
+
+    # Base seasonal patterns
+    seasonal = {
+        "Coffee": 1.0 + 0.15 * np.cos(t - np.pi/2),      # Peak in winter
+        "Beverages": 1.0 + 0.20 * np.sin(t),             # Peak in summer
+        "Bakery": 1.0 + 0.10 * np.cos(t - np.pi),        # Peak in holidays
+        "Snacks": 1.0 + 0.10 * np.sin(t + np.pi/4),      # Slight summer peak
+        "Dairy": 1.0 + 0.05 * np.cos(t),                 # Mild seasonal
+        "Household": 1.0 + 0.08 * np.cos(t - np.pi),     # Holiday cleaning
+        "Personal Care": 1.0 + 0.07 * np.sin(t),         # Mild summer
+        "Pet": 1.0,                                      # No seasonality
+    }
+    return seasonal.get(category, 1.0)
+
+
+def _weekly_demand(day_of_week: int, category: str) -> float:
+    """Return weekly multiplier (0=Mon, 6=Sun)."""
+    # Weekend boost for certain categories
+    weekend_boost = {
+        "Coffee": 1.25,
+        "Bakery": 1.35,
+        "Snacks": 1.30,
+        "Beverages": 1.20,
+        "Dairy": 1.10,
+    }
+    if day_of_week >= 5:  # Sat/Sun
+        return weekend_boost.get(category, 1.05)
+    return 1.0
+
+
+def _customer_lifecycle(customer_age_days: int, segment: str) -> dict:
+    """Return lifecycle modifiers based on customer tenure."""
+    # New customers ramp up, then stabilize, then eventually decline
+    if segment == "new":
+        if customer_age_days < 30:
+            return {"purchase_mult": 0.6 + 0.01 * customer_age_days, "basket_mult": 0.8}
+        elif customer_age_days < 90:
+            return {"purchase_mult": 0.9, "basket_mult": 0.95}
+        else:
+            return {"purchase_mult": 1.0, "basket_mult": 1.0}
+    elif segment == "champion":
+        return {"purchase_mult": 1.0, "basket_mult": 1.0}
+    elif segment == "regular":
+        if customer_age_days > 365:
+            return {"purchase_mult": 0.9, "basket_mult": 0.95}
+        return {"purchase_mult": 1.0, "basket_mult": 1.0}
+    elif segment == "at_risk":
+        return {"purchase_mult": 0.5, "basket_mult": 0.8}
+    return {"purchase_mult": 1.0, "basket_mult": 1.0}
+
+
+def _pick_basket_products(
+    catalog: pd.DataFrame,
+    picked: list[str],
+    basket_size: int,
+    rng: np.random.Generator,
+    affinity_boost: float = 3.0,
+) -> list[str]:
+    """Pick remaining products for basket using category affinity."""
+    weights = catalog["popularity"].to_numpy().copy()
+    available = set(catalog["product"]) - set(picked)
+
+    while len(picked) < basket_size and available:
+        # Boost affinity categories
+        if picked and rng.random() < 0.4:
+            # Pick from same category as existing items
+            picked_cats = set(catalog.loc[catalog["product"].isin(picked), "category"])
+            mask = catalog["category"].isin(picked_cats) & catalog["product"].isin(available)
+            if mask.any():
+                weights_local = weights.copy()
+                weights_local[~mask] = 0
+                if weights_local.sum() > 0:
+                    weights_local = weights_local / weights_local.sum()
+                    product_name = rng.choice(catalog["product"], p=weights_local)
+                    if product_name in available:
+                        picked.append(product_name)
+                        available.remove(product_name)
+                        continue
+
+        # Standard weighted pick
+        weights_norm = weights / weights.sum()
+        product_name = rng.choice(catalog["product"], p=weights_norm)
+        if product_name in available:
+            picked.append(product_name)
+            available.remove(product_name)
+
+    return picked
+
+
 def generate_transactions(
-    n_customers: int = 300,
-    n_products: int = 60,
-    n_days: int = 180,
+    n_customers: int = 1000,
+    n_products: int = 200,
+    n_days: int = 365,
     seed: int = 42,
 ) -> pd.DataFrame:
     """Generate a synthetic transaction DataFrame with canonical schema.
@@ -86,69 +317,178 @@ def generate_transactions(
     customer_id, price, quantity, category, brand, size, flavor, promo_flag, cost.
     """
     rng = np.random.default_rng(seed)
-    catalog = _product_catalog(n_products)
-    promos = _promo_windows(catalog, n_days, seed)
-    theme_products = {p for theme in THEMES for p in theme if p in set(catalog["product"])}
+    catalog = _product_catalog(n_products, seed=seed + 1000)
+    promos = _promo_windows(catalog, n_days, seed + 2000)
 
-    active_days: dict[str, set[int]] = {
-        sku: {d for s, e in wins for d in range(s, e + 1)} for sku, wins in promos.items()
-    }
-    base_weights = catalog["popularity"].to_numpy().copy()
+    # Precompute active promo days per SKU
+    active_promo_days: dict[str, dict[int, dict]] = {}
+    for sku, wins in promos.items():
+        active_promo_days[sku] = {}
+        for w in wins:
+            for d in range(w["start"], w["end"] + 1):
+                active_promo_days[sku][d] = w
+
+    # Map products to SKU and catalog rows
     sku_by_name = catalog.set_index("product")["stockcode"].to_dict()
     product_by_name = catalog.set_index("product")
-    days = pd.date_range(end=pd.Timestamp("2024-12-31"), periods=n_days, freq="D")
-    segments = list(SEGMENT_LAMBDA.keys())
+
+    # Base popularity weights
+    base_weights = catalog["popularity"].to_numpy().copy()
+
+    # Generate days range
+    end_date = pd.Timestamp("2024-12-31")
+    days = pd.date_range(end=end_date, periods=n_days, freq="D")
+
+    # Customer segments assignment
+    segment_names = list(SEGMENTS.keys())
+    segment_weights = [SEGMENTS[s]["weight"] for s in segment_names]
+    segment_weights = np.array(segment_weights) / sum(segment_weights)
+
     rows: list[tuple] = []
     txn_counter = 0
 
-    for c in range(n_customers):
-        customer_id = f"CUST{c:04d}"
-        segment = segments[c % len(segments)]
-        n_purchases = int(rng.poisson(SEGMENT_LAMBDA[segment][0]))
-        purchase_days = rng.integers(0, n_days, size=n_purchases)
-        for p_day in purchase_days:
+    # Customer acquisition over time (not all at day 0)
+    acquisition_curve = np.linspace(0, n_customers, n_days)
+    acquisition_curve = np.diff(np.concatenate([[0], acquisition_curve])).astype(int)
+    acquisition_curve = np.maximum(acquisition_curve, 1)
+    # Ensure total matches
+    diff = n_customers - acquisition_curve.sum()
+    if diff > 0:
+        acquisition_curve[:diff] += 1
+
+    cust_idx = 0
+    customer_states = {}  # Track customer lifecycle
+
+    for day_idx in range(n_days):
+        n_new_today = acquisition_curve[day_idx]
+        date = days[day_idx]
+        dow = date.dayofweek
+        doy = date.dayofyear
+
+        # Add new customers
+        for _ in range(n_new_today):
+            customer_id = f"CUST{cust_idx:06d}"
+            segment = rng.choice(segment_names, p=segment_weights)
+            customer_states[customer_id] = {
+                "segment": segment,
+                "acquisition_day": day_idx,
+                "last_purchase_day": -1,
+                "purchase_count": 0,
+                "total_spent": 0.0,
+            }
+            cust_idx += 1
+
+        # Process existing customers for purchases
+        day_of_year = date.dayofyear
+        for customer_id, state in list(customer_states.items()):
+            segment = state["segment"]
+            seg_params = SEGMENTS[segment]
+
+            # Churn check
+            days_since_last = day_idx - state["last_purchase_day"] if state["last_purchase_day"] >= 0 else 999
+            if rng.random() < seg_params["churn_prob"] * max(1, days_since_last / 30):
+                del customer_states[customer_id]
+                continue
+
+            # Purchase probability for this day
+            base_rate = seg_params["purchase_rate"]
+            lifecycle = _customer_lifecycle(day_idx - state["acquisition_day"], segment)
+            purchase_prob = base_rate * lifecycle["purchase_mult"]
+
+            # Seasonal and weekly adjustments
+            purchase_prob *= _seasonal_demand(doy, "overall") if False else 1.0
+            # Apply category-agnostic weekly pattern (we'll handle per-category in basket)
+
+            if rng.random() > purchase_prob:
+                continue
+
+            # Make purchase
             txn_counter += 1
-            txn_id = f"TXN{txn_counter:06d}"
-            date = days[int(p_day)]
-            basket_size = int(rng.integers(2, 7))
+            txn_id = f"TXN{txn_counter:08d}"
+
+            # Basket size
+            base_basket = seg_params["avg_basket_size"]
+            basket_size = int(rng.poisson(max(1.5, base_basket * lifecycle["basket_mult"])))
+            basket_size = max(1, min(basket_size, 12))
+
+            # Pick products with affinity logic
             picked: list[str] = []
-            if rng.random() < 0.25 and theme_products:
-                theme = THEMES[int(rng.integers(0, len(THEMES)))]
-                available = [p for p in theme if p in theme_products]
-                if available:
-                    picked.extend(available)
-            weights = base_weights.copy()
-            for sku, act in active_days.items():
-                if int(p_day) in act:
-                    weights[catalog.index[catalog["stockcode"] == sku][0]] *= 3.0
-            while len(picked) < basket_size:
-                product_name = rng.choice(catalog["product"], p=weights / weights.sum())
-                if product_name not in picked:
-                    picked.append(product_name)
+
+            # Theme-based bundle (15% chance)
+            if rng.random() < 0.15 and AFFINITY_THEMES:
+                theme_name = rng.choice(list(AFFINITY_THEMES.keys()))
+                theme_cats = AFFINITY_THEMES[theme_name]
+                for cat in theme_cats:
+                    cat_products = catalog[catalog["category"] == cat]["product"].tolist()
+                    if cat_products and len(picked) < basket_size:
+                        prod = rng.choice(cat_products)
+                        if prod not in picked:
+                            picked.append(prod)
+
+            # Fill rest of basket
+            picked = _pick_basket_products(catalog, picked, basket_size, rng)
+
+            state["last_purchase_day"] = day_idx
+            state["purchase_count"] += 1
+
             for product_name in picked:
                 prod = product_by_name.loc[product_name]
+                sku = prod["stockcode"]
+
+                # Check promo
                 on_promo = False
+                promo_type = "none"
                 price = float(prod["price"])
-                for start, end in promos.get(prod["stockcode"], []):
-                    if start <= int(p_day) <= end:
-                        on_promo = True
-                        price = round(price * 0.7, 2)
-                        break
+
+                if sku in active_promo_days and day_idx in active_promo_days[sku]:
+                    promo = active_promo_days[sku][day_idx]
+                    on_promo = True
+                    promo_type = promo["type"]
+                    params = promo["params"]
+
+                    if promo_type == "discount":
+                        price = round(price * (1 - params["discount"]), 2)
+                    elif promo_type == "clearance":
+                        price = round(price * (1 - params["discount"]), 2)
+                    elif promo_type == "bogo":
+                        # Handled via quantity adjustment below
+                        pass
+                    elif promo_type == "multibuy":
+                        # Will apply if quantity meets threshold
+                        pass
+
+                # Quantity (BOGO/multibuy can affect)
+                base_qty = int(rng.choice([1, 2, 3, 4, 5], p=[0.55, 0.25, 0.12, 0.05, 0.03]))
+                qty = base_qty
+
+                if promo_type == "bogo" and base_qty >= 1:
+                    qty = base_qty + params["bogo_qty"]
+                elif promo_type == "multibuy" and base_qty >= params["min_qty"]:
+                    price = round(price * (1 - params["discount"]), 2)
+
+                # Category-specific weekly demand affects quantity
+                week_mult = _weekly_demand(dow, prod["category"])
+                if week_mult > 1.0 and rng.random() < 0.3:
+                    qty += 1
+
+                # Cost
+                cost = round(price * 0.6, 2)
+
                 rows.append(
                     (
                         date,
                         txn_id,
-                        str(prod["stockcode"]),
+                        str(sku),
                         product_name,
                         customer_id,
                         price,
-                        int(rng.integers(1, 4)),
+                        qty,
                         prod["category"],
                         prod["brand"],
                         prod["size"],
                         prod["flavor"],
-                        bool(on_promo),
-                        round(price * 0.6, 2),
+                        on_promo,
+                        cost,
                     )
                 )
 
@@ -175,7 +515,12 @@ def generate_transactions(
 
 
 def write_sample_fixture(
-    path: str, *, n_customers: int = 300, n_products: int = 60, n_days: int = 180, seed: int = 42
+    path: str,
+    *,
+    n_customers: int = 1000,
+    n_products: int = 200,
+    n_days: int = 365,
+    seed: int = 42,
 ) -> pd.DataFrame:
     """Generate the checked-in sample fixture and write it to `path`."""
     df = generate_transactions(
@@ -183,3 +528,15 @@ def write_sample_fixture(
     )
     df.to_csv(path, index=False)
     return df
+
+
+if __name__ == "__main__":
+    # Quick test
+    df = generate_transactions(n_customers=500, n_products=100, n_days=180, seed=42)
+    print(f"Generated {len(df):,} rows")
+    print(f"Customers: {df['customer_id'].nunique()}")
+    print(f"Products: {df['stockcode'].nunique()}")
+    print(f"Date range: {df['date'].min()} to {df['date'].max()}")
+    print(f"Avg basket: {df.groupby('transaction_id')['quantity'].sum().mean():.1f}")
+    print(f"Promo rate: {df['promo_flag'].mean():.1%}")
+    print(f"Revenue concentration (top 20% SKUs): {df.groupby('stockcode')['price'].sum().sort_values(ascending=False).head(int(0.2*df['stockcode'].nunique())).sum() / df['price'].sum():.1%}")
