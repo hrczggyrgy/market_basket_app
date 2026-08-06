@@ -42,6 +42,8 @@ def abc_analysis(df: pd.DataFrame) -> pd.DataFrame:
     """ABC classification by cumulative revenue share (A <= 70%, B <= 90%, C rest)."""
     revenue = (df["price"] * df["quantity"]).groupby(df["stockcode"]).sum().sort_values(ascending=False)
     cumulative = revenue.cumsum() / revenue.sum()
+    # Clip to [0, 1] to handle floating-point precision issues on the last row
+    cumulative = cumulative.clip(upper=1.0)
     table = pd.DataFrame({"stockcode": revenue.index, "revenue": revenue, "cumulative_share": cumulative})
     table["abc_class"] = np.select(
         [cumulative <= 0.7, cumulative <= 0.9],
