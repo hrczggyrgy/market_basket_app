@@ -46,6 +46,29 @@ def test_rfm_features_contract(sample_df: pd.DataFrame) -> None:
     assert (rfm["monetary"] > 0).all()
 
 
+def test_rfm_single_line_item_customers_no_nan_cv() -> None:
+    """Regression: single-line-item customers had std_order_value = NaN, so
+    order_value_cv was NaN and the 'must be non-negative' validator counted
+    NaN as a violation (NaN >= 0 is False), raising SchemaError.
+    """
+    df = pd.DataFrame(
+        {
+            "date": pd.date_range("2025-01-01", periods=6, freq="D"),
+            "transaction_id": ["T1", "T1", "T2", "T2", "T3", "T4"],
+            "customer_id": ["A", "A", "B", "B", "C", "D"],
+            "stockcode": ["P1", "P2", "P1", "P3", "P1", "P2"],
+            "price": [10.0, 5.0, 10.0, 7.0, 4.0, 6.0],
+            "quantity": [1, 2, 1, 1, 2, 1],
+        }
+    )
+    rfm = compute_rfm_features(df)
+    single = rfm.set_index("customer_id").loc[["C", "D"]]
+    assert (single["order_value_cv"] == 0).all()
+    assert rfm["order_value_cv"].notna().all()
+    assert (rfm["order_value_cv"] >= 0).all()
+    RFM_FEATURES.validate(rfm)
+
+
 def test_rfm_quantile_segments(sample_df: pd.DataFrame) -> None:
     rfm = compute_rfm_features(sample_df)
     segments = rfm_segmentation(rfm, method="quantile")

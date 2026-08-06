@@ -17,6 +17,28 @@ from src.analytics.schemas import (
 )
 
 
+_EPS = 1e-10
+_MIN_DISTINCT_PRICES = 3
+
+
+def _check_estimable(log_price: pd.Series, log_qty: pd.Series) -> Optional[str]:
+    """Return error reason if regression is numerically degenerate, else None."""
+    if len(log_price) < _MIN_DISTINCT_PRICES:
+        return "insufficient distinct price points"
+    if log_price.std() < _EPS:
+        return "near-constant price"
+    if log_qty.std() < _EPS:
+        return "near-constant quantity"
+    # Check near-perfect collinearity via correlation
+    try:
+        r = log_price.corr(log_qty)
+        if pd.notna(r) and abs(r) >= 1.0 - _EPS:
+            return "near-perfect collinearity"
+    except Exception:
+        return "correlation computation failed"
+    return None
+
+
 def _ols_loglog(
     log_price: pd.Series,
     log_qty: pd.Series,
@@ -25,6 +47,22 @@ def _ols_loglog(
     """Single SKU log-log OLS: returns elasticity, std_err, p_value, r2, ci_low, ci_high, n_obs."""
     if len(log_price) < 3:
         raise ValueError("insufficient observations")
+
+    # Align on common index and drop any remaining NaN
+    common_idx = log_price.index.intersection(log_qty.index)
+    log_price = log_price.loc[common_idx].dropna()
+    log_qty = log_qty.loc[common_idx].dropna()
+    # Re-align after dropna
+    common_idx = log_price.index.intersection(log_qty.index)
+    log_price = log_price.loc[common_idx]
+    log_qty = log_qty.loc[common_idx]
+
+    if len(log_price) < 3:
+        raise ValueError("insufficient observations after alignment")
+
+    reason = _check_estimable(log_price, log_qty)
+    if reason:
+        raise ValueError(f"degenerate case: {reason}")
 
     if use_robust:
         X = sm.add_constant(log_price)
@@ -37,12 +75,21 @@ def _ols_loglog(
         ci_low, ci_high = float(conf[0]), float(conf[1])
     else:
         slope, intercept, r, p, se = stats.linregress(log_price, log_qty)
+        # Guard against NaN from linregress (constant x or y at certain n)
+        if not np.isfinite(slope) or not np.isfinite(p) or not np.isfinite(se):
+            raise ValueError("linregress produced non-finite result")
         elasticity = float(slope)
         std_err = float(se)
         p_value = float(p)
         r2 = float(r**2)
         ci_low = elasticity - 1.96 * std_err
         ci_high = elasticity + 1.96 * std_err
+
+    # Final sanity checks
+    if not (0.0 <= p_value <= 1.0):
+        raise ValueError(f"p_value out of range: {p_value}")
+    if not np.isfinite(elasticity) or not np.isfinite(std_err) or not np.isfinite(r2):
+        raise ValueError("non-finite regression output")
 
     return elasticity, std_err, p_value, r2, ci_low, ci_high, len(log_price)
 
@@ -88,7 +135,16 @@ def estimate_loglog_elasticity(
         log_price = np.log(weekly["avg_price"].replace(0, np.nan).dropna())
         log_qty = np.log(weekly.loc[log_price.index, "total_qty"].replace(0, np.nan).dropna())
 
+        # Align indices (fixes misaligned dropna bug)
+        common_idx = log_price.index.intersection(log_qty.index)
+        log_price = log_price.loc[common_idx]
+        log_qty = log_qty.loc[common_idx]
+
         if len(log_price) < min_periods:
+            continue
+
+        # Require minimum distinct price points (not just total obs)
+        if log_price.nunique() < _MIN_DISTINCT_PRICES:
             continue
 
         try:
@@ -160,21 +216,32 @@ def estimate_hierarchical_elasticity(
         log_price = np.log(weekly["avg_price"].replace(0, np.nan).dropna())
         log_qty = np.log(weekly.loc[log_price.index, "total_qty"].replace(0, np.nan).dropna())
 
+        # Align indices
+        common_idx = log_price.index.intersection(log_qty.index)
+        log_price = log_price.loc[common_idx]
+        log_qty = log_qty.loc[common_idx]
+
         if len(log_price) < min_periods:
             continue
 
-        slope, intercept, r, p, se = stats.linregress(log_price, log_qty)
+        if log_price.nunique() < _MIN_DISTINCT_PRICES:
+            continue
+
+        try:
+            elast, se, pval, r2, _, _, n_obs = _ols_loglog(log_price, log_qty, use_robust=False)
+        except Exception:
+            continue
 
         ols_results.append(
             {
                 "stockcode": product_id,
                 "category": cat,
-                "elasticity_ols": float(slope),
-                "r_squared": float(r**2),
-                "p_value": float(p),
-                "n_obs": len(log_price),
+                "elasticity_ols": elast,
+                "r_squared": r2,
+                "p_value": pval,
+                "n_obs": n_obs,
                 "avg_price": float(weekly["avg_price"].mean()),
-                "std_err": float(se),
+                "std_err": se,
             }
         )
 
@@ -257,13 +324,25 @@ def estimate_cross_price_elasticity(
         if cv_a < min_price_variation or cv_b < min_price_variation:
             continue
 
-        log_price_a = np.log(weekly["avg_price_a"].replace(0, np.nan).dropna())
-        log_price_b = np.log(
-            weekly.loc[log_price_a.index, "avg_price_b"].replace(0, np.nan).dropna()
-        )
-        log_qty_a = np.log(weekly.loc[log_price_a.index, "total_qty_a"].replace(0, np.nan).dropna())
+        log_price_a = np.log(weekly["avg_price_a"].replace(0, np.nan))
+        log_price_b = np.log(weekly["avg_price_b"].replace(0, np.nan))
+        log_qty_a = np.log(weekly["total_qty_a"].replace(0, np.nan))
+
+        # Align indices and drop any NaN
+        common_idx = log_price_a.index.intersection(log_price_b.index).intersection(log_qty_a.index)
+        log_price_a = log_price_a.loc[common_idx].dropna()
+        log_price_b = log_price_b.loc[common_idx].dropna()
+        log_qty_a = log_qty_a.loc[common_idx].dropna()
+        # Re-align after dropna
+        common_idx = log_price_a.index.intersection(log_price_b.index).intersection(log_qty_a.index)
+        log_price_a = log_price_a.loc[common_idx]
+        log_price_b = log_price_b.loc[common_idx]
+        log_qty_a = log_qty_a.loc[common_idx]
 
         if len(log_price_a) < min_periods:
+            continue
+
+        if log_price_a.nunique() < _MIN_DISTINCT_PRICES or log_price_b.nunique() < _MIN_DISTINCT_PRICES:
             continue
 
         X = np.column_stack([log_price_a.values, log_price_b.values])

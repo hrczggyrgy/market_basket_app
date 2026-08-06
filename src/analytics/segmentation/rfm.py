@@ -63,7 +63,9 @@ def compute_rfm_features(
     )
     rfm["items_per_order"] = rfm["n_items"] / rfm["frequency"]
     rfm["revenue_per_item"] = rfm["monetary"] / rfm["n_items"].replace(0, np.nan)
-    rfm["order_value_cv"] = rfm["std_order_value"] / rfm["avg_order_value"].replace(0, np.nan)
+    rfm["order_value_cv"] = (
+        rfm["std_order_value"].fillna(0) / rfm["avg_order_value"].abs().replace(0, np.nan)
+    ).fillna(0)
 
     # Recency segments
     rfm["recency_segment"] = pd.qcut(

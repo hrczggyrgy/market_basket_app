@@ -14,7 +14,7 @@ from src.analytics.data import (
     revenue_column,
     safe_divide,
 )
-from src.analytics.schemas import TRANSACTIONS
+from src.analytics.schemas import TRANSACTIONS, RFM_FEATURES
 
 
 def _csv_bytes(df: pd.DataFrame) -> io.BytesIO:
@@ -113,3 +113,50 @@ def test_safe_divide() -> None:
     assert result[0] == 0.5
     assert result[1] == 0.0
     assert safe_divide(1, 0) == 0.0
+
+
+def test_load_transactions_detects_returns_and_excludes_from_aggregates() -> None:
+    """Policy: DQ report only — returns (negative quantity/price) are detected,
+    reported in the warning, and dropped. Downstream aggregates (RFM, baskets)
+    reflect only the kept positive rows. No netting.
+    """
+    from src.analytics.segmentation import compute_rfm_features
+
+    raw = pd.DataFrame(
+        {
+            "date": pd.date_range("2025-01-01", periods=6, freq="D"),
+            "transaction_id": ["T1", "T2", "T3", "T4", "T5", "T6"],
+            "stockcode": ["P1", "P2", "P3", "P1", "P2", "P3"],
+            "product": ["p", "p", "p", "p", "p", "p"],
+            "customer_id": ["C1", "C1", "C1", "C2", "C2", "C2"],
+            "price": [10.0, 20.0, -5.0, 15.0, -10.0, 30.0],
+            "quantity": [2, 1, 3, 1, 2, 1],
+        }
+    )
+    df, warning, dropped, _ = load_transactions(io.BytesIO(raw.to_csv(index=False).encode()))
+
+    # Return detection reported in warning
+    assert "return row(s)" in warning.lower()
+    assert "excluded" in warning.lower()
+    assert dropped == 2  # rows with negative price: row 2 (price=-5) and row 4 (price=-10)
+
+    # Returns are excluded from the kept data
+    assert (df["price"] > 0).all()
+    assert (df["quantity"] > 0).all()
+    assert len(df) == 4  # 6 input - 2 returns = 4
+
+    # RFM aggregates reflect only positive rows (no netting)
+    rfm = compute_rfm_features(df)
+    RFM_FEATURES.validate(rfm)  # no SchemaError
+    assert (rfm["order_value_cv"] >= 0).all()
+    assert rfm["order_value_cv"].notna().all()
+
+    # C1 had: (10*2) + (20*1) = 40 kept; return was (-5*3) = -15 dropped
+    c1 = rfm.set_index("customer_id").loc["C1"]
+    assert c1["monetary"] == 40.0
+    assert c1["frequency"] == 2
+
+    # C2 had: (15*1) + (30*1) = 45 kept; return was (-10*2) = -20 dropped
+    c2 = rfm.set_index("customer_id").loc["C2"]
+    assert c2["monetary"] == 45.0
+    assert c2["frequency"] == 2

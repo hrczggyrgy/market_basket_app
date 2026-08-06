@@ -195,3 +195,86 @@ def test_synthetic_control_elasticity(sample_df: pd.DataFrame) -> None:
     SYNTHETIC_CONTROL.validate(sc)
     required = {"treatment_effect_log", "treatment_effect_pct", "pre_period_rmse", "n_donors"}
     assert required <= set(sc["metric"])
+
+
+def test_loglog_elasticity_excludes_degenerate_cases() -> None:
+    """Regression: SKUs with constant qty or too few distinct prices should be
+    excluded cleanly, not produce NaN p_value that violates schema."""
+    from src.analytics.data import load_transactions
+    import io
+
+    # SKU with constant quantity across weeks, varying price
+    dates = pd.date_range("2025-01-01", periods=20, freq="W")
+    raw = pd.DataFrame({
+        "date": dates.tolist(),
+        "transaction_id": [f"T{i}" for i in range(1, 21)],
+        "stockcode": ["CONST_QTY"] * 20,
+        "product": ["p"] * 20,
+        "customer_id": ["C1"] * 20,
+        "price": [10]*5 + [12]*5 + [15]*5 + [20]*5,
+        "quantity": [100]*20,
+    })
+    df, *_ = load_transactions(io.BytesIO(raw.to_csv(index=False).encode()))
+    
+    elast = estimate_loglog_elasticity(df, min_periods=5, use_robust_se=True)
+    # Should be excluded (0 SKUs), not crash or produce NaN p_value
+    assert len(elast) == 0
+    ELASTICITY.validate(elast, allow_empty=True)
+
+
+def test_loglog_elasticity_normal_case_unchanged(sample_df: pd.DataFrame) -> None:
+    """Regression: normal well-varied SKUs should produce valid estimates."""
+    elast = estimate_loglog_elasticity(sample_df, min_periods=5, use_robust_se=True)
+    ELASTICITY.validate(elast, allow_empty=True)
+    if not elast.empty:
+        assert elast["elasticity"].notna().all()
+        assert elast["p_value"].notna().all()
+        assert (elast["p_value"] >= 0).all() and (elast["p_value"] <= 1).all()
+        assert elast["r_squared"].between(0, 1).all()
+        assert (elast["n_obs"] >= 5).all()
+
+
+def test_loglog_elasticity_few_distinct_prices_excluded() -> None:
+    """SKU with only 2 distinct prices should be excluded."""
+    from src.analytics.data import load_transactions
+    import io
+
+    dates = pd.date_range("2025-01-01", periods=20, freq="W")
+    raw = pd.DataFrame({
+        "date": dates.tolist(),
+        "transaction_id": [f"T{i}" for i in range(1, 21)],
+        "stockcode": ["TWO_PRICES"] * 20,
+        "product": ["p"] * 20,
+        "customer_id": ["C1"] * 20,
+        "price": [10]*10 + [20]*10,
+        "quantity": [100, 90, 80, 70, 60]*2 + [50, 45, 40, 35, 30]*2,
+    })
+    df, *_ = load_transactions(io.BytesIO(raw.to_csv(index=False).encode()))
+    
+    elast = estimate_loglog_elasticity(df, min_periods=5, use_robust_se=True)
+    assert len(elast) == 0
+    ELASTICITY.validate(elast, allow_empty=True)
+
+
+def test_hierarchical_elasticity_excludes_degenerate_cases() -> None:
+    """Hierarchical estimation should also skip degenerate SKUs."""
+    from src.analytics.data import load_transactions
+    import io
+
+    dates = pd.date_range("2025-01-01", periods=20, freq="W")
+    raw = pd.DataFrame({
+        "date": dates.tolist() * 2,
+        "transaction_id": [f"T{i}" for i in range(1, 41)],
+        "stockcode": ["CONST_QTY"] * 20 + ["NORMAL"] * 20,
+        "product": ["p"] * 40,
+        "customer_id": ["C1"] * 40,
+        "price": ([10]*5 + [12]*5 + [15]*5 + [20]*5) + ([10, 12, 15, 11, 13, 14, 16, 10, 12, 15, 11, 13, 14, 16, 10, 12, 15, 11, 13, 14]),
+        "quantity": [100]*20 + [100, 90, 80, 95, 85, 88, 75, 105, 92, 78, 93, 87, 82, 77, 102, 91, 79, 94, 86, 83],
+    })
+    df, *_ = load_transactions(io.BytesIO(raw.to_csv(index=False).encode()))
+    
+    hier = estimate_hierarchical_elasticity(df, min_periods=5)
+    # CONST_QTY should be excluded, only NORMAL remains
+    assert len(hier) == 1
+    assert hier.iloc[0]["stockcode"] == "NORMAL"
+    HIERARCHICAL_ELASTICITY.validate(hier, allow_empty=True)

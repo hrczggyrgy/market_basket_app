@@ -163,14 +163,17 @@ def compute_within_group_similarity(
     products: list[str],
     similarity_matrix: pd.DataFrame,
 ) -> float:
-    """Mean pairwise similarity within a group (1.0 for singletons)."""
+    """Mean pairwise similarity within a group (1.0 for singletons).
+    
+    Clipped to [0, 1] to satisfy schema constraints.
+    """
     valid = [p for p in products if p in similarity_matrix.index]
     if len(valid) < 2:
         return 1.0
     sub = similarity_matrix.loc[valid, valid].to_numpy(dtype=float)
     triu = sub[np.triu_indices(len(valid), k=1)]
     triu = triu[np.isfinite(triu)]
-    return float(np.mean(triu)) if len(triu) else 0.0
+    return float(np.clip(np.mean(triu), 0.0, 1.0)) if len(triu) else 0.0
 
 
 def compute_attribute_split_quality(

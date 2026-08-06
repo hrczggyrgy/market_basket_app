@@ -80,6 +80,10 @@ def load_transactions(
     df["stockcode"] = df["stockcode"].apply(lambda v: _clean_id(str(v)))
     df["transaction_id"] = df["transaction_id"].apply(lambda v: _clean_id(str(v)))
 
+    return_mask = (df["price"] < 0) | (df["quantity"] < 0)
+    return_count = int(return_mask.sum())
+    return_value = float(abs((df.loc[return_mask, "price"] * df.loc[return_mask, "quantity"]).sum())) if return_count else 0.0
+
     before = len(df)
     valid = (
         df["date"].notna()
@@ -101,6 +105,8 @@ def load_transactions(
     warning = ""
     if dropped > 0:
         warning = f"Removed {dropped} rows with missing/invalid data"
+    if return_count > 0:
+        warning = (warning + "; " if warning else "") + f"Detected {return_count} return row(s) worth {return_value:.2f} (excluded)"
 
     quality_report = None
     if assess_quality:
