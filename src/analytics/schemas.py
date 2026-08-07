@@ -307,6 +307,27 @@ RULES_TABLE = DataContract(
     ),
 )
 
+# Category-level rules rollup
+CATEGORY_RULES = DataContract(
+    name="category_rules",
+    columns=(
+        "antecedent_category",
+        "consequent_category",
+        "support",
+        "confidence",
+        "lift",
+        "rule_count",
+        "avg_lift",
+        "max_lift",
+    ),
+    validators=(
+        ValueValidator("support", lambda s: (s > 0) & (s <= 1), "support must be in (0, 1]"),
+        ValueValidator("confidence", lambda s: (s >= 0) & (s <= 1), "confidence must be in [0, 1]"),
+        ValueValidator("lift", lambda s: s > 0, "lift must be positive"),
+        ValueValidator("rule_count", lambda s: s >= 1, "rule_count must be >= 1"),
+    ),
+)
+
 # ---------------------------------------------------------------------------
 # Co-purchase / add-on contracts
 # ---------------------------------------------------------------------------

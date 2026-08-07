@@ -9,6 +9,7 @@ import streamlit as st
 
 from src.analytics.data import derive_product_lookup
 from src.analytics.rules import (
+    aggregate_rules_to_categories,
     bootstrap_lift_ci,
     create_basket_matrix,
     filter_rules,
@@ -226,6 +227,61 @@ def render(df: pd.DataFrame) -> None:
             "association_rules.csv",
             "text/csv",
         )
+
+        # Category-level rules rollup
+        st.divider()
+        st.subheader(":material/category: Category Affinities (Rollup)")
+        cat_rules = aggregate_rules_to_categories(filtered, lookup)
+        if not cat_rules.empty:
+            # Format for display
+            cat_display = cat_rules.copy()
+            cat_display["support"] = cat_display["support"].apply(lambda x: f"{x:.4f}")
+            cat_display["confidence"] = cat_display["confidence"].apply(lambda x: f"{x:.2%}")
+            cat_display["lift"] = cat_display["lift"].apply(lambda x: f"{x:.2f}")
+            cat_display["avg_lift"] = cat_display["avg_lift"].apply(lambda x: f"{x:.2f}")
+            cat_display["max_lift"] = cat_display["max_lift"].apply(lambda x: f"{x:.2f}")
+            
+            st.dataframe(
+                cat_display[["antecedent_category", "consequent_category", "rule_count", "support", "confidence", "lift", "avg_lift", "max_lift"]],
+                use_container_width=True,
+                hide_index=True,
+            )
+            
+            # Category affinity heatmap
+            st.caption("Heatmap: Lift by Category Pair")
+            pivot = cat_rules.pivot_table(
+                index="antecedent_category",
+                columns="consequent_category",
+                values="lift",
+                fill_value=0
+            )
+            if not pivot.empty:
+                fig = go.Figure(
+                    data=go.Heatmap(
+                        z=pivot.values,
+                        x=pivot.columns.tolist(),
+                        y=pivot.index.tolist(),
+                        colorscale="RdYlGn",
+                        colorbar={"title": "Avg Lift"},
+                        hovertemplate="From: %{y}<br>To: %{x}<br>Lift: %{z:.2f}<extra></extra>",
+                    )
+                )
+                fig.update_layout(
+                    xaxis={"title": "Consequent Category", "tickangle": -45},
+                    yaxis={"title": "Antecedent Category"},
+                    height=max(300, len(pivot) * 30 + 100),
+                )
+                show(fig)
+            
+            csv_cat = cat_rules.to_csv(index=False)
+            st.download_button(
+                ":material/download: Download Category Rules CSV",
+                csv_cat,
+                "category_rules.csv",
+                "text/csv",
+            )
+        else:
+            st.info("No category-level rules available (insufficient category diversity).")
 
         st.divider()
         _render_lift_ci_chart(filtered, table, top_n=15)

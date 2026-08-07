@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 from mlxtend.frequent_patterns import association_rules, fpgrowth
 
-from src.analytics.schemas import FREQUENT_ITEMSETS, RULES, RULES_TABLE, check
+from src.analytics.schemas import CATEGORY_RULES, FREQUENT_ITEMSETS, RULES, RULES_TABLE, check
 
 
 @dataclass
@@ -237,6 +237,54 @@ def rules_to_table(rules: pd.DataFrame, product_lookup: pd.DataFrame | None = No
         }
     )
     return check(table, RULES_TABLE, allow_empty=True)
+
+
+def aggregate_rules_to_categories(
+    rules: pd.DataFrame,
+    product_lookup: pd.DataFrame,
+) -> pd.DataFrame:
+    """Aggregate SKU-level association rules to category-level rules.
+    
+    Maps antecedents and consequents to their categories, then aggregates
+    by (antecedent_category, consequent_category) computing weighted averages.
+    
+    Args:
+        rules: DataFrame of SKU-level rules (RULES contract)
+        product_lookup: DataFrame with stockcode -> category mapping
+        
+    Returns:
+        DataFrame validated against CATEGORY_RULES contract
+    """
+    check(rules, RULES, allow_empty=True)
+    if rules.empty:
+        return check(pd.DataFrame(columns=list(CATEGORY_RULES.columns)), CATEGORY_RULES, allow_empty=True)
+    
+    # Build stockcode -> category mapping
+    cat_map = product_lookup.set_index("stockcode")["category"].to_dict()
+    
+    def map_to_category(itemset: frozenset) -> str:
+        """Map a frozenset of stockcodes to a sorted, joined string of categories."""
+        cats = sorted(cat_map.get(item, "Unknown") for item in itemset)
+        return " + ".join(cats)
+    
+    rules_cat = rules.copy()
+    rules_cat["antecedent_category"] = rules_cat["antecedents"].map(map_to_category)
+    rules_cat["consequent_category"] = rules_cat["consequents"].map(map_to_category)
+    
+    # Aggregate by category pair
+    agg = rules_cat.groupby(["antecedent_category", "consequent_category"]).agg(
+        rule_count=("lift", "count"),
+        support=("support", "mean"),
+        confidence=("confidence", "mean"),
+        lift=("lift", "mean"),
+        avg_lift=("lift", "mean"),
+        max_lift=("lift", "max"),
+    ).reset_index()
+    
+    # Sort by lift (primary), then rule_count
+    agg = agg.sort_values(["lift", "rule_count"], ascending=[False, False]).reset_index(drop=True)
+    
+    return check(agg, CATEGORY_RULES, allow_empty=True)
 
 
 def get_default_params() -> dict:
