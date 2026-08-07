@@ -537,6 +537,7 @@ CATEGORY_ROLES = DataContract(
         "seasonality_amplitude",
         "attachment_rate",
         "destination_categories",
+        "category_source",
     ),
     validators=(
         ValueValidator("trip_generation_rate", lambda s: (s >= 0) & (s <= 1), "trip_generation_rate must be in [0, 1]"),

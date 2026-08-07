@@ -87,6 +87,7 @@ def compute_category_roles(
     seasonality_amplitude_threshold: float = 0.30,
     attachment_threshold: float = 0.20,
     n_periods: int = 52,
+    category_source: str | None = None,
 ) -> pd.DataFrame:
     """Classify each category into Destination / Routine / Seasonal / Convenience.
 
@@ -112,6 +113,11 @@ def compute_category_roles(
         seasonality_amplitude_threshold: Minimum amplitude for Seasonal.
         attachment_threshold: Minimum attachment_rate for Convenience.
         n_periods: Number of periods for seasonal analysis (weeks).
+        category_source: Source of the category column. One of:
+            "inferred_nlp" (TF-IDF + KMeans on product descriptions),
+            "sample_themes" (sample data THEMES),
+            "provided" (explicit column in source data).
+            If None, attempts to auto-detect from data patterns.
 
     Returns:
         DataFrame with category, role, and all signal values.
@@ -121,11 +127,24 @@ def compute_category_roles(
             pd.DataFrame(columns=list(CATEGORY_ROLES.columns)), CATEGORY_ROLES, allow_empty=True
         )
 
+    # Auto-detect category source if not provided
+    if category_source is None:
+        from src.analytics.sample_data import THEMES as SAMPLE_THEMES
+        all_cats = set(df["category"].unique())
+        theme_cats = set()
+        for theme in SAMPLE_THEMES:
+            theme_cats.update(theme)
+        if all_cats.issubset(theme_cats) and all_cats:
+            category_source = "sample_themes"
+        else:
+            category_source = "provided"
+
     df = df.copy()
     revenue = df["price"] * df["quantity"]
     df["revenue"] = revenue
+    all_categories = df["category"].unique()
 
-# --- 1. trip_generation_rate ---
+    # ... rest of the function unchanged until result creation ...
     # For each basket, find the dominant category by revenue share within the basket
     basket_cat_rev = df.groupby(["transaction_id", "category"])["revenue"].sum().reset_index()
     basket_total = basket_cat_rev.groupby("transaction_id")["revenue"].transform("sum")
@@ -212,6 +231,7 @@ def compute_category_roles(
         "demand_cv": demand_cv.values,
         "seasonality_amplitude": seasonality_amplitude.values,
         "attachment_rate": attachment_rate.values,
+        "category_source": category_source,
     }).fillna(0.0)
 
     result["destination_categories"] = ", ".join(sorted(destination_cats)) if destination_cats else ""

@@ -183,6 +183,15 @@ def _render_category_roles(df: pd.DataFrame) -> None:
         show(empty_state("No category roles computed"))
         return
 
+    # Disclosure banner
+    source = roles["category_source"].iloc[0] if "category_source" in roles.columns and not roles.empty else "unknown"
+    source_labels = {
+        "sample_themes": "📋 Categories from sample-data themes (Coffee/Dairy, Snacks/Beverages, etc.)",
+        "inferred_nlp": "🤖 Categories inferred from product descriptions via TF-IDF + KMeans",
+        "provided": "📁 Categories provided in source data",
+    }
+    st.info(source_labels.get(source, f"ℹ️ Category source: {source}"))
+
     # Treemap: categories sized by revenue, colored by role
     # Need to get revenue per category
     revenue_per_cat = df.copy()
@@ -204,7 +213,7 @@ def _render_category_roles(df: pd.DataFrame) -> None:
         values="revenue",
         color="role",
         color_discrete_map=role_colors,
-        hover_data=["trip_generation_rate", "demand_cv", "seasonality_amplitude", "attachment_rate"],
+        hover_data=["trip_generation_rate", "demand_cv", "seasonality_amplitude", "attachment_rate", "category_source"],
     )
     fig.update_layout(height=400)
     show(fig)
@@ -212,7 +221,7 @@ def _render_category_roles(df: pd.DataFrame) -> None:
 
     # Signal table
     st.subheader(":material/table_rows: Category Role Signals")
-    display_cols = ["category", "role", "trip_generation_rate", "demand_cv", "seasonality_amplitude", "attachment_rate", "destination_categories"]
+    display_cols = ["category", "role", "trip_generation_rate", "demand_cv", "seasonality_amplitude", "attachment_rate", "destination_categories", "category_source"]
     display_cols = [c for c in display_cols if c in roles.columns]
     st.dataframe(
         roles[display_cols].sort_values(["role", "category"]),

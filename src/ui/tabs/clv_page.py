@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.analytics.clv import compute_clv_customer_df, predict_clv_bg_nbd
-from src.ui.plots import PALETTE, empty_state, new_fig, show
+from src.ui.plots import PALETTE, empty_state, new_fig, render_bar_with_ci, show
 from src.ui.registry import ModeSpec
 
 
@@ -30,6 +30,37 @@ def _render_clv_distribution(customers: pd.DataFrame) -> None:
     fig.update_layout(xaxis={"title": "Predicted CLV ($)"}, yaxis={"title": "Count"})
     show(fig)
     st.caption("Histogram of predicted CLV by segment. Box = IQR/median.")
+
+
+def _render_clv_with_ci(customers: pd.DataFrame) -> None:
+    """Render top-N customers by predicted CLV with confidence intervals."""
+    st.subheader(":material/analytics: Predicted CLV with 95% CI")
+    if customers.empty:
+        show(empty_state("No CLV data"))
+        return
+
+    # Check if CI columns exist
+    if "ci_lower" not in customers.columns or "ci_upper" not in customers.columns:
+        st.info("Confidence intervals not available for this model configuration.")
+        return
+
+    # Top N by predicted CLV
+    top_customers = customers.nlargest(30, "predicted_clv")[["customer_id", "predicted_clv", "ci_lower", "ci_upper", "clv_segment"]].copy()
+    top_customers["label"] = top_customers["customer_id"] + " (" + top_customers["clv_segment"] + ")"
+
+    fig = render_bar_with_ci(
+        df=top_customers,
+        x_col="label",
+        y_col="predicted_clv",
+        ci_lower_col="ci_lower",
+        ci_upper_col="ci_upper",
+        y_title="Predicted CLV ($)",
+        color="clv_segment",
+        color_discrete_map={"Platinum": PALETTE[0], "Gold": PALETTE[2], "Silver": PALETTE[4], "Bronze": PALETTE[1]},
+        height=500,
+    )
+    show(fig)
+    st.caption("Top 30 customers by predicted CLV. Error bars = 95% bootstrap confidence interval. Segment color indicates CLV tier.")
 
 
 def _render_clv_segments(customers: pd.DataFrame) -> None:
@@ -163,6 +194,9 @@ def render(df: pd.DataFrame) -> None:
 
     st.divider()
     _render_clv_distribution(filtered)
+
+    st.divider()
+    _render_clv_with_ci(filtered)
 
     st.divider()
     _render_clv_segments(filtered)
