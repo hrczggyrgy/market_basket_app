@@ -6,10 +6,67 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from src.analytics.basket_metrics import spc_revenue_trend
 from src.analytics.data import get_data_summary
 from src.analytics.data_quality import generate_quality_summary
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
+
+
+def _period_over_period_delta(df: pd.DataFrame, metric: str, period: str = "weekly") -> tuple[float, float, str]:
+    """
+    Compute period-over-period delta for a metric.
+    Returns (current_value, previous_value, delta_color) where delta_color is "normal", "inverse", or "off".
+    """
+    df = df.copy()
+    if period == "weekly":
+        df["period"] = df["date"].dt.to_period("W").dt.start_time
+    elif period == "monthly":
+        df["period"] = df["date"].dt.to_period("M").dt.start_time
+    else:
+        df["period"] = df["date"].dt.date
+
+    periods = sorted(df["period"].unique())
+    if len(periods) < 2:
+        return 0.0, 0.0, "off"
+
+    curr_period = periods[-1]
+    prev_period = periods[-2]
+
+    curr_df = df[df["period"] == curr_period]
+    prev_df = df[df["period"] == prev_period]
+
+    if metric == "transactions":
+        curr = len(curr_df)
+        prev = len(prev_df)
+        color = "normal"  # more transactions = good
+    elif metric == "customers":
+        curr = curr_df["customer_id"].nunique()
+        prev = prev_df["customer_id"].nunique()
+        color = "normal"  # more customers = good
+    elif metric == "products":
+        curr = curr_df["stockcode"].nunique()
+        prev = prev_df["stockcode"].nunique()
+        color = "off"  # neutral
+    elif metric == "revenue":
+        curr = (curr_df["price"] * curr_df["quantity"]).sum()
+        prev = (prev_df["price"] * prev_df["quantity"]).sum()
+        color = "normal"  # more revenue = good
+    elif metric == "avg_basket_value":
+        curr_baskets = curr_df.groupby("transaction_id")["price"].apply(lambda x: (x * curr_df.loc[x.index, "quantity"]).sum())
+        prev_baskets = prev_df.groupby("transaction_id")["price"].apply(lambda x: (x * prev_df.loc[x.index, "quantity"]).sum())
+        curr = curr_baskets.mean() if len(curr_baskets) > 0 else 0
+        prev = prev_baskets.mean() if len(prev_baskets) > 0 else 0
+        color = "normal"
+    elif metric == "return_rate":
+        # Negative metric - higher returns = bad
+        curr = 0.0
+        prev = 0.0
+        color = "inverse"
+    else:
+        return 0.0, 0.0, "off"
+
+    return curr, prev, color
 
 
 def _revenue_trend(df: pd.DataFrame, period: str) -> pd.DataFrame:
@@ -71,32 +128,90 @@ def _revenue_pareto(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _render_revenue_trend(df: pd.DataFrame) -> None:
-    st.subheader(":material/trending_up: Revenue Trend")
+    st.subheader(":material/trending_up: Revenue Trend (SPC)")
     period = st.radio("Period", ["daily", "weekly", "monthly"], horizontal=True, key="ov_trend_period")
-    trend = _revenue_trend(df, period)
-    window = {"daily": 7, "weekly": 4, "monthly": 3}[period]
+
+    # Compute daily revenue series for SPC
+    revenue = df["price"] * df["quantity"]
+    if period == "daily":
+        key = df["date"].dt.date
+    elif period == "weekly":
+        key = df["date"].dt.to_period("W").dt.start_time.dt.date
+    else:
+        key = df["date"].dt.to_period("M").dt.start_time.dt.date
+    series = revenue.groupby(key).sum().sort_index()
+    series.index = pd.to_datetime(series.index)
+
+    # SPC analysis
+    spc = spc_revenue_trend(series)
 
     fig = new_fig()
+    # UCL/LCL bands
     fig.add_trace(
         go.Scatter(
-            x=trend.index,
-            y=trend["revenue"],
+            x=spc["period"],
+            y=spc["ucl"],
+            mode="lines",
+            line={"color": PALETTE[2], "width": 1, "dash": "dash"},
+            name="UCL",
+            hovertemplate="UCL: %{y:.2f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=spc["period"],
+            y=spc["lcl"],
+            mode="lines",
+            line={"color": PALETTE[2], "width": 1, "dash": "dash"},
+            name="LCL",
+            fill="tonexty",
+            fillcolor="rgba(255, 0, 0, 0.08)",
+            hovertemplate="LCL: %{y:.2f}<extra></extra>",
+        )
+    )
+    # Center line
+    fig.add_trace(
+        go.Scatter(
+            x=spc["period"],
+            y=spc["center"],
+            mode="lines",
+            name="Center (trailing mean)",
+            line={"color": PALETTE[1], "width": 2, "dash": "dot"},
+            hovertemplate="Center: %{y:.2f}<extra></extra>",
+        )
+    )
+    # Revenue line
+    fig.add_trace(
+        go.Scatter(
+            x=spc["period"],
+            y=spc["revenue"],
             mode="lines",
             name="Revenue",
             line={"color": PALETTE[0], "width": 2},
+            hovertemplate="Revenue: %{y:.2f}<extra></extra>",
         )
     )
-    fig.add_trace(
-        go.Scatter(
-            x=trend.index,
-            y=trend["rolling"],
-            mode="lines",
-            name=f"{window}-period avg",
-            line={"color": PALETTE[1], "width": 2, "dash": "dash"},
+    # Anomaly markers
+    anomalies = spc[spc["anomaly"]]
+    if not anomalies.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=anomalies["period"],
+                y=anomalies["revenue"],
+                mode="markers",
+                name="Anomaly",
+                marker={"color": "red", "size": 10, "symbol": "x"},
+                hovertemplate="Anomaly (%{customdata})<br>Revenue: %{y:.2f}<br>Rule: %{customdata}<extra></extra>",
+                customdata=anomalies["rule"],
+            )
         )
-    )
-    fig.update_layout(yaxis={"title": "Revenue"})
+    fig.update_layout(yaxis={"title": "Revenue"}, xaxis={"title": "Period"})
     show(fig)
+
+    st.caption(
+        "SPC control limits: trailing rolling mean ± 2σ (Rule 1: outside limits; "
+        "Rule 3: 7 consecutive points on same side of center). Red X = anomaly."
+    )
 
 
 def _render_customer_split(df: pd.DataFrame) -> None:

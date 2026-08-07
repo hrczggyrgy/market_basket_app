@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 from scipy.stats import entropy, variation
 
@@ -11,6 +12,7 @@ from src.analytics.schemas import (
     BASKET_PENETRATION,
     CUSTOMER_ENTROPY,
     IPT_CV,
+    REVENUE_SPC,
     check,
 )
 
@@ -96,6 +98,70 @@ def compute_ipt_cv(df: pd.DataFrame) -> pd.DataFrame:
         )
     table = pd.DataFrame(rows).sort_values("cv_ipt", ascending=False).reset_index(drop=True)
     return check(table, IPT_CV)
+
+
+def spc_revenue_trend(
+    values: pd.Series,
+    index: pd.Index | None = None,
+    term: str = "period",
+    window: int = 8,
+    k: float = 2.0,
+    min_periods: int = 4,
+    run_length: int = 7,
+) -> pd.DataFrame:
+    """SPC control-chart annotation for a revenue-like time series.
+
+    Returns a REVENUE_SPC-validated table with one row per period:
+    - center: trailing-window mean of values.
+    - ucl / lcl: center +/- k * trailing-window std.
+    - anomaly: True when a point is outside the control limits (Rule 1) OR
+      part of a run of ``run_length`` consecutive points on one side of the
+      center (Rule 3). Points within-bounds but slightly off-center do NOT
+      count as anomalies.
+    - rule: brief label of the rule that fired ("limit" / "run").
+
+    ``values`` must be sorted ascending by time.
+    """
+    if len(values) == 0:
+        return check(pd.DataFrame(columns=list(REVENUE_SPC.columns)), REVENUE_SPC, allow_empty=True)
+
+    series = pd.Series(values.to_numpy(dtype=float), 
+                        index=pd.RangeIndex(len(values)) if index is None else pd.Index(index))
+    center = series.rolling(window, min_periods=min_periods).mean()
+    std = series.rolling(window, min_periods=min_periods).std(ddof=1)
+    ucl = center + k * std
+    lcl = center - k * std
+
+    out_limits = (series > ucl) | (series < lcl)
+
+    # runs: consecutive points on same side of center, min run_length
+    side = pd.Series(np.sign(series - center), index=series.index)
+    run_ids = (side != side.shift()).cumsum()
+    run_sizes = side.groupby(run_ids).transform("size")
+    in_run = (run_sizes >= run_length) & (side != 0)
+
+    anomaly = out_limits | in_run
+    rule_label = []
+    for i, (is_lim, is_run) in enumerate(zip(out_limits.tolist(), in_run.tolist())):
+        if is_lim:
+            rule_label.append("limit")
+        elif is_run:
+            rule_label.append("run")
+        else:
+            rule_label.append("")
+
+    table = pd.DataFrame(
+        {
+            term: [str(p) for p in series.index],
+            "revenue": series.to_numpy(),
+            "center": center.to_numpy(),
+            "ucl": ucl.to_numpy(),
+            "lcl": lcl.to_numpy(),
+            "anomaly": anomaly.to_numpy(),
+            "rule": rule_label,
+        }
+    )
+    return check(table, REVENUE_SPC)
 
 
 def np_log(series: pd.Series) -> pd.Series:

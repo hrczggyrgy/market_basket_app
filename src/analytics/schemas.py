@@ -397,6 +397,16 @@ BASKET_COMPOSITION = DataContract(
     ),
 )
 
+REVENUE_SPC = DataContract(
+    name="revenue_spc",
+    columns=("period", "revenue", "center", "ucl", "lcl", "anomaly", "rule"),
+    validators=(
+        ValueValidator("revenue", lambda s: s >= 0, "revenue must be non-negative"),
+        ValueValidator("center", lambda s: s.isna() | (s >= 0), "center (control mean) must be non-negative or NaN"),
+        ValueValidator("anomaly", lambda s: s.isin({False, True}), "anomaly must be a boolean"),
+    ),
+)
+
 CUSTOMER_ENTROPY = DataContract(
     name="customer_entropy",
     columns=("customer_id", "n_distinct_products", "n_purchases", "entropy", "normalized_entropy"),
@@ -1029,6 +1039,7 @@ CLV_CUSTOMER = DataContract(
         "expected_avg_value",
         "predicted_clv",
         "clv_12m",
+        "clv_12m_discounted",
         "clv_segment",
         "entropy",
         "normalized_entropy",

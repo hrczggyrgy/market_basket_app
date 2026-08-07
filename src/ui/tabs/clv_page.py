@@ -139,6 +139,16 @@ def _render_clv_diagnostics(diagnostics: pd.DataFrame) -> None:
         show(empty_state("No diagnostics"))
         return
 
+    status = diagnostics[diagnostics["metric"] == "gg_independence_status"]
+    if not status.empty and len(status) == 1:
+        status_code = float(status["value"].iloc[0])
+        if status_code == 2.0:
+            st.warning(":material/warning: Gamma-Gamma independence assumption VIOLATED (strong freq-value correlation); treat CLV with caution.")
+        elif status_code == 1.0:
+            st.info(":material/info: Gamma-Gamma independence assumption PARTIALLY met (moderate freq-value correlation).")
+        else:
+            st.success(":material/check_circle: Gamma-Gamma independence assumption largely met (|corr(freq, value)| < 0.2).")
+
     st.dataframe(diagnostics, use_container_width=True, hide_index=True)
 
     # Key parameters
@@ -164,12 +174,20 @@ def render(df: pd.DataFrame) -> None:
     st.subheader(":material/account_balance_wallet: Customer Lifetime Value")
 
     with st.expander("Parameters", expanded=True):
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         horizon = c1.number_input("Prediction Horizon (days)", 30, 365, 90)
         freq = c2.selectbox("Frequency", ["D", "W"], index=0)
+        discount_rate = c3.number_input("Annual Discount Rate (%)", 0.0, 30.0, 0.0, 0.5)
+        if discount_rate > 0:
+            st.caption(
+                "CLV is discounted to present value (monthly compounding, purchases assumed spread "
+                "uniformly over the horizon). A 0% rate applies no discounting."
+            )
 
     try:
-        predictions, diagnostics = predict_clv_bg_nbd(df, prediction_horizon_days=horizon, freq=freq)
+        predictions, diagnostics = predict_clv_bg_nbd(
+            df, prediction_horizon_days=horizon, freq=freq, discount_rate_pct=discount_rate
+        )
     except ValueError as e:
         st.error(f"CLV model failed: {e}")
         return
@@ -178,7 +196,9 @@ def render(df: pd.DataFrame) -> None:
     _render_clv_diagnostics(diagnostics)
 
     st.divider()
-    customers = compute_clv_customer_df(df, prediction_horizon_days=horizon, freq=freq)
+    customers = compute_clv_customer_df(
+        df, prediction_horizon_days=horizon, freq=freq, discount_rate_pct=discount_rate
+    )
 
     # Filters
     with st.expander("Filters", expanded=True):

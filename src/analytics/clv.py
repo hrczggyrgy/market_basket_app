@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 from lifetimes import BetaGeoFitter, GammaGammaFitter
 from lifetimes.utils import ConvergenceError, summary_data_from_transaction_data
+from scipy.stats import pearsonr, spearmanr
 
 from src.analytics.basket_metrics import compute_customer_entropy
 from src.analytics.schemas import CLV_CUSTOMER, CLV_DIAGNOSTICS, CLV_PREDICTIONS, check
@@ -28,10 +29,15 @@ def predict_clv_bg_nbd(
     prediction_horizon_days: int = 90,
     freq: str = "D",
     min_repeat_customers: int = 10,
+    discount_rate_pct: float = 0.0,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """BG/NBD + Gamma-Gamma CLV predictions keyed by customer.
 
     Returns (clv_predictions, clv_diagnostics) both contract-validated.
+
+    ``discount_rate_pct`` is an annual discount rate applied to future
+    expected purchases (monthly compounding, uniform purchase timing).
+    A rate of 0 means no discounting.
     """
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
@@ -71,14 +77,15 @@ def predict_clv_bg_nbd(
     calibration["expected_avg_value"] = ggf.conditional_expected_average_profit(
         calibration["frequency"], calibration["monetary_value"]
     )
-    calibration["predicted_clv"] = calibration["predicted_purchases"] * calibration["expected_avg_value"]
+    discount = _discount_factor(prediction_horizon_days, discount_rate_pct)
+    calibration["predicted_clv"] = calibration["predicted_purchases"] * calibration["expected_avg_value"] * discount
     calibration["p_alive"] = bgf.conditional_probability_alive(
         calibration["frequency"], calibration["recency"], calibration["T"]
     )
 
     ci_lower, ci_upper = _bootstrap_clv_ci(calibration, prediction_horizon_days, freq)
-    calibration["ci_lower"] = ci_lower
-    calibration["ci_upper"] = ci_upper
+    calibration["ci_lower"] = ci_lower * discount
+    calibration["ci_upper"] = ci_upper * discount
 
     table = calibration.reset_index()
     table = table.rename(columns={"index": "customer_id"})
@@ -100,10 +107,26 @@ def predict_clv_bg_nbd(
     table["clv_segment"] = _segment_labels(table["predicted_clv"])
     predictions = check(table, CLV_PREDICTIONS)
     diagnostics = check(
-        _build_diagnostics(bgf, ggf, len(calibration), len(summary), bg_penalizer, gg_penalizer),
+        _build_diagnostics(bgf, ggf, len(calibration), len(summary), bg_penalizer, gg_penalizer, purchases, discount_rate_pct),
         CLV_DIAGNOSTICS,
     )
     return predictions, diagnostics
+
+
+def _discount_factor(horizon_days: int, annual_rate_pct: float) -> float:
+    """Mean present-value factor for purchases spread uniformly over the horizon.
+
+    Monthly compounding: factor = (1 - (1+r)^-n) / (r*n) is the per-dollar
+    discount applied to a uniform stream of purchases over the horizon.
+    A rate of 0 (or a horizon <= 0) yields 1.0 (no discounting).
+    """
+    if annual_rate_pct <= 0 or horizon_days <= 0:
+        return 1.0
+    r_m = (annual_rate_pct / 100.0) / 12.0
+    n_months = max(1.0, horizon_days / 30.44)
+    if r_m == 0:
+        return 1.0
+    return float((1 - (1 + r_m) ** -n_months) / (r_m * n_months))
 
 
 def _bootstrap_clv_ci(
@@ -205,6 +228,8 @@ def _build_diagnostics(
     n_total: int,
     bg_penalizer: float,
     gg_penalizer: float,
+    purchases: pd.DataFrame | None = None,
+    discount_rate_pct: float = 0.0,
 ) -> pd.DataFrame:
     rows = [
         ("model", "BG/NBD + Gamma-Gamma"),
@@ -219,6 +244,7 @@ def _build_diagnostics(
         ("ggf_penalizer_used", float(gg_penalizer)),
         ("n_customers_fit", float(n_fit)),
         ("n_customers_total", float(n_total)),
+        ("discount_rate_pct", float(discount_rate_pct)),
     ]
     bg_nll = getattr(bgf, "_negative_log_likelihood_", None)
     gg_nll = getattr(ggf, "_negative_log_likelihood_", None)
@@ -226,13 +252,79 @@ def _build_diagnostics(
         rows.append(("bgf_negative_log_likelihood", float(bg_nll)))
     if gg_nll is not None:
         rows.append(("ggf_negative_log_likelihood", float(gg_nll)))
+
+    if purchases is not None and len(purchases) > 0:
+        customers = (
+            purchases.groupby("customer_id")
+            .agg(frequency=("transaction_id", "size"), monetary_value=("revenue", "mean"))
+            .reset_index()
+        )
+        customers = customers[customers["frequency"] >= 2]
+        if len(customers) >= 5:
+            pearson_corr, spearman_corr = _monetary_frequency_correlations(customers)
+            rows.append(("gg_freq_value_pearson", float(pearson_corr)))
+            rows.append(("gg_freq_value_spearman", float(spearman_corr)))
+            rows.append(("gg_independence_status", float(_gg_independence_status(pearson_corr, spearman_corr))))
+            if len(customers) >= 10:
+                stationarity = _avg_order_value_stationarity(purchases)
+                if np.isfinite(stationarity):
+                    rows.append(("gg_value_stationarity_pct", float(stationarity)))
     return pd.DataFrame(rows, columns=["metric", "value"])
+
+
+def _monetary_frequency_pair(customers: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    x = customers["frequency"].to_numpy(dtype=float)
+    y = customers["monetary_value"].to_numpy(dtype=float)
+    return x, y
+
+
+def _monetary_frequency_correlations(customers: pd.DataFrame) -> tuple[float, float]:
+    """Pearson/Spearman correlation between purchase frequency and avg order value."""
+    x, y = _monetary_frequency_pair(customers)
+    if len(x) < 2 or np.std(x) == 0 or np.std(y) == 0:
+        return 0.0, 0.0
+    pearson_corr, _ = pearsonr(x, y)
+    spearman_corr, _ = spearmanr(x, y)
+    return float(pearson_corr), float(spearman_corr)
+
+
+def _gg_independence_status(pearson_corr: float, spearman_corr: float) -> float:
+    """Numeric Gamma-Gamma independence code: 0 = largely met, 1 = partially met, 2 = violated."""
+    strongest = max(abs(pearson_corr), abs(spearman_corr))
+    if strongest < 0.2:
+        return 0.0
+    if strongest < 0.4:
+        return 1.0
+    return 2.0
+
+
+def _avg_order_value_stationarity(purchases: pd.DataFrame) -> float:
+    """Share of customers with >= 3 purchases whose first-half vs second-half
+    AOV ratio stays within [0.5, 2.0] (rough per-customer spend stationarity)."""
+    purchases = purchases.copy()
+    purchases["date"] = pd.to_datetime(purchases["date"])
+    purchases = purchases.sort_values(["customer_id", "date"])
+    consistent = []
+    for _, grp in purchases.groupby("customer_id"):
+        if len(grp) < 3:
+            continue
+        half = len(grp) // 2
+        early = float(grp["revenue"].iloc[:half].mean())
+        late = float(grp["revenue"].iloc[half:].mean())
+        if early <= 0 or late <= 0:
+            continue
+        ratio = late / early
+        consistent.append(0.5 <= ratio <= 2.0)
+    if not consistent:
+        return float("nan")
+    return float(np.mean(consistent))
 
 
 def compute_clv_customer_df(
     df: pd.DataFrame,
     prediction_horizon_days: int = 90,
     freq: str = "D",
+    discount_rate_pct: float = 0.0,
 ) -> pd.DataFrame:
     """Customer CLV view: BG/NBD predictions joined with behavior metrics."""
     df = df.copy()
@@ -240,7 +332,12 @@ def compute_clv_customer_df(
     df["revenue"] = df["price"] * df["quantity"]
     df = df[df["revenue"] > 0]
 
-    predictions, _ = predict_clv_bg_nbd(df, prediction_horizon_days=prediction_horizon_days, freq=freq)
+    predictions, _ = predict_clv_bg_nbd(
+        df,
+        prediction_horizon_days=prediction_horizon_days,
+        freq=freq,
+        discount_rate_pct=discount_rate_pct,
+    )
 
     metrics = (
         df.groupby("customer_id")
@@ -264,6 +361,11 @@ def compute_clv_customer_df(
 
     annualization = 365.0 / prediction_horizon_days
     result["clv_12m"] = result["expected_avg_value"] * result["predicted_purchases"] * annualization
+    result["clv_12m_discounted"] = (
+        result["clv_12m"] * _discount_factor(365, discount_rate_pct)
+        if discount_rate_pct > 0
+        else result["clv_12m"]
+    )
 
     cols = [
         "customer_id",
@@ -277,6 +379,7 @@ def compute_clv_customer_df(
         "expected_avg_value",
         "predicted_clv",
         "clv_12m",
+        "clv_12m_discounted",
         "clv_segment",
         "entropy",
         "normalized_entropy",
