@@ -9,9 +9,13 @@ from sklearn.cluster import KMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 from src.analytics.schemas import (
+    ASSORTMENT_EFFICIENCY,
+    CATEGORY_GROWTH_MATRIX,
     CATEGORY_KPIS,
+    CATEGORY_MANAGER_SCORECARD,
     CATEGORY_ROLES,
     CATEGORY_SCORECARD,
+    CATEGORY_TREND,
     INFERRED_CATEGORIES,
     check,
 )
@@ -238,6 +242,306 @@ def compute_category_roles(
     result["role"] = result.apply(_classify, axis=1)
 
     return check(result, CATEGORY_ROLES)
+
+
+def compute_category_trend(
+    transactions_df: pd.DataFrame,
+    freq: str = "W",
+) -> pd.DataFrame:
+    """Weekly (or per-period) revenue and basket penetration per category.
+
+    One row per (category, period). Penetration is the share of baskets in
+    that period that contain the category. Reuses the TRANSACTIONS contract
+    columns and returns a CATEGORY_TREND-validated table.
+    """
+    required = {"category", "date", "transaction_id", "price", "quantity"}
+    if not required.issubset(transactions_df.columns) or transactions_df.empty:
+        return check(
+            pd.DataFrame(columns=list(CATEGORY_TREND.columns)),
+            CATEGORY_TREND,
+            allow_empty=True,
+        )
+
+    df = transactions_df.copy()
+    df["_revenue"] = df["price"] * df["quantity"]
+    df["_period"] = df["date"].dt.to_period(freq).astype(str)
+
+    per_period = df.groupby("_period")
+    total_baskets = per_period["transaction_id"].nunique().rename("n_baskets")
+
+    rows: list[dict] = []
+    for (cat, period), grp in df.groupby(["category", "_period"]):
+        n_cat_baskets = int(grp["transaction_id"].nunique())
+        rows.append(
+            {
+                "category": cat,
+                "period": period,
+                "revenue": float(grp["_revenue"].sum()),
+                "basket_penetration": n_cat_baskets / total_baskets.get(period, 1),
+            }
+        )
+
+    table = pd.DataFrame(rows)
+    if table.empty:
+        return check(
+            pd.DataFrame(columns=list(CATEGORY_TREND.columns)),
+            CATEGORY_TREND,
+            allow_empty=True,
+        )
+    table = table.sort_values(["category", "period"]).reset_index(drop=True)
+    return check(table, CATEGORY_TREND)
+
+
+def compute_assortment_efficiency(
+    transactions_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Per-category assortment efficiency: SKU share vs revenue share.
+
+    - sku_share: share of total distinct SKUs held by the category.
+    - revenue_share: share of total revenue produced by the category.
+    - efficiency_index: revenue_share / sku_share (how well SKUs convert
+      to revenue; > 1 means revenue outruns SKU weight).
+    - efficiency_label: efficient (index > 1.1), balanced, heavy (index < 0.9).
+
+    Requires a ``category`` column present in transactions_df.
+    """
+    if "category" not in transactions_df.columns or transactions_df.empty:
+        return check(
+            pd.DataFrame(columns=list(ASSORTMENT_EFFICIENCY.columns)),
+            ASSORTMENT_EFFICIENCY,
+            allow_empty=True,
+        )
+
+    df = transactions_df.copy()
+    df["_revenue"] = df["price"] * df["quantity"]
+
+    total_skus = int(df["stockcode"].nunique())
+    total_revenue = float(df["_revenue"].sum())
+
+    per_cat_rev = df.groupby("category")["_revenue"].sum()
+    per_cat_skus = df.groupby("category")["stockcode"].nunique()
+    per_cat_role = compute_category_roles(df)[["category", "role"]].set_index("category")["role"]
+
+    rows: list[dict] = []
+    for cat in per_cat_rev.index:
+        revenue = float(per_cat_rev.get(cat, 0.0))
+        n_skus = int(per_cat_skus.get(cat, 0))
+        sku_share = n_skus / total_skus if total_skus else 0.0
+        revenue_share = revenue / total_revenue if total_revenue else 0.0
+        index = revenue_share / sku_share if sku_share > 0 else 0.0
+        if index > 1.1:
+            label = "efficient"
+        elif index < 0.9:
+            label = "under_efficient"
+        else:
+            label = "balanced"
+        rows.append(
+            {
+                "category": cat,
+                "role": per_cat_role.get(cat, "Routine"),
+                "sku_share": sku_share,
+                "revenue_share": revenue_share,
+                "total_revenue": revenue,
+                "efficiency_index": index,
+                "efficiency_label": label,
+            }
+        )
+
+    table = pd.DataFrame(rows)
+    return check(table, ASSORTMENT_EFFICIENCY)
+
+
+def compute_category_growth_matrix(
+    transactions_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Internal BCG matrix: revenue share (x) vs growth % (y) per category.
+
+    Quadrants split at the dataset medians:
+    - star: high revenue_share AND high growth_pct
+    - cash_cow: high share, low growth
+    - question_mark: low share, high growth
+    - avoid: low share, low growth
+
+    Reuses compute_category_manager_scorecard for revenue_share, growth,
+    total_revenue and role, so single source of truth.
+    """
+    sc = compute_category_manager_scorecard(transactions_df)
+    if sc.empty:
+        return check(
+            pd.DataFrame(columns=list(CATEGORY_GROWTH_MATRIX.columns)),
+            CATEGORY_GROWTH_MATRIX,
+            allow_empty=True,
+        )
+
+    table = sc[["category", "role", "revenue_share", "revenue_yoy_growth", "total_revenue"]].copy()
+    table = table.rename(columns={"revenue_yoy_growth": "growth_pct"})
+    table = table[table["growth_pct"].notna()]  # growth not computable -> drop
+    if table.empty:
+        return check(
+            pd.DataFrame(columns=list(CATEGORY_GROWTH_MATRIX.columns)),
+            CATEGORY_GROWTH_MATRIX,
+            allow_empty=True,
+        )
+
+    share_med = float(table["revenue_share"].median())
+    growth_med = float(table["growth_pct"].median())
+
+    def _quadrant(row: pd.Series) -> str:
+        hi_share = row["revenue_share"] >= share_med
+        hi_growth = row["growth_pct"] >= growth_med
+        if hi_share and hi_growth:
+            return "star"
+        if hi_share:
+            return "cash_cow"
+        if hi_growth:
+            return "question_mark"
+        return "dog"
+
+    table["quadrant"] = table.apply(_quadrant, axis=1)
+    table["growth_pct"] = table["growth_pct"].round(2)
+    table["total_revenue"] = table["total_revenue"].round(2)
+    return check(table, CATEGORY_GROWTH_MATRIX)
+
+
+def enrich_with_categories(
+    df: pd.DataFrame,
+    n_categories: int = 8,
+    product_col: str = "product",
+) -> tuple[pd.DataFrame, bool]:
+    """Add a ``category`` column when the dataset lacks one.
+
+    Uses ``infer_categories_nlp`` (TF-IDF + KMeans on product descriptions)
+    to derive a pseudo-category per SKU. Datasets that already carry a
+    ``category`` column pass through untouched.
+
+    Returns (df, was_inferred) where was_inferred is True only when the
+    category column was synthesized.
+    """
+    if "category" in df.columns or df.empty:
+        return df, False
+    if product_col not in df.columns:
+        return df, False
+    inferred = infer_categories_nlp(df, n_categories=n_categories, product_col=product_col)
+    if inferred.empty:
+        return df, False
+    mapping = dict(zip(inferred["stockcode"], inferred["inferred_category"]))
+    out = df.copy()
+    out["category"] = out["stockcode"].map(mapping).fillna("Unknown")
+    return out, True
+
+
+def compute_category_manager_scorecard(
+    transactions_df: pd.DataFrame,
+    yoy_window: str = "YE",
+) -> pd.DataFrame:
+    """Manager-facing category scorecard: one row per category.
+
+    Metrics per column:
+    - category: pseudo-category name.
+    - role: Destination / Routine / Seasonal / Convenience (from CATEGORY_ROLES).
+    - total_revenue: category revenue.
+    - revenue_yoy_growth: YoY % growth of revenue (annual windows when the data
+      spans >= 2 years, else period-on-period growth on weekly revenue).
+    - basket_penetration: % of baskets containing the category.
+    - repeat_purchase_rate: share of category customers with >1 transaction.
+    - sku_share: % of total SKUs belonging to the category.
+    - revenue_share: % of total revenue from the category.
+    - kvi_count / kvi_share: number and share of Key Value Items in the category.
+
+    Reuses compute_category_kpis (revenue, penetration, revenue_share),
+    compute_category_roles (role), KVI_SCORES (kvi_count/kvi_share).
+    """
+    if "category" not in transactions_df.columns or transactions_df.empty:
+        return check(
+            pd.DataFrame(columns=list(CATEGORY_MANAGER_SCORECARD.columns)),
+            CATEGORY_MANAGER_SCORECARD,
+            allow_empty=True,
+        )
+
+    df = transactions_df.copy()
+    df["_revenue"] = df["price"] * df["quantity"]
+
+    kpis = compute_category_kpis(df, n_periods=8)
+    roles = compute_category_roles(df)
+    role_map = dict(zip(roles["category"], roles["role"]))
+
+    total_baskets = max(int(df["transaction_id"].nunique()), 1)
+    total_skus = max(int(df["stockcode"].nunique()), 1)
+    total_revenue = float(df["_revenue"].sum())
+
+    cat_rows: list[dict] = []
+    for cat in kpis["category"].tolist():
+        cat_df = df[df["category"] == cat]
+        revenue = float(cat_df["_revenue"].sum())
+        n_cat_skus = int(cat_df["stockcode"].nunique())
+        n_cat_baskets = int(cat_df["transaction_id"].nunique())
+        n_cat_customers = int(cat_df["customer_id"].nunique())
+
+        # repeat purchase rate: customers with >1 distinct transaction
+        cust_tx = cat_df.groupby("customer_id")["transaction_id"].nunique()
+        repeat = int((cust_tx > 1).sum()) if n_cat_customers else 0
+
+        # YoY growth on weekly revenue
+        weekly = (
+            cat_df.set_index("date")["_revenue"]
+            .resample("W")
+            .sum()
+            .replace(0, np.nan)
+            .dropna()
+        )
+        yoy = _yoy_growth(weekly, yoy_window)
+        if yoy is None:
+            yoy = float("nan")
+
+        cat_rows.append(
+            {
+                "category": cat,
+                "role": role_map.get(cat, "Routine"),
+                "total_revenue": round(revenue, 2),
+                "revenue_yoy_growth": round(yoy, 2) if np.isfinite(yoy) else float("nan"),
+                "basket_penetration": n_cat_baskets / total_baskets,
+                "repeat_purchase_rate": repeat / n_cat_customers if n_cat_customers else 0.0,
+                "sku_share": n_cat_skus / total_skus,
+                "revenue_share": revenue / total_revenue if total_revenue else 0.0,
+                "kvi_count": 0,
+                "kvi_share": 0.0,
+            }
+        )
+
+    # KVI counts per category from KVI_SCORES
+    try:
+        from src.analytics.pricing.kvi import compute_kvi_score
+
+        kvi = compute_kvi_score(df, method="heuristic")
+        if not kvi.empty:
+            kvi_by_cat = kvi.groupby("category")["stockcode"].nunique()
+            total_kvi = int(kvi["stockcode"].nunique())
+            for row in cat_rows:
+                kc = int(kvi_by_cat.get(row["category"], 0))
+                row["kvi_count"] = kc
+                row["kvi_share"] = kc / total_kvi if total_kvi else 0.0
+    except Exception:
+        pass
+
+    table = pd.DataFrame(cat_rows)
+    return check(table, CATEGORY_MANAGER_SCORECARD)
+
+
+def _yoy_growth(weekly_revenue: pd.Series, window: str) -> float | None:
+    """Annualized growth of a weekly revenue series, or None when not computable."""
+    if len(weekly_revenue) < 2:
+        return None
+    grp = weekly_revenue.groupby(pd.Grouper(freq=window))
+    periods = list(grp.groups)
+    if len(periods) >= 2:
+        recent = float(grp.get_group(periods[-1]).sum())
+        prior = float(grp.get_group(periods[-2]).sum())
+    else:
+        recent = float(grp.get_group(periods[-1]).sum())
+        prior = float(weekly_revenue[weekly_revenue.index < periods[-1]].sum())
+    if prior <= 0:
+        return None
+    return (recent - prior) / prior * 100
 
 
 def _suggest_category_role(row: pd.Series) -> str:

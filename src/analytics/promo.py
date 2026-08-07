@@ -21,6 +21,7 @@ from sklearn.preprocessing import StandardScaler
 from statsmodels.tsa.seasonal import STL
 
 from src.analytics.schemas import (
+    CATEGORY_PROMO_TIMELINE,
     PROMO_BASELINE,
     PROMO_CANNIBALIZATION,
     PROMO_HALO,
@@ -125,6 +126,81 @@ def detect_promotions(
             )
     table = pd.DataFrame(promotions)
     return check(table, PROMO_PERIODS, allow_empty=True)
+
+
+def compute_category_promo_timeline(
+    df: pd.DataFrame,
+    promo_periods: pd.DataFrame,
+    freq: str = "W",
+) -> pd.DataFrame:
+    """Promo vs non-promo revenue per (category, period).
+
+    Aggregates marked promo transactions (mark_promo_transactions) by category
+    and period. Each (category, period) row carries:
+    - promo_revenue: revenue from transactions flagged in-promo.
+    - non_promo_revenue: revenue from the same category/period NOT in promo.
+    - n_promos: distinct promoted SKUs active that period.
+    - avg_discount_pct: mean per-transaction discount depth among promo rows.
+
+    Requires a ``category`` column and a PROMO_PERIODS table.
+    """
+    required = {"category", "date", "transaction_id", "price", "quantity", "stockcode"}
+    if not required.issubset(df.columns) or df.empty:
+        return check(
+            pd.DataFrame(columns=list(CATEGORY_PROMO_TIMELINE.columns)),
+            CATEGORY_PROMO_TIMELINE,
+            allow_empty=True,
+        )
+    if "is_promo" not in df.columns and len(promo_periods) == 0:
+        return check(
+            pd.DataFrame(columns=list(CATEGORY_PROMO_TIMELINE.columns)),
+            CATEGORY_PROMO_TIMELINE,
+            allow_empty=True,
+        )
+
+    t = df.copy()
+    t["date"] = pd.to_datetime(t["date"])
+    t["_revenue"] = t["price"] * t["quantity"]
+    if "is_promo" not in t.columns:
+        t = mark_promo_transactions(t, promo_periods)
+    t["_period"] = t["date"].dt.to_period(freq).astype(str)
+
+    if not t["is_promo"].any():
+        return check(
+            pd.DataFrame(columns=list(CATEGORY_PROMO_TIMELINE.columns)),
+            CATEGORY_PROMO_TIMELINE,
+            allow_empty=True,
+        )
+
+    # per-transaction discount depth vs 90th-percentile stock baseline
+    baseline_price = t.groupby("stockcode")["price"].transform(lambda s: s.quantile(0.9))
+    t["_discount_pct"] = ((baseline_price - t["price"]) / baseline_price.replace(0, np.nan) * 100).fillna(0.0)
+
+    promo = t[t["is_promo"]]
+    base = t[~t["is_promo"]]
+
+    promo_agg = (
+        promo.groupby(["category", "_period"])
+        .agg(
+            promo_revenue=("_revenue", "sum"),
+            n_promos=("stockcode", "nunique"),
+            avg_discount_pct=("_discount_pct", "mean"),
+        )
+        .reset_index()
+    )
+    base_agg = (
+        base.groupby(["category", "_period"])
+        .agg(non_promo_revenue=("_revenue", "sum"))
+        .reset_index()
+    )
+
+    table = promo_agg.merge(base_agg, on=["category", "_period"], how="outer").fillna(0.0)
+    table["period"] = table["_period"]
+    table = table[
+        ["category", "period", "promo_revenue", "non_promo_revenue", "n_promos", "avg_discount_pct"]
+    ].sort_values(["category", "period"])
+    table["n_promos"] = table["n_promos"].astype(int)
+    return check(table.copy(), CATEGORY_PROMO_TIMELINE, allow_empty=True)
 
 
 def _expand_promo_weeks(promo_periods: pd.DataFrame) -> pd.DataFrame:

@@ -18,7 +18,7 @@ from src.ui import registry
 from src.ui.registry import ModeSpec
 from src.ui.tabs import (
     overview, rules, copurchase, switching, cohorts,
-    performance, cdt_page, segmentation, pricing_page,
+    performance, category_page, cdt_page, segmentation, pricing_page,
     promo_page, assortment_page, clv_page
 )
 from src.analytics.data import load_transactions
@@ -44,6 +44,7 @@ def _register_modes() -> None:
         switching.MODE_SPEC,
         cohorts.MODE_SPEC,
         performance.MODE_SPEC,
+        category_page.MODE_SPEC,
         cdt_page.MODE_SPEC,
         segmentation.MODE_SPEC,
         pricing_page.MODE_SPEC,

@@ -527,6 +527,76 @@ INFERRED_CATEGORIES = DataContract(
     columns=("stockcode", "product", "inferred_category"),
 )
 
+CATEGORY_TREND = DataContract(
+    name="category_trend",
+    columns=("category", "period", "revenue", "basket_penetration"),
+    validators=(
+        ValueValidator("revenue", lambda s: s >= 0, "revenue must be non-negative"),
+        ValueValidator("basket_penetration", lambda s: (s >= 0) & (s <= 1), "basket_penetration must be in [0, 1]"),
+    ),
+)
+
+CATEGORY_MANAGER_SCORECARD = DataContract(
+    name="category_manager_scorecard",
+    columns=(
+        "category",
+        "role",
+        "total_revenue",
+        "revenue_yoy_growth",
+        "basket_penetration",
+        "repeat_purchase_rate",
+        "sku_share",
+        "revenue_share",
+        "kvi_count",
+        "kvi_share",
+    ),
+    validators=(
+        ValueValidator("total_revenue", lambda s: s >= 0, "total_revenue must be non-negative"),
+        ValueValidator("basket_penetration", lambda s: (s >= 0) & (s <= 1), "basket_penetration must be in [0, 1]"),
+        ValueValidator("repeat_purchase_rate", lambda s: (s >= 0) & (s <= 1), "repeat_purchase_rate must be in [0, 1]"),
+        ValueValidator("sku_share", lambda s: (s >= 0) & (s <= 1), "sku_share must be in [0, 1]"),
+        ValueValidator("revenue_share", lambda s: (s >= 0) & (s <= 1), "revenue_share must be in [0, 1]"),
+        ValueValidator("kvi_count", lambda s: s >= 0, "kvi_count must be non-negative"),
+        ValueValidator("kvi_share", lambda s: (s >= 0) & (s <= 1), "kvi_share must be in [0, 1]"),
+    ),
+)
+
+ASSORTMENT_EFFICIENCY = DataContract(
+    name="assortment_efficiency",
+    columns=(
+        "category",
+        "role",
+        "sku_share",
+        "revenue_share",
+        "total_revenue",
+        "efficiency_index",
+        "efficiency_label",
+    ),
+    validators=(
+        ValueValidator("sku_share", lambda s: (s >= 0) & (s <= 1), "sku_share must be in [0, 1]"),
+        ValueValidator("revenue_share", lambda s: (s >= 0) & (s <= 1), "revenue_share must be in [0, 1]"),
+        ValueValidator("total_revenue", lambda s: s >= 0, "total_revenue must be non-negative"),
+        ValueValidator("efficiency_index", lambda s: s >= 0, "efficiency_index must be non-negative"),
+    ),
+)
+
+CATEGORY_GROWTH_MATRIX = DataContract(
+    name="category_growth_matrix",
+    columns=(
+        "category",
+        "role",
+        "revenue_share",
+        "growth_pct",
+        "total_revenue",
+        "quadrant",
+    ),
+    validators=(
+        ValueValidator("revenue_share", lambda s: (s >= 0) & (s <= 1), "revenue_share must be in [0, 1]"),
+        ValueValidator("total_revenue", lambda s: s >= 0, "total_revenue must be non-negative"),
+        ValueValidator("quadrant", lambda s: s.isin({"star", "cash_cow", "question_mark", "dog"}), "quadrant must be star/cash_cow/question_mark/avoid"),
+    ),
+)
+
 CATEGORY_ROLES = DataContract(
     name="category_roles",
     columns=(
@@ -666,6 +736,24 @@ TREE_RULES = DataContract(
 # ---------------------------------------------------------------------------
 # Promotional analytics contracts
 # ---------------------------------------------------------------------------
+
+CATEGORY_PROMO_TIMELINE = DataContract(
+    name="category_promo_timeline",
+    columns=(
+        "category",
+        "period",
+        "promo_revenue",
+        "non_promo_revenue",
+        "n_promos",
+        "avg_discount_pct",
+    ),
+    validators=(
+        ValueValidator("promo_revenue", lambda s: s >= 0, "promo_revenue must be non-negative"),
+        ValueValidator("non_promo_revenue", lambda s: s >= 0, "non_promo_revenue must be non-negative"),
+        ValueValidator("n_promos", lambda s: s >= 0, "n_promos must be non-negative"),
+        ValueValidator("avg_discount_pct", lambda s: (s >= 0) & (s <= 100), "avg_discount_pct must be in [0, 100]"),
+    ),
+)
 
 PROMO_PERIODS = DataContract(
     name="promo_periods",

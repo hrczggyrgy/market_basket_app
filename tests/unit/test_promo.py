@@ -9,6 +9,7 @@ from src.analytics.promo import (
     calculate_promotional_lift,
     check_propensity_overlap,
     compute_cannibalization_analysis,
+    compute_category_promo_timeline,
     compute_incrementality_waterfall,
     compute_promo_baseline,
     detect_promotions,
@@ -22,6 +23,7 @@ from src.analytics.promo import (
     train_uplift_learner,
 )
 from src.analytics.schemas import (
+    CATEGORY_PROMO_TIMELINE,
     PROMO_BASELINE,
     PROMO_CANNIBALIZATION,
     PROMO_HALO,
@@ -267,3 +269,76 @@ def test_evaluate_uplift_model(sample_df: pd.DataFrame) -> None:
     check(curve, QINI_CURVE)
     assert curve["qini_y"].iloc[-1] == pytest.approx(curve["random_y"].iloc[-1])
     assert np.isfinite(metrics.loc[metrics["metric"] == "qini_coefficient", "value"].iloc[0])
+
+
+def _category_promo_fixture() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Two categories, one with a clear 3-day 30% promo on a single SKU."""
+    dates = pd.date_range("2026-01-01", periods=40, freq="D")
+    rows = []
+    for sku, cat in (("A", "Coffee"), ("B", "Snacks")):
+        for i, day in enumerate(dates):
+            if sku == "A" and 10 <= i <= 12:
+                price, qty = 7.0, 8
+            elif sku == "A":
+                price, qty = 10.0, 2
+            else:
+                price, qty = 5.0, 1
+            rows.append(
+                {
+                    "date": day,
+                    "transaction_id": f"T{sku}{i}",
+                    "stockcode": sku,
+                    "product": f"Product {sku}",
+                    "category": cat,
+                    "customer_id": 1000 + i,
+                    "price": price,
+                    "quantity": qty,
+                }
+            )
+    df = pd.DataFrame(rows)
+    promos = detect_promotions(df)
+    return df, promos
+
+
+def test_category_promo_timeline_contract_and_split() -> None:
+    """Promo revenue > 0 only for the promoted category/week; discount depth reported."""
+    df, promos = _category_promo_fixture()
+    assert len(promos) == 1
+    tl = compute_category_promo_timeline(df, promos)
+    check(tl, CATEGORY_PROMO_TIMELINE)
+    assert not tl.empty
+    coffee_promo = tl[(tl["category"] == "Coffee") & (tl["promo_revenue"] > 0)]
+    snacks_promo = tl[(tl["category"] == "Snacks") & (tl["promo_revenue"] > 0)]
+    assert len(coffee_promo) >= 1
+    assert len(snacks_promo) == 0
+    assert coffee_promo["avg_discount_pct"].iloc[0] == pytest.approx(30.0, abs=2.0)
+    # non-promo revenue for the same category/week is also present
+    assert (tl[tl["category"] == "Coffee"]["non_promo_revenue"] >= 0).all()
+
+
+def test_category_promo_timeline_no_promos() -> None:
+    df, promos = _category_promo_fixture()
+    tl = compute_category_promo_timeline(df, promos[promos["stockcode"] == "B"])
+    assert tl.empty
+    check(tl, CATEGORY_PROMO_TIMELINE, allow_empty=True)
+
+
+def test_category_promo_timeline_missing_category() -> None:
+    df, promos = _category_promo_fixture()
+    df = df.drop(columns=["category"])
+    tl = compute_category_promo_timeline(df, promos)
+    assert tl.empty
+    check(tl, CATEGORY_PROMO_TIMELINE, allow_empty=True)
+
+
+def test_category_promo_timeline_sample_fixture(sample_df: pd.DataFrame) -> None:
+    """Runs on the real sample; rows only for categories with active promos."""
+    promos = detect_promotions(sample_df)
+    if promos.empty:
+        pytest.skip("no promos in sample")
+    tl = compute_category_promo_timeline(sample_df, promos)
+    check(tl, CATEGORY_PROMO_TIMELINE)
+    assert not tl.empty
+    assert (tl["n_promos"] >= 0).all()
+    assert (tl["avg_discount_pct"] >= 0).all()
+    assert set(tl["category"]).issubset(set(sample_df["category"]))

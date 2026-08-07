@@ -71,6 +71,18 @@ def test_kvi_heuristic(sample_df: pd.DataFrame) -> None:
         assert kvi["kvi_score"].notna().all()
 
 
+def test_kvi_receives_elasticity_and_category(sample_df: pd.DataFrame) -> None:
+    """KVI must receive elasticity_df so abs_elasticity reflects real estimates,
+    and carry the category column (provided or inferred) instead of UNKNOWN."""
+    elast = estimate_loglog_elasticity(sample_df, min_periods=5)
+    kvi = compute_kvi_score(sample_df, elasticity_df=elast, method="heuristic")
+    KVI_SCORES.validate(kvi, allow_empty=True)
+    if elast.empty:
+        return
+    assert kvi["abs_elasticity"].sum() > 0
+    assert set(sample_df["category"].unique()).issubset(set(kvi["category"].unique()))
+
+
 def test_kvi_xgb_requires_xgboost(sample_df: pd.DataFrame, monkeypatch) -> None:
     import sys
     import src.analytics.pricing.kvi as kvi_mod

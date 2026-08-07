@@ -35,6 +35,15 @@ def _create_kvi_features(
     kvi_features = pm.merge(
         basket_pen[["stockcode", "basket_count", "penetration", "revenue_share"]], on="stockcode", how="left"
     )
+
+    # Carry category through to the feature table (may be provided or inferred upstream)
+    if "category" not in kvi_features.columns and "category" in transactions_df.columns:
+        cat_lookup = (
+            transactions_df[["stockcode", "category"]]
+            .drop_duplicates(subset="stockcode")
+            .dropna(subset=["category"])
+        )
+        kvi_features = kvi_features.merge(cat_lookup, on="stockcode", how="left")
     total_baskets = float(transactions_df["transaction_id"].nunique()) if "transaction_id" in transactions_df.columns else 0.0
     kvi_features["trip_incidence"] = (
         kvi_features["basket_count"] / total_baskets if total_baskets > 0 else 0.0

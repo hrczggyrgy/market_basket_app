@@ -6,6 +6,7 @@ from .copurchase import MODE_SPEC as COPURCHASE_MODE_SPEC
 from .switching import MODE_SPEC as SWITCHING_MODE_SPEC
 from .cohorts import MODE_SPEC as COHORTS_MODE_SPEC
 from .performance import MODE_SPEC as PERFORMANCE_MODE_SPEC
+from .category_page import MODE_SPEC as CATEGORY_MODE_SPEC
 from .cdt_page import MODE_SPEC as CDT_MODE_SPEC
 from .segmentation import MODE_SPEC as SEGMENTATION_MODE_SPEC
 from .pricing_page import MODE_SPEC as PRICING_MODE_SPEC
@@ -20,6 +21,7 @@ __all__ = [
     "SWITCHING_MODE_SPEC",
     "COHORTS_MODE_SPEC",
     "PERFORMANCE_MODE_SPEC",
+    "CATEGORY_MODE_SPEC",
     "CDT_MODE_SPEC",
     "SEGMENTATION_MODE_SPEC",
     "PRICING_MODE_SPEC",
