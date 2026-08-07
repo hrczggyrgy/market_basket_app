@@ -63,6 +63,76 @@ def _render_lift_ci_chart(rules: pd.DataFrame, table: pd.DataFrame, top_n: int) 
     show(fig)
 
 
+def _render_strength_stability_scatter(rules: pd.DataFrame, table: pd.DataFrame) -> None:
+    """Scatter: Lift (strength) vs CI Width (stability)."""
+    st.subheader(":material/analytics: Rule Strength vs Stability")
+    with_ci = rules[rules["lift_ci_lower"].notna() & rules["lift_ci_upper"].notna()].copy()
+    if with_ci.empty:
+        st.info("No rules have valid bootstrap confidence intervals at current settings.")
+        return
+    
+    with_ci["ci_width"] = with_ci["lift_ci_upper"] - with_ci["lift_ci_lower"]
+    
+    # Add antecedent category for coloring
+    def get_first_antecedent(row):
+        if row["antecedents"]:
+            return list(row["antecedents"])[0]
+        return None
+    
+    with_ci["anchor"] = with_ci["antecedents"].apply(get_first_antecedent)
+    with_ci = with_ci[with_ci["anchor"].notna()]
+    
+    if with_ci.empty:
+        st.info("No rules with identifiable anchors.")
+        return
+    
+    # Get product names for hover
+    lookup = table.set_index("antecedent")["consequent"].to_dict()  # not quite right
+    # Build a simple label for each rule
+    with_ci["rule_label"] = with_ci.apply(
+        lambda r: f"{list(r['antecedents'])[0]} → {list(r['consequents'])[0]}", axis=1
+    )
+    
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=with_ci["lift"],
+            y=with_ci["ci_width"],
+            mode="markers",
+            marker={
+                "size": 10,
+                "color": with_ci["lift"],
+                "colorscale": "Viridis",
+                "showscale": True,
+                "colorbar": {"title": "Lift"},
+                "line": {"color": "white", "width": 1},
+            },
+            text=with_ci["rule_label"],
+            hovertemplate="Rule: %{text}<br>Lift: %{x:.2f}<br>CI Width: %{y:.3f}<extra></extra>",
+            name="Rules",
+        )
+    )
+    
+    # Add quadrant lines (median splits)
+    med_lift = with_ci["lift"].median()
+    med_ci = with_ci["ci_width"].median()
+    fig.add_hline(y=med_ci, line_dash="dash", line_color="gray", annotation_text="Median CI Width")
+    fig.add_vline(x=med_lift, line_dash="dash", line_color="gray", annotation_text="Median Lift")
+    
+    fig.update_layout(
+        xaxis={"title": "Lift (Strength)"},
+        yaxis={"title": "CI Width (Stability) — lower = more stable"},
+        height=450,
+    )
+    show(fig)
+    
+    st.caption(
+        "Quadrants: High Lift + Low CI Width (top-left) = Strong & Stable. "
+        "High Lift + High CI Width (top-right) = Strong but Uncertain. "
+        "Color = Lift magnitude."
+    )
+
+
 def _render_anchor_drilldown(df: pd.DataFrame, rules: pd.DataFrame, table: pd.DataFrame) -> None:
     st.subheader(":material/filter_center_focus: Anchor Product Drill-down")
     products = sorted(set(rules["antecedents"].explode()) | set(rules["consequents"].explode()))
@@ -282,6 +352,10 @@ def render(df: pd.DataFrame) -> None:
             )
         else:
             st.info("No category-level rules available (insufficient category diversity).")
+
+        # Rule Strength vs Stability scatter
+        st.divider()
+        _render_strength_stability_scatter(filtered, table)
 
         st.divider()
         _render_lift_ci_chart(filtered, table, top_n=15)
