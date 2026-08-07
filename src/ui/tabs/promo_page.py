@@ -9,6 +9,7 @@ import streamlit as st
 
 from src.analytics.promo import (
     calculate_promotional_lift,
+    compute_cannibalization_analysis,
     compute_incrementality_waterfall,
     compute_promo_baseline,
     detect_promotions,
@@ -250,8 +251,50 @@ def render(df: pd.DataFrame) -> None:
 
     with tab3:
         baseline_df = compute_promo_baseline(df, promo_periods=promos)
-        waterfall = compute_incrementality_waterfall(baseline_df)
+        cannibalization = compute_cannibalization_analysis(df, promo_periods=promos)
+        cannibalization_agg = (
+            cannibalization.groupby("promo_product")["cannibalized_revenue"]
+            .sum()
+            .rename("cannibalization_revenue")
+            .reset_index()
+            .rename(columns={"promo_product": "stockcode"})
+        ) if not cannibalization.empty else None
+        waterfall = compute_incrementality_waterfall(
+            baseline_df,
+            cannibalization_revenue=cannibalization_agg,
+        )
         _render_waterfall(waterfall)
+
+        if not cannibalization.empty:
+            top = (
+                cannibalization.groupby("promo_product")["cannibalization_index"]
+                .mean()
+                .rename("avg_cannibalization_index")
+                .sort_values(ascending=False)
+            )
+            st.subheader(":material/swap_horiz: Cannibalization (Cross-Effect)")
+            st.caption(
+                "Revenue lost by same-category peers during each promo window vs the pre-promo period. "
+                "The index is the peer's shortfall relative to its own pre-promo revenue (0 = none, 1 = fully cannibalized)."
+            )
+            if not top.empty:
+                fig = go.Figure(
+                    go.Bar(
+                        x=[str(k) for k in top.index],
+                        y=top.values,
+                        marker={"color": PALETTE[4]},
+                        text=[f"{v:.0%}" for v in top.values],
+                        textposition="outside",
+                        hovertemplate="%{x}: %{y:.1%}<extra></extra>",
+                    )
+                )
+                fig.update_layout(xaxis={"tickangle": -45}, yaxis={"title": "Avg Cannibalization Index", "tickformat": ".0%"})
+                show(fig)
+            st.dataframe(
+                cannibalization.sort_values("cannibalized_revenue", ascending=False),
+                use_container_width=True,
+                hide_index=True,
+            )
 
     with tab4:
         roi = promo_roi_analysis(df, promo_periods=promos)

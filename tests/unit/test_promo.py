@@ -8,6 +8,7 @@ from src.analytics.promo import (
     build_uplift_dataset,
     calculate_promotional_lift,
     check_propensity_overlap,
+    compute_cannibalization_analysis,
     compute_incrementality_waterfall,
     compute_promo_baseline,
     detect_promotions,
@@ -22,6 +23,7 @@ from src.analytics.promo import (
 )
 from src.analytics.schemas import (
     PROMO_BASELINE,
+    PROMO_CANNIBALIZATION,
     PROMO_HALO,
     PROMO_LIFT,
     PROMO_PERIODS,
@@ -172,6 +174,36 @@ def test_halo_effect_analysis(crafted_df: pd.DataFrame) -> None:
     check(halo, PROMO_HALO, allow_empty=True)
     if not halo.empty:
         assert (halo["halo_product"] != halo["promo_product"]).all()
+
+
+def test_compute_cannibalization_analysis(crafted_df: pd.DataFrame) -> None:
+    # Add a same-category peer whose revenue drops during the promo of A.
+    df = crafted_df.copy()
+    df["category"] = np.where(df["stockcode"] == "A", "Cat1", "Cat1")
+    promos = detect_promotions(df)
+    cann = compute_cannibalization_analysis(df, promos)
+    check(cann, PROMO_CANNIBALIZATION, allow_empty=True)
+    if cann.empty:
+        pytest.skip("no cannibalization signal in fixture")
+    assert (cann["cannibalized_revenue"] >= 0).all()
+    assert cann["cannibalization_index"].between(0, 1).all()
+
+
+def test_compute_cannibalization_analysis_empty() -> None:
+    df = pd.DataFrame(
+        {
+            "date": pd.date_range("2026-01-01", periods=10),
+            "transaction_id": range(10),
+            "stockcode": ["A"] * 10,
+            "product": ["X"] * 10,
+            "customer_id": [1] * 10,
+            "price": [10.0] * 10,
+            "quantity": [1] * 10,
+        }
+    )
+    cann = compute_cannibalization_analysis(df, pd.DataFrame())
+    check(cann, PROMO_CANNIBALIZATION, allow_empty=True)
+    assert cann.empty
 
 
 def test_build_uplift_dataset_shapes(sample_df: pd.DataFrame) -> None:

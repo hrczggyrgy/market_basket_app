@@ -22,6 +22,7 @@ from statsmodels.tsa.seasonal import STL
 
 from src.analytics.schemas import (
     PROMO_BASELINE,
+    PROMO_CANNIBALIZATION,
     PROMO_HALO,
     PROMO_LIFT,
     PROMO_PERIODS,
@@ -399,6 +400,90 @@ def halo_effect_analysis(df: pd.DataFrame, promo_periods: pd.DataFrame, window_d
         rows.append(merged)
     table = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame(columns=list(PROMO_HALO.columns))
     return check(table, PROMO_HALO, allow_empty=True)
+
+
+def compute_cannibalization_analysis(
+    df: pd.DataFrame,
+    promo_periods: pd.DataFrame,
+    window_days: int = 30,
+    peer_revenue_floor: float = 1.0,
+) -> pd.DataFrame:
+    """Cross-effect / cannibalization: revenue lost by peer SKUs during a promo.
+
+    For every promoted SKU we compare its category peers' revenue during the
+    promo window against the same-length window immediately before it. When a
+    peer's revenue drops during the promo, the shortfall is treated as
+    cannibalized (substituted) revenue. The cannibalization index expresses
+    that shortfall relative to the peer's pre-promo revenue:
+
+        cannibalization_index = cannibalized_revenue / base_revenue
+
+    Peers are limited to same-category SKUs with meaningful pre-promo revenue.
+    Returns a per-(promo-product, peer) table, contract-validated.
+    """
+    df = df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["revenue"] = df["price"] * df["quantity"]
+    has_category = "category" in df.columns
+
+    if has_category:
+        categories = df.groupby("stockcode")["category"].first()
+    else:
+        categories = None
+
+    rows: list[dict[str, float | int | str]] = []
+    for _, promo in promo_periods.iterrows():
+        sku = promo["stockcode"]
+        start, end = pd.Timestamp(promo["start_date"]), pd.Timestamp(promo["end_date"])
+        duration = (end - start).days + 1
+        pre_start = start - pd.Timedelta(days=duration)
+        pre_end = start - pd.Timedelta(days=1)
+
+        promo_sku = df[df["stockcode"] == sku]
+        if promo_sku.empty:
+            continue
+        sku_category = categories[sku] if has_category and sku in categories.index else "UNKNOWN"
+        if has_category:
+            peers = df[(df["stockcode"] != sku) & (df["category"] == sku_category)]["stockcode"].unique()
+        else:
+            peers = df[df["stockcode"] != sku]["stockcode"].unique()
+
+        in_promo = df[(df["stockcode"].isin(peers)) & (df["date"] >= start) & (df["date"] <= end)]
+        in_pre = df[(df["stockcode"].isin(peers)) & (df["date"] >= pre_start) & (df["date"] <= pre_end)]
+
+        promo_agg = in_promo.groupby("stockcode").agg(
+            promo_revenue=("revenue", "sum"), promo_orders=("transaction_id", "nunique")
+        )
+        pre_agg = in_pre.groupby("stockcode").agg(
+            base_revenue=("revenue", "sum"), base_orders=("transaction_id", "nunique")
+        )
+        merged = promo_agg.join(pre_agg, how="outer").fillna(0.0).reset_index().rename(columns={"stockcode": "peer_product"})
+
+        for _, peer in merged.iterrows():
+            base_rev = float(peer["base_revenue"])
+            promo_rev = float(peer["promo_revenue"])
+            cannibalized = max(0.0, base_rev - promo_rev)
+            if base_rev < peer_revenue_floor:
+                continue
+            index = cannibalized / base_rev if base_rev > 0 else 0.0
+            rows.append(
+                {
+                    "promo_product": sku,
+                    "peer_product": peer["peer_product"],
+                    "category": str(sku_category),
+                    "promo_revenue": promo_rev,
+                    "base_revenue": base_rev,
+                    "promo_orders": int(peer["promo_orders"]),
+                    "base_orders": int(peer["base_orders"]),
+                    "cannibalized_revenue": cannibalized,
+                    "cannibalization_index": float(min(index, 1.0)),
+                }
+            )
+
+    if not rows:
+        return check(pd.DataFrame(columns=list(PROMO_CANNIBALIZATION.columns)), PROMO_CANNIBALIZATION, allow_empty=True)
+    table = pd.DataFrame(rows, columns=list(PROMO_CANNIBALIZATION.columns))
+    return check(table, PROMO_CANNIBALIZATION)
 
 
 # ============================================================================
