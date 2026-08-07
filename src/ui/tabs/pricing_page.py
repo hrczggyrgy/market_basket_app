@@ -11,6 +11,7 @@ from src.analytics.pricing import (
     compute_kvi_score,
     diagnose_price_curves_1d,
 )
+from src.ui.plots import empty_state, render_bar_with_ci, show
 from src.ui.registry import ModeSpec
 
 
@@ -22,7 +23,25 @@ def render(df: pd.DataFrame) -> None:
     with tab1:
         elast = estimate_loglog_elasticity(df, min_periods=5)
         if not elast.empty:
-            st.dataframe(elast.sort_values("elasticity"), use_container_width=True, hide_index=True)
+            if {"ci_lower", "ci_upper"}.issubset(elast.columns):
+                elast_plot = elast.copy()
+                elast_plot["label"] = elast_plot["stockcode"].astype(str)
+                show(
+                    render_bar_with_ci(
+                        df=elast_plot,
+                        x_col="label",
+                        y_col="elasticity",
+                        ci_lower_col="ci_lower",
+                        ci_upper_col="ci_upper",
+                        x_title="SKU",
+                        y_title="Own-price Elasticity",
+                        title="Own-price Elasticity with 95% CI",
+                        height=420,
+                    )
+                )
+                st.caption("Elasticity < -1 means elastic demand: a 1% price cut raises quantity by more than 1%.")
+            else:
+                st.dataframe(elast.sort_values("elasticity"), use_container_width=True, hide_index=True)
 
             hier = estimate_hierarchical_elasticity(df, min_periods=5)
             if not hier.empty:

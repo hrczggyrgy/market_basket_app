@@ -8,6 +8,7 @@ lifetimes (no custom reimplementation).
 
 from __future__ import annotations
 
+import time
 import warnings
 
 import numpy as np
@@ -109,22 +110,26 @@ def _bootstrap_clv_ci(
     calibration: pd.DataFrame,
     prediction_horizon_days: int,
     freq: str,
-    n_resamples: int = 50,
+    n_resamples: int = 30,
     random_seed: int = 42,
+    time_budget_s: float = 20.0,
 ) -> tuple[pd.Series, pd.Series]:
     """Percentile bootstrap CI on predicted CLV, resampling customers.
 
     Refits BG/NBD + Gamma-Gamma on each customer-level resample and
     predicts CLV for the observed customers present in that resample.
     Falls back to the point estimate (CI == estimate) if the resample
-    cannot be fit.
+    cannot be fit or if the wall-clock budget is exhausted.
     """
     rng = np.random.default_rng(random_seed)
     t = prediction_horizon_days if freq == "D" else prediction_horizon_days / 7
     n_customers = len(calibration)
     replicates: dict[str, list[float]] = {c: [] for c in calibration.index}
+    deadline = time.monotonic() + time_budget_s
 
     for _ in range(n_resamples):
+        if time.monotonic() > deadline:
+            break
         idx = rng.integers(0, n_customers, size=n_customers)
         sample = calibration.iloc[idx].copy()
         try:

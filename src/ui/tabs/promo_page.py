@@ -15,7 +15,7 @@ from src.analytics.promo import (
     promo_roi_analysis,
     promotion_timing_analysis,
 )
-from src.ui.plots import PALETTE, empty_state, new_fig, show
+from src.ui.plots import PALETTE, empty_state, new_fig, render_bar_with_ci, show
 from src.ui.registry import ModeSpec
 
 
@@ -145,36 +145,41 @@ def _render_roi(roi: pd.DataFrame) -> None:
         show(empty_state("No ROI data available"))
         return
 
-    # ROI with CI
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=roi["stockcode"],
-            y=roi["roi_pct"],
-            mode="markers",
-            marker={"size": 12, "color": PALETTE[0]},
-            name="ROI %",
-            hovertemplate="%{x}: %{y:.1f}%<extra></extra>",
+    # ROI with CI bars
+    if "ci_low" in roi.columns and "ci_high" in roi.columns:
+        roi_plot = roi.copy()
+        roi_plot["label"] = roi_plot["stockcode"]
+
+        fig = render_bar_with_ci(
+            df=roi_plot,
+            x_col="label",
+            y_col="roi_pct",
+            ci_lower_col="ci_low",
+            ci_upper_col="ci_high",
+            y_title="ROI %",
+            height=450,
         )
-    )
-    fig.add_trace(
+        show(fig)
+        st.caption("ROI % with 95% bootstrap confidence intervals. Error bars show uncertainty in incremental revenue estimation.")
+
+    # Incremental profit scatter (secondary view)
+    fig2 = go.Figure()
+    fig2.add_trace(
         go.Scatter(
             x=roi["stockcode"],
             y=roi["incremental_profit"],
             mode="markers",
             marker={"size": roi["incremental_profit"].abs().apply(lambda v: max(6, min(30, v / 1000))), "color": PALETTE[2]},
             name="Incremental Profit",
-            yaxis="y2",
             hovertemplate="%{x}: $%{y:,.0f}<extra></extra>",
         )
     )
-    fig.add_hline(y=0, line_dash="dash", line_color="gray")
-    fig.update_layout(
-        xaxis={"tickangle": -45},
-        yaxis={"title": "ROI %"},
-        yaxis2={"title": "Incremental Profit ($)", "overlaying": "y", "side": "right"},
+    fig2.add_hline(y=0, line_dash="dash", line_color="gray")
+    fig2.update_layout(
+        xaxis={"tickangle": -45, "title": "SKU"},
+        yaxis={"title": "Incremental Profit ($)"},
     )
-    show(fig)
+    show(fig2)
 
     st.dataframe(roi, use_container_width=True, hide_index=True)
 
