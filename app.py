@@ -23,6 +23,7 @@ from src.ui.tabs import (
 )
 from src.analytics.data import load_transactions
 from src.analytics.config import get_config
+from src.analytics.simulation import SCENARIOS, config_for, generate_sample_transactions
 
 
 # Page config
@@ -60,6 +61,17 @@ def _load_data(path: str, _version: int = 2) -> tuple:
     return df, warning, dropped, quality_report
 
 
+@st.cache_data(show_spinner="Simulating sample data...")
+def _generate_sample_csv(scenario_key: str, _version: int = 1) -> bytes:
+    config = config_for(scenario_key)
+    df = generate_sample_transactions(config)
+    return df.to_csv(index=False).encode()
+
+
+def _load_sample_scenario(scenario_key: str) -> tuple:
+    return load_transactions(io.BytesIO(_generate_sample_csv(scenario_key)))
+
+
 def main() -> None:
     _register_modes()
 
@@ -84,14 +96,26 @@ def main() -> None:
             data_source = "sample_data/sample_transactions.csv"
             source_label = "Sample data"
     else:
-        data_source = "sample_data/sample_transactions.csv"
-        source_label = "Sample data"
+        scenario_labels = {k: v.label for k, v in SCENARIOS.items()}
+        scenario_key = st.sidebar.selectbox(
+            "Sample Scenario",
+            options=list(SCENARIOS.keys()),
+            format_func=lambda k: scenario_labels[k],
+            help="Pick a simulated retail regime to explore the app.",
+        )
+        scenario = SCENARIOS[scenario_key]
+        st.sidebar.caption(scenario.description)
+        data_source = scenario_key
+        source_label = f"Sample ({scenario.label})"
         uploaded = None
 
     # Load data
     with st.spinner("Loading data..."):
         try:
-            df, warning, dropped, quality_report = _load_data(data_source, _version=2)
+            if isinstance(data_source, str) and data_source in SCENARIOS:
+                df, warning, dropped, quality_report = _load_sample_scenario(data_source)
+            else:
+                df, warning, dropped, quality_report = _load_data(data_source, _version=2)
         except Exception as e:
             st.error(f"Failed to load data: {e}")
             st.stop()

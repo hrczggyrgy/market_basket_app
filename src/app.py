@@ -23,6 +23,7 @@ from src.ui.tabs import (
 )
 from src.analytics.data import load_transactions
 from src.analytics.config import get_config
+from src.analytics.simulation import SCENARIOS, config_for, generate_sample_transactions
 
 
 # Page config
@@ -67,6 +68,17 @@ def _load_data_from_bytes(data: bytes) -> tuple:
     return df, warning, dropped, quality_report
 
 
+@st.cache_data(show_spinner="Simulating sample data...")
+def _generate_sample_csv(scenario_key: str, _version: int = 1) -> bytes:
+    config = config_for(scenario_key)
+    df = generate_sample_transactions(config)
+    return df.to_csv(index=False).encode()
+
+
+def _load_sample_scenario(scenario_key: str) -> tuple:
+    return load_transactions(io.BytesIO(_generate_sample_csv(scenario_key)))
+
+
 def main() -> None:
     _register_modes()
 
@@ -91,14 +103,25 @@ def main() -> None:
             data = None
             source_label = "Sample data"
     else:
-        data = None
-        source_label = "Sample data"
+        scenario_labels = {k: v.label for k, v in SCENARIOS.items()}
+        scenario_key = st.sidebar.selectbox(
+            "Sample Scenario",
+            options=list(SCENARIOS.keys()),
+            format_func=lambda k: scenario_labels[k],
+            help="Pick a simulated retail regime to explore the app.",
+        )
+        scenario = SCENARIOS[scenario_key]
+        st.sidebar.caption(scenario.description)
+        data = f"scenario:{scenario_key}"
+        source_label = f"Sample ({scenario.label})"
 
     # Load data
     with st.spinner("Loading data..."):
         try:
             if uploaded is not None:
                 df, warning, dropped, quality_report = _load_data_from_bytes(uploaded.getvalue())
+            elif isinstance(data, str) and data.startswith("scenario:"):
+                df, warning, dropped, quality_report = _load_sample_scenario(data.split(":", 1)[1])
             else:
                 df, warning, dropped, quality_report = _load_data_from_path("sample_data/sample_transactions.csv", _version=2)
         except Exception as e:
