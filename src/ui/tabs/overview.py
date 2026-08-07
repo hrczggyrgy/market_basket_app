@@ -214,6 +214,45 @@ def _render_revenue_trend(df: pd.DataFrame) -> None:
     )
 
 
+def _render_calendar_heatmap(df: pd.DataFrame) -> None:
+    st.subheader(":material/calendar_month: Daily Revenue Calendar Heatmap")
+    revenue = df["price"] * df["quantity"]
+    daily = revenue.groupby(df["date"].dt.date).sum().reset_index()
+    daily.columns = ["date", "revenue"]
+    daily["date"] = pd.to_datetime(daily["date"])
+    daily["week_of_year"] = daily["date"].dt.isocalendar().week
+    daily["day_of_week"] = daily["date"].dt.dayofweek  # 0=Mon
+
+    if daily.empty:
+        show(empty_state("No revenue data"))
+        return
+
+    # Pivot for heatmap: rows=week, cols=day
+    pivot = daily.pivot_table(index="week_of_year", columns="day_of_week", values="revenue", fill_value=0)
+    # Ensure all 7 days present
+    for d in range(7):
+        if d not in pivot.columns:
+            pivot[d] = 0
+    pivot = pivot.reindex(sorted(pivot.columns), axis=1)
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=pivot.values,
+            x=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+            y=pivot.index.astype(str),
+            colorscale="Blues",
+            colorbar={"title": "Revenue"},
+            hovertemplate="Week %{y}<br>%{x}<br>Revenue: $%{z:,.2f}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        xaxis={"title": "Day of Week"},
+        yaxis={"title": "Week of Year", "autorange": "reversed"},
+        height=max(300, len(pivot) * 20 + 100),
+    )
+    show(fig)
+
+
 def _render_customer_split(df: pd.DataFrame) -> None:
     st.subheader(":material/groups: New vs. Returning Customers")
     split = _new_vs_returning(df)
@@ -323,6 +362,10 @@ def render(df: pd.DataFrame) -> None:
     st.divider()
 
     _render_revenue_trend(df)
+
+    st.divider()
+
+    _render_calendar_heatmap(df)
 
     st.divider()
 
