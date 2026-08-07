@@ -306,13 +306,19 @@ def render(df: pd.DataFrame) -> None:
     """Render the overview dashboard."""
     summary = get_data_summary(df)
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Transactions", f"{summary['n_transactions']:,}")
-    col2.metric("Customers", f"{summary['n_customers']:,}")
-    col3.metric("Products", f"{summary['n_products']:,}")
-    col4.metric("Revenue", f"${summary['total_revenue']:,.2f}")
+    # Period-over-period deltas (weekly)
+    t_curr, t_prev, t_color = _period_over_period_delta(df, "transactions", "weekly")
+    c_curr, c_prev, c_color = _period_over_period_delta(df, "customers", "weekly")
+    p_curr, p_prev, p_color = _period_over_period_delta(df, "products", "weekly")
+    r_curr, r_prev, r_color = _period_over_period_delta(df, "revenue", "weekly")
 
-    st.caption(f"Date range: {summary['date_range']}")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Transactions", f"{t_curr:,}", delta=f"{t_curr - t_prev:+,}" if t_prev else None, delta_color=t_color)
+    col2.metric("Customers", f"{c_curr:,}", delta=f"{c_curr - c_prev:+,}" if c_prev else None, delta_color=c_color)
+    col3.metric("Products", f"{p_curr:,}", delta=f"{p_curr - p_prev:+,}" if p_prev else None, delta_color=p_color)
+    col4.metric("Revenue", f"${r_curr:,.2f}", delta=f"${r_curr - r_prev:+,.2f}" if r_prev else None, delta_color=r_color)
+
+    st.caption(f"Date range: {summary['date_range']} | Deltas vs prior week")
 
     st.divider()
 

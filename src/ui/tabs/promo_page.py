@@ -79,7 +79,8 @@ def _render_lift_analysis(lift: pd.DataFrame) -> None:
 
     # Significance
     sig = lift[lift["significant"]]
-    st.metric("Significant Promotions", len(sig), f"out of {len(lift)} total")
+    st.metric("Significant Promotions", len(sig))
+    st.caption(f"{len(sig)} out of {len(lift)} total promotions are significant")
 
     st.dataframe(lift, use_container_width=True, hide_index=True)
 
