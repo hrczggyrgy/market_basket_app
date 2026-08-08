@@ -324,6 +324,60 @@ def test_category_switching_contract_on_sample(sample_df: pd.DataFrame) -> None:
         assert abs(cat_matrix["pct"].sum() - 1.0) < 1e-6
 
 
+def test_event_slices_partition_date_range() -> None:
+    """Pre/event/post slices must partition the window around an event exactly."""
+    from src.analytics.switching import build_event_slices
+
+    df = pd.DataFrame({"date": pd.date_range("2024-01-01", periods=120, freq="D")})
+    events = pd.DataFrame({"start_date": [pd.Timestamp("2024-02-01")], "end_date": [pd.Timestamp("2024-02-14")]})
+
+    slices = build_event_slices(df, events, pre_days=30, post_days=30)
+
+    assert "pre" in slices and "event" in slices and "post" in slices
+    pre = slices["pre"]["date"]
+    event = slices["event"]["date"]
+    post = slices["post"]["date"]
+
+    # Window boundaries
+    assert pre.min() == pd.Timestamp("2024-01-02") and pre.max() == pd.Timestamp("2024-01-31")
+    assert event.min() == pd.Timestamp("2024-02-01") and event.max() == pd.Timestamp("2024-02-14")
+    assert post.min() == pd.Timestamp("2024-02-15") and post.max() == pd.Timestamp("2024-03-15")
+
+    # No overlap between phases
+    assert not pre.isin(event).any() and not pre.isin(post).any() and not event.isin(post).any()
+
+
+def test_event_slices_empty_when_no_events() -> None:
+    from src.analytics.switching import build_event_slices
+
+    df = pd.DataFrame({"date": pd.date_range("2024-01-01", periods=10, freq="D")})
+    slices = build_event_slices(df, [], pre_days=5, post_days=5)
+    assert slices == {}
+
+
+def test_phase_switching_on_sample(sample_df: pd.DataFrame) -> None:
+    """Phase switching must produce contract-validated frames and survive promo-less data."""
+    from src.analytics.schemas import CATEGORY_SWITCHING
+    from src.analytics.promo import detect_promotions
+    from src.analytics.switching import compute_category_switching_by_phase
+
+    events = detect_promotions(sample_df)
+    if events.empty:
+        return
+
+    phases = compute_category_switching_by_phase(
+        sample_df,
+        events,
+        pre_days=30,
+        post_days=30,
+        window_days=90,
+        min_transactions=3,
+    )
+    assert set(phases) <= {"pre", "event", "post"}
+    for phase_df in phases.values():
+        CATEGORY_SWITCHING.validate(phase_df)
+
+
 def _basket_df(M: np.ndarray, products: list[str]) -> pd.DataFrame:
     rows = []
     for txn_i, row in enumerate(M):

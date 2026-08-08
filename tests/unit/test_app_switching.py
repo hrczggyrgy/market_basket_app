@@ -57,3 +57,18 @@ def test_switching_mode_sweep(app_path) -> None:
     at = AppTest.from_file(str(app_path), default_timeout=120)
     at.run()
     _sweep_modes(at)
+
+
+def test_switching_time_slice_section_renders(app_path) -> None:
+    """Time-sliced switching section must render (or degrade gracefully) with event metadata."""
+    at = AppTest.from_file(str(app_path), default_timeout=120)
+    at.run()
+    assert len(at.exception) == 0
+
+    at.sidebar.radio[1].set_value("switching")
+    at.run()
+    exceptions = at.exception
+    assert len(exceptions) == 0, f"Switching tab raised: {[str(e.value) for e in exceptions]}"
+
+    body_text = _text(at)
+    assert "Time-Sliced Category Switching" in body_text

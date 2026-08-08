@@ -7,8 +7,11 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.analytics.data import derive_product_lookup
+from src.analytics.promo import detect_promotions
 from src.analytics.switching import (
+    build_event_slices,
     compute_category_switching_matrix,
+    compute_category_switching_by_phase,
     compute_switching_matrix,
     compute_transition_matrix,
     get_customer_loyalty_metrics,
@@ -283,6 +286,71 @@ def _render_transition_heatmap(df: pd.DataFrame, matrix: pd.DataFrame, top_n: in
     st.caption("Row-normalized: each row sums to 1. Green = high probability of switching TO column from row.")
 
 
+def _render_phase_switch_comparison(
+    df: pd.DataFrame,
+    window_days: int,
+    min_txns: int,
+    top_n: int,
+) -> None:
+    """Compare category switching across pre-event / event / post-event windows."""
+    st.subheader(":material/swap_horiz: Time-Sliced Category Switching (Pre / Event / Post)")
+    lookup = derive_product_lookup(df)
+
+    # Detect promo periods as the event source (existing promo analytics)
+    events = detect_promotions(df)
+    if events.empty:
+        st.info("No promotional periods detected — set an event window manually below.")
+        return
+
+    st.caption(f"Events detected: {len(events)} promotional periods (earliest {events['start_date'].min().date()} to {events['end_date'].max().date()}).")
+
+    c1, c2, c3 = st.columns(3)
+    pre_days = int(c1.number_input("Pre window (days)", 7, 180, 30))
+    post_days = int(c2.number_input("Post window (days)", 7, 180, 30))
+
+    phases = compute_category_switching_by_phase(
+        df,
+        events,
+        pre_days=pre_days,
+        post_days=post_days,
+        window_days=window_days,
+        min_transactions=min_txns,
+        product_lookup=lookup,
+    )
+
+    if not phases:
+        st.info("No switching data within the selected pre/event/post windows.")
+        return
+
+    for phase in ("pre", "event", "post"):
+        if phase not in phases:
+            continue
+        phase_matrix = phases[phase]
+        if phase_matrix.empty:
+            continue
+
+        # Show top transitions for phase
+        st.markdown(f"**{phase.capitalize()} event**")
+        top = phase_matrix.nlargest(top_n, "count")
+        if top.empty:
+            st.caption("No switches in this phase.")
+            continue
+
+        # Horizontal bar: top category transitions
+        labels = [f"{r.from_category} → {r.to_category}" for _, r in top.iterrows()]
+        fig = go.Figure(
+            data=go.Bar(
+                x=top["count"],
+                y=labels,
+                orientation="h",
+                marker={"color": PALETTE[(list(phases.keys()).index(phase)) % len(PALETTE)]},
+                hovertemplate="%{y}: %{x} switches<extra></extra>",
+            )
+        )
+        fig.update_layout(yaxis={"categoryorder": "array", "categoryarray": labels[::-1]}, height=280)
+        show(fig)
+
+
 def render(df: pd.DataFrame) -> None:
     st.subheader(":material/swap_horiz: Product Switching")
 
@@ -303,6 +371,9 @@ def render(df: pd.DataFrame) -> None:
 
     st.divider()
     _render_category_sankey(df, window_days, min_txns)
+
+    st.divider()
+    _render_phase_switch_comparison(df, window_days, min_txns, top_n)
 
     st.divider()
     _render_switcher_loyalist(df, matrix)

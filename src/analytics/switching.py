@@ -67,6 +67,91 @@ def compute_transition_matrix(df: pd.DataFrame, window_days: int = 90, min_trans
     return pivot
 
 
+def build_event_slices(
+    df: pd.DataFrame,
+    events: pd.DataFrame | list[dict],
+    pre_days: int = 30,
+    post_days: int = 30,
+) -> dict[str, pd.DataFrame]:
+    """Slice a transaction frame into pre-event / event / post-event windows.
+
+    "pre"   = [event start - pre_days, event start)   (exclusive of start)
+    "event" = [event start, event end]                (inclusive)
+    "post"  = (event end, event end + post_days]      (exclusive of end)
+
+    ``events`` may be a DataFrame with ``start_date`` / ``end_date`` columns
+    (e.g. PROMO_PERIODS) or a list of dicts with the same keys. Slices are
+    clamped to the frame's date range; empty slices are omitted from the dict.
+
+    Returns:
+        Dict phase -> sliced dataframe ("pre", "event", "post" when non-empty).
+    """
+    df = df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+
+    if isinstance(events, pd.DataFrame):
+        event_rows = events[["start_date", "end_date"]].to_dict("records")
+    else:
+        event_rows = [
+            {"start_date": pd.Timestamp(e.get("start_date")), "end_date": pd.Timestamp(e.get("end_date", e.get("start_date")))}
+            for e in events
+        ]
+    if not event_rows:
+        return {}
+
+    slices: dict[str, pd.DataFrame] = {}
+    for label in ("pre", "event", "post"):
+        mask = pd.Series(False, index=df.index)
+        for ev in event_rows:
+            start = pd.Timestamp(ev["start_date"])
+            end = pd.Timestamp(ev["end_date"])
+            if start > end:
+                start, end = end, start
+            if label == "pre":
+                lo, hi = start - pd.Timedelta(days=pre_days), start - pd.Timedelta(days=1)
+            elif label == "event":
+                lo, hi = start, end
+            else:
+                lo, hi = end + pd.Timedelta(days=1), end + pd.Timedelta(days=post_days)
+            mask |= df["date"].between(lo, hi)
+        sliced = df[mask]
+        if not sliced.empty:
+            slices[label] = sliced
+    return slices
+
+
+def compute_category_switching_by_phase(
+    df: pd.DataFrame,
+    events: dict,
+    pre_days: int = 30,
+    post_days: int = 30,
+    window_days: int = 90,
+    min_transactions: int = 3,
+    product_lookup: pd.DataFrame | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Category-level switching per time phase (pre / event / post).
+
+    Reuses the same product->category rollup as
+    ``compute_category_switching_matrix`` on each sliced frame. Produces a
+    dict keyed by phase, each validated against CATEGORY_SWITCHING (an empty
+    DataFrame when a phase slice has no switching).
+
+    Returns:
+        Dict phase -> dataframe (contract-validated, may be empty).
+    """
+    slices = build_event_slices(df, events, pre_days=pre_days, post_days=post_days)
+    out: dict[str, pd.DataFrame] = {}
+    for label, sliced in slices.items():
+        cat_matrix = compute_category_switching_matrix(
+            sliced,
+            window_days=window_days,
+            min_transactions=min_transactions,
+            product_lookup=product_lookup,
+        )
+        out[label] = cat_matrix
+    return out
+
+
 def compute_category_switching_matrix(
     df: pd.DataFrame,
     window_days: int = 90,
