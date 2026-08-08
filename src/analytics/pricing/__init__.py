@@ -22,7 +22,7 @@ from src.analytics.pricing.elasticity import (
     estimate_hierarchical_elasticity,
     estimate_loglog_elasticity,
 )
-from src.analytics.pricing.kvi import compute_kvi_score
+from src.analytics.pricing.kvi import compute_kvi_elasticity_quadrant, compute_kvi_score
 from src.analytics.pricing.price_curves import (
     diagnose_price_curves_1d,
     diagnose_price_curves_multivariate,
@@ -35,6 +35,7 @@ __all__ = [
     "estimate_hierarchical_elasticity",
     "estimate_loglog_elasticity",
     # kvi
+    "compute_kvi_elasticity_quadrant",
     "compute_kvi_score",
     # price_curves
     "diagnose_price_curves_1d",

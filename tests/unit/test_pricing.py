@@ -8,6 +8,7 @@ import pytest
 
 from src.analytics.pricing import (
     classify_elasticity_confidence,
+    compute_kvi_elasticity_quadrant,
     compute_kvi_score,
     diagnose_price_curves_1d,
     diagnose_price_curves_multivariate,
@@ -24,6 +25,7 @@ from src.analytics.schemas import (
     ELASTICITY_CONFIDENCE,
     HIERARCHICAL_ELASTICITY,
     IV_ELASTICITY,
+    KVI_ELASTICITY_QUADRANT,
     KVI_SCORES,
     PRICE_CURVE_1D,
     PRICE_CURVE_MULTI,
@@ -93,6 +95,46 @@ def test_kvi_xgb_requires_xgboost(sample_df: pd.DataFrame, monkeypatch) -> None:
     monkeypatch.setitem(sys.modules, "shap", None)
     kvi = compute_kvi_score(sample_df, method="xgb")
     KVI_SCORES.validate(kvi, allow_empty=True)
+
+
+def _kvi_fixture() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "stockcode": ["A", "B", "C", "D"],
+            "category": ["snacks", "snacks", "drinks", "drinks"],
+            "kvi_score": [0.9, 0.8, 0.2, 0.1],
+            "abs_elasticity": [1.6, 0.4, 1.8, 0.3],
+            "total_revenue": [100.0, 90.0, 80.0, 70.0],
+            "basket_penetration": [0.5, 0.4, 0.3, 0.2],
+            "trip_incidence": [0.4, 0.3, 0.2, 0.1],
+        }
+    )
+
+
+def test_kvi_elasticity_quadrant_contract() -> None:
+    quad = compute_kvi_elasticity_quadrant(_kvi_fixture())
+    KVI_ELASTICITY_QUADRANT.validate(quad)
+    assert len(quad) == 4
+    mapping = quad.set_index("stockcode")["quadrant"].to_dict()
+    assert mapping["A"] == "advocate"
+    assert mapping["B"] == "protect"
+    assert mapping["C"] == "promote"
+    assert mapping["D"] == "defer"
+
+
+def test_kvi_elasticity_quadrant_empty() -> None:
+    quad = compute_kvi_elasticity_quadrant(pd.DataFrame())
+    assert quad.empty
+    KVI_ELASTICITY_QUADRANT.validate(quad, allow_empty=True)
+
+
+def test_kvi_elasticity_quadrant_round_trip(sample_df: pd.DataFrame) -> None:
+    kvi = compute_kvi_score(sample_df, method="heuristic")
+    if kvi.empty:
+        pytest.skip("sample data produced no KVI scores")
+    quad = compute_kvi_elasticity_quadrant(kvi)
+    KVI_ELASTICITY_QUADRANT.validate(quad)
+    assert set(quad["stockcode"]) == set(kvi["stockcode"])
 
 
 def test_price_curves_1d(sample_df: pd.DataFrame) -> None:

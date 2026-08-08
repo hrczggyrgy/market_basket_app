@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
-from src.analytics.schemas import KVI_SCORES, check
+from src.analytics.schemas import KVI_ELASTICITY_QUADRANT, KVI_SCORES, check
 
 
 def _create_kvi_features(
@@ -223,3 +223,59 @@ def _format_kvi_output(features: pd.DataFrame) -> pd.DataFrame:
         else:
             table["kvi_score"] = 0.5
     return check(table, KVI_SCORES)
+
+
+def compute_kvi_elasticity_quadrant(
+    kvi_df: pd.DataFrame,
+    elasticity_threshold: float = 1.0,
+) -> pd.DataFrame:
+    """Map SKUs into a KVI x elasticity strategy quadrant.
+
+    Axes:
+    - kvi_score in [0, 1] (higher = more strategically important).
+    - abs_elasticity = |own-price elasticity| (higher = more price sensitive).
+
+    Quadrants (median split on KVI, |elasticity| = 1 as the demand regime):
+    - advocate:   high KVI + elastic  -> traffic drivers; price defensively,
+      never give them up to private label.
+    - protect:    high KVI + inelastic-> keep in assortment and on shelf; they
+      can carry margin without volume risk.
+    - promote:    low KVI + elastic  -> use as promotional bait / price levers;
+      safe to trade down or delist.
+    - defer:      low KVI + inelastic-> slow movers with no price lever; review
+      assortment depth last.
+
+    Args:
+        kvi_df: Output of ``compute_kvi_score`` (KVI_SCORES contract).
+        elasticity_threshold: |elasticity| at which demand flips to elastic.
+
+    Returns:
+        DataFrame validated against KVI_ELASTICITY_QUADRANT (empty input yields
+        an empty, validated frame).
+    """
+    empty = pd.DataFrame(columns=list(KVI_ELASTICITY_QUADRANT.columns))
+    if kvi_df is None or kvi_df.empty:
+        return check(empty, KVI_ELASTICITY_QUADRANT, allow_empty=True)
+
+    required = {"stockcode", "kvi_score", "abs_elasticity", "category", "total_revenue"}
+    if not required.issubset(kvi_df.columns):
+        return check(empty, KVI_ELASTICITY_QUADRANT, allow_empty=True)
+
+    df = kvi_df.copy()
+    df["abs_elasticity"] = df["abs_elasticity"].fillna(0.0).clip(lower=0.0)
+    kvi_median = float(df["kvi_score"].median())
+
+    def _quadrant(row: pd.Series) -> str:
+        high_kvi = row["kvi_score"] >= kvi_median
+        elastic = row["abs_elasticity"] >= elasticity_threshold
+        if high_kvi and elastic:
+            return "advocate"
+        if high_kvi:
+            return "protect"
+        if elastic:
+            return "promote"
+        return "defer"
+
+    df["quadrant"] = df.apply(_quadrant, axis=1)
+    table = df[list(KVI_ELASTICITY_QUADRANT.columns)].reset_index(drop=True)
+    return check(table, KVI_ELASTICITY_QUADRANT)

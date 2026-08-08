@@ -50,6 +50,7 @@ def test_pricing_tab_renders_elasticity_confidence(app_path) -> None:
 
     body_text = _text(at)
     assert "Elasticity Confidence" in body_text
+    assert "Advocates are high-KVI" in body_text
 
 
 def test_pricing_mode_sweep(app_path) -> None:

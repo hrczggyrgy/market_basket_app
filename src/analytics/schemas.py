@@ -1679,6 +1679,28 @@ KVI_SCORES = DataContract(
     ),
 )
 
+KVI_ELASTICITY_QUADRANT = DataContract(
+    name="kvi_elasticity_quadrant",
+    columns=(
+        "stockcode",
+        "category",
+        "kvi_score",
+        "abs_elasticity",
+        "total_revenue",
+        "quadrant",
+    ),
+    validators=(
+        ValueValidator("kvi_score", lambda s: s >= 0, "kvi_score must be non-negative"),
+        ValueValidator("abs_elasticity", lambda s: s >= 0, "abs_elasticity must be non-negative"),
+        ValueValidator("total_revenue", lambda s: s >= 0, "total_revenue must be non-negative"),
+        ValueValidator(
+            "quadrant",
+            lambda s: s.isin({"advocate", "protect", "promote", "defer"}),
+            "quadrant must be advocate/protect/promote/defer",
+        ),
+    ),
+)
+
 PRICE_CURVE_1D = DataContract(
     name="price_curve_1d",
     columns=(

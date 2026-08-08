@@ -144,6 +144,57 @@ def _render_elasticity_confidence(elast: pd.DataFrame) -> None:
     )
 
 
+def _render_kvi_elasticity_quadrant(kvi: pd.DataFrame) -> go.Figure:
+    """KVI score (importance) vs |elasticity| (price sensitivity) quadrant."""
+    fig = go.Figure()
+    if kvi.empty:
+        return empty_state("No KVI data for quadrant matrix")
+
+    from src.analytics.pricing import compute_kvi_elasticity_quadrant
+
+    quad = compute_kvi_elasticity_quadrant(kvi)
+    if quad.empty:
+        return empty_state("No KVI x elasticity data")
+
+    palette = {
+        "advocate": PALETTE[0],
+        "protect": PALETTE[2],
+        "promote": PALETTE[3],
+        "defer": PALETTE[4],
+    }
+    fig.add_trace(
+        go.Scatter(
+            x=quad["kvi_score"],
+            y=quad["abs_elasticity"],
+            mode="markers",
+            text=quad["stockcode"].astype(str),
+            customdata=quad[["quadrant", "category"]].to_numpy(),
+            hovertemplate="%{text}<br>KVI %{x:.2f} | |e| %{y:.2f}<br>%{customdata[0]} (cat: %{customdata[1]})<extra></extra>",
+            marker={"size": quad["total_revenue"].rank(pct=True) * 22 + 4, "color": quad["quadrant"].map(palette)},
+        )
+    )
+    kvi_med = float(quad["kvi_score"].median())
+    fig.add_vline(x=kvi_med, line_dash="dash", line_color="#888888", annotation_text="median KVI")
+    fig.add_hline(y=1.0, line_dash="dash", line_color="#888888", annotation_text="|e| = 1 (elastic)")
+
+    for qname, qx, qy in (
+        ("Advocate: protect price", 0.76, 0.98),
+        ("Promote: price lever", 0.1, 0.98),
+        ("Protect: keep & carry margin", 0.76, 0.05),
+        ("Defer: review last", 0.1, 0.05),
+    ):
+        fig.add_annotation(
+            text=qname, x=qx, y=qy, xref="paper", yref="paper", showarrow=False,
+            font={"size": 11, "color": "#888888"},
+        )
+    fig.update_layout(
+        xaxis={"title": "KVI Score (0-1, importance)", "range": [-0.05, 1.05]},
+        yaxis={"title": "Abs Own-price Elasticity"},
+        hovermode="closest",
+    )
+    return fig
+
+
 def render(df: pd.DataFrame) -> None:
     st.subheader(":material/price_check: Pricing & Elasticity")
 
@@ -199,6 +250,12 @@ def render(df: pd.DataFrame) -> None:
             st.caption(
                 "Quadrant split at median KVI score (y) and median revenue share (x). "
                 "KVI score combines basket penetration, revenue, halo, elasticity and customer reach."
+            )
+            show(_render_kvi_elasticity_quadrant(kvi))
+            st.caption(
+                "KVI importance (x) vs |own-price elasticity| (y). Advocates are high-KVI, price-sensitive "
+                "traffic drivers: defend their price. Promotes are low-KVI, elastic SKUs -- use as price "
+                "levers. Protects carry margin safely; Defer reviews them last."
             )
             st.dataframe(kvi.sort_values("kvi_score", ascending=False).head(20),
                          use_container_width=True, hide_index=True)
