@@ -14,6 +14,7 @@ Public API
 from src.analytics.segmentation.behavioral import (
     _create_behavioral_features_pandas,
     behavioral_segmentation,
+    compute_segment_migration,
     compute_segment_radar,
 )
 from src.analytics.segmentation.core import (
@@ -37,6 +38,7 @@ __all__ = [
     "_create_behavioral_features_pandas",
     "behavioral_segmentation",
     "compute_segment_radar",
+    "compute_segment_migration",
     # survival
     "kaplan_meier_estimates",
     "survival_analysis",

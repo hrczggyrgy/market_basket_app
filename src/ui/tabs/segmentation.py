@@ -8,6 +8,7 @@ import streamlit as st
 
 from src.analytics.segmentation import (
     compute_rfm_features,
+    compute_segment_migration,
     compute_segment_radar,
     rfm_segmentation,
     behavioral_segmentation,
@@ -55,6 +56,60 @@ def _segment_radar(df: pd.DataFrame) -> None:
     )
 
 
+def _segment_migration(df: pd.DataFrame) -> None:
+    st.subheader(":material/swap_horiz: Segment Migration (first vs second half)")
+    migration = compute_segment_migration(df, n_clusters=4)
+    if migration.empty:
+        st.caption("Not enough stable segments to trace migration (customers must be present in both halves).")
+        return
+
+    stay = migration[migration["segment_from"] == migration["segment_to"]]
+    move = migration[migration["segment_from"] != migration["segment_to"]]
+
+    # Sankey for the off-diagonal flows
+    top = move.nlargest(20, "customers")
+    sources = top["segment_from"].tolist()
+    targets = top["segment_to"].tolist()
+    values = top["customers"].tolist()
+
+    nodes = list(dict.fromkeys(sources + targets))
+    label_to_idx = {s: i for i, s in enumerate(nodes)}
+    fig = go.Figure(
+        data=[
+            go.Sankey(
+                arrangement="snap",
+                node={
+                    "label": [f"First half: {n}" for n in nodes],
+                    "color": PALETTE[0],
+                    "pad": 15,
+                    "thickness": 20,
+                },
+                link={
+                    "source": [label_to_idx[s] for s in sources],
+                    "target": [label_to_idx[t] for t in targets],
+                    "value": values,
+                    "color": "rgba(255, 140, 0, 0.4)",
+                },
+            )
+        ]
+    )
+    fig.update_layout(height=max(400, 30 * len(nodes)), font={"size": 10})
+    show(fig)
+
+    moved = int(move["customers"].sum())
+    stayed = int(stay["customers"].sum())
+    st.caption(
+        f"{moved:,} customers changed segment between halves vs {stayed:,} who stayed. "
+        "Thickness = number of customers migrating."
+    )
+
+    st.dataframe(
+        migration.sort_values("customers", ascending=False),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
 def render(df: pd.DataFrame) -> None:
     st.subheader(":material/groups: Customer Segmentation")
 
@@ -80,6 +135,7 @@ def render(df: pd.DataFrame) -> None:
         st.bar_chart(behav["segment"].value_counts())
 
         _segment_radar(df)
+        _segment_migration(df)
 
     with tab3:
         val = value_based_segmentation(df)

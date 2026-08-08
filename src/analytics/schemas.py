@@ -1532,6 +1532,22 @@ SEGMENT_RADAR = DataContract(
     ),
 )
 
+SEGMENT_MIGRATION = DataContract(
+    name="segment_migration",
+    columns=(
+        "period_from",
+        "period_to",
+        "segment_from",
+        "segment_to",
+        "customers",
+        "retention_rate",
+    ),
+    validators=(
+        ValueValidator("customers", lambda s: s >= 0, "customers must be non-negative"),
+        ValueValidator("retention_rate", lambda s: (s >= 0) & (s <= 1), "retention_rate must be in [0, 1]"),
+    ),
+)
+
 SURVIVAL_PREDICTIONS = DataContract(
     name="survival_predictions",
     columns=("customer_id", "survival_prob", "churn_risk"),

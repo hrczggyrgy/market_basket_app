@@ -76,7 +76,7 @@ def _render_strength_stability_scatter(rules: pd.DataFrame, table: pd.DataFrame)
     # Add antecedent category for coloring
     def get_first_antecedent(itemset) -> str | None:
         if itemset:
-            return list(itemset)[0]
+            return sorted(itemset)[0]
         return None
     
     with_ci["anchor"] = with_ci["antecedents"].apply(get_first_antecedent)

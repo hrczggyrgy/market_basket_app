@@ -9,6 +9,7 @@ import pytest
 from src.analytics.segmentation import (
     behavioral_segmentation,
     compute_rfm_features,
+    compute_segment_migration,
     compute_segment_radar,
     compute_cluster_quality_metrics,
     compute_cluster_stability,
@@ -25,6 +26,7 @@ from src.analytics.schemas import (
     CLUSTER_STABILITY,
     RFM_FEATURES,
     RFM_SEGMENTS,
+    SEGMENT_MIGRATION,
     SEGMENT_RADAR,
     SURVIVAL_DIAGNOSTICS,
     SURVIVAL_PREDICTIONS,
@@ -188,3 +190,33 @@ def test_segment_radar_deterministic(sample_df: pd.DataFrame) -> None:
     a = compute_segment_radar(sample_df, n_clusters=4)
     b = compute_segment_radar(sample_df, n_clusters=4)
     pd.testing.assert_frame_equal(a, b)
+
+
+def test_segment_migration_contract(sample_df: pd.DataFrame) -> None:
+    migration = compute_segment_migration(sample_df, n_clusters=4)
+    SEGMENT_MIGRATION.validate(migration)
+    assert not migration.empty
+    assert set(migration["period_from"]).issubset({"first_half"})
+    assert set(migration["period_to"]).issubset({"second_half"})
+    assert (migration["customers"] > 0).all()
+    # off-diagonal flows do not count as retention
+    off_diag = migration[migration["segment_from"] != migration["segment_to"]]
+    assert (off_diag["retention_rate"] == 0).all()
+
+
+def test_segment_migration_empty_on_tiny_sample() -> None:
+    tiny = pd.DataFrame(
+        {
+            "date": list(pd.date_range("2025-01-01", periods=20)),
+            "transaction_id": [f"I{i}" for i in range(20)],
+            "stockcode": ["A"] * 20,
+            "product": ["a"] * 20,
+            "customer_id": ["c1", "c2"] * 10,
+            "price": [1.0] * 20,
+            "quantity": [1] * 20,
+        }
+    )
+    migration = compute_segment_migration(tiny, n_clusters=4)
+    # either empty or passes contract
+    if not migration.empty:
+        SEGMENT_MIGRATION.validate(migration)

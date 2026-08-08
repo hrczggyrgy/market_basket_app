@@ -183,5 +183,5 @@ def test_strength_stability_anchor_apply_on_frozensets() -> None:
         "lift_ci_upper": [2.5, 4.0],
     })
     with_ci = rules[rules["lift_ci_lower"].notna() & rules["lift_ci_upper"].notna()].copy()
-    with_ci["anchor"] = with_ci["antecedents"].apply(lambda s: list(s)[0] if s else None)
+    with_ci["anchor"] = with_ci["antecedents"].apply(lambda s: sorted(s)[0] if s else None)
     assert with_ci["anchor"].tolist() == ["A", "B"]

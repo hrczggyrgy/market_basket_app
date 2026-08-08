@@ -16,6 +16,7 @@ from src.analytics.segmentation.core import (
 from src.analytics.schemas import (
     BEHAVIORAL_FEATURES,
     BEHAVIORAL_SEGMENTS,
+    SEGMENT_MIGRATION,
     SEGMENT_RADAR,
     check,
 )
@@ -205,3 +206,84 @@ def compute_segment_radar(
         ["segment", "feature"]
     ).reset_index(drop=True)
     return check(result, SEGMENT_RADAR)
+
+
+def compute_segment_migration(
+    transactions_df: pd.DataFrame,
+    n_clusters: int = 4,
+    method: str = "kmeans",
+    min_customers: int = 5,
+) -> pd.DataFrame:
+    """Customer migration between behavioral segments across the first/second half.
+
+    Splits transactions at the median date, runs behavioral segmentation on
+    each half independently, then counts customers flowing from their
+    first-half segment to their second-half segment. Retention rate per source
+    segment = share of its customers that stayed put (diagonal).
+
+    Args:
+        transactions_df: Transaction data.
+        n_clusters: Number of behavioral segments per half.
+        method: Clustering algorithm ('kmeans', 'gmm').
+        min_customers: Source segments with fewer customers are dropped noise.
+
+    Returns:
+        DataFrame validated against SEGMENT_MIGRATION (empty when either half
+        falls back to the single "Other" segment).
+    """
+    empty = pd.DataFrame(columns=list(SEGMENT_MIGRATION.columns))
+    if transactions_df.empty:
+        return check(empty, SEGMENT_MIGRATION, allow_empty=True)
+
+    dates = pd.to_datetime(transactions_df["date"])
+    split = dates.median()
+    first = transactions_df[dates <= split]
+    second = transactions_df[dates > split]
+
+    def _assign(half: pd.DataFrame) -> pd.DataFrame:
+        if half.empty:
+            return pd.DataFrame(columns=["customer_id", "segment"])
+        seg = behavioral_segmentation(half, n_clusters=n_clusters, method=method)
+        if isinstance(seg, tuple):
+            seg = seg[0]
+        if seg["segment"].nunique() < 2:
+            return pd.DataFrame(columns=["customer_id", "segment"])
+        return seg[["customer_id", "segment"]]
+
+    a = _assign(first)
+    b = _assign(second)
+    if a.empty or b.empty:
+        return check(empty, SEGMENT_MIGRATION, allow_empty=True)
+
+    merged = a.rename(columns={"segment": "segment_from"}).merge(
+        b.rename(columns={"segment": "segment_to"}),
+        on="customer_id",
+        how="inner",
+    )
+    counts = (
+        merged.groupby(["segment_from", "segment_to"], as_index=False)
+        .size()
+        .rename(columns={"size": "customers"})
+    )
+    totals = counts.groupby("segment_from")["customers"].transform("sum")
+    counts["retention_rate"] = np.where(
+        counts["segment_from"] == counts["segment_to"],
+        counts["customers"] / totals.where(totals > 0),
+        0.0,
+    )
+    if counts.empty:
+        return check(empty, SEGMENT_MIGRATION, allow_empty=True)
+
+    # Drop sparse source segments (fewer than min_customers total flows)
+    source_totals = counts.groupby("segment_from")["customers"].transform("sum")
+    counts = counts[source_totals >= min_customers]
+    if counts.empty:
+        return check(empty, SEGMENT_MIGRATION, allow_empty=True)
+
+    counts["period_from"] = "first_half"
+    counts["period_to"] = "second_half"
+
+    result = counts[list(SEGMENT_MIGRATION.columns)].sort_values(
+        ["segment_from", "segment_to"]
+    ).reset_index(drop=True)
+    return check(result, SEGMENT_MIGRATION)
