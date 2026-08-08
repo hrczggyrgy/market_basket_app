@@ -9,6 +9,7 @@ import pytest
 from src.analytics.segmentation import (
     behavioral_segmentation,
     compute_rfm_features,
+    compute_segment_radar,
     compute_cluster_quality_metrics,
     compute_cluster_stability,
     format_quality_metrics,
@@ -24,6 +25,7 @@ from src.analytics.schemas import (
     CLUSTER_STABILITY,
     RFM_FEATURES,
     RFM_SEGMENTS,
+    SEGMENT_RADAR,
     SURVIVAL_DIAGNOSTICS,
     SURVIVAL_PREDICTIONS,
     VALUE_BASED_SEGMENTS,
@@ -165,3 +167,24 @@ def test_invalid_methods_raise(sample_df: pd.DataFrame) -> None:
         rfm_segmentation(rfm, method="unknown")
     with pytest.raises(ValueError):
         behavioral_segmentation(sample_df, method="unknown")
+
+
+def test_segment_radar_contract(sample_df: pd.DataFrame) -> None:
+    radar = compute_segment_radar(sample_df, n_clusters=4)
+    SEGMENT_RADAR.validate(radar)
+    assert not radar.empty
+    # one row per (segment, feature)
+    pairs = radar[["segment", "feature"]].drop_duplicates()
+    assert len(pairs) == len(radar)
+    # each feature min-max spans [0, 1] across segments
+    per_feature = radar.groupby("feature")["normalized_value"]
+    assert (per_feature.max() - per_feature.min()).abs().max() <= 1.0
+    assert per_feature.max().max() <= 1.0 and per_feature.min().min() >= 0.0
+    # means validate non-negative
+    assert (radar["mean_value"] >= 0).all()
+
+
+def test_segment_radar_deterministic(sample_df: pd.DataFrame) -> None:
+    a = compute_segment_radar(sample_df, n_clusters=4)
+    b = compute_segment_radar(sample_df, n_clusters=4)
+    pd.testing.assert_frame_equal(a, b)

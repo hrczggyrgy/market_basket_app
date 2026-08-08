@@ -1518,6 +1518,20 @@ BEHAVIORAL_SEGMENTS = DataContract(
     ),
 )
 
+SEGMENT_RADAR = DataContract(
+    name="segment_radar",
+    columns=(
+        "segment",
+        "feature",
+        "mean_value",
+        "normalized_value",
+    ),
+    validators=(
+        ValueValidator("mean_value", lambda s: s >= 0, "mean_value must be non-negative"),
+        ValueValidator("normalized_value", lambda s: (s >= 0) & (s <= 1), "normalized_value must be in [0, 1]"),
+    ),
+)
+
 SURVIVAL_PREDICTIONS = DataContract(
     name="survival_predictions",
     columns=("customer_id", "survival_prob", "churn_risk"),

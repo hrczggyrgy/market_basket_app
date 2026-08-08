@@ -13,7 +13,12 @@ from src.analytics.segmentation.core import (
     _label_behavioral_clusters,
     compute_cluster_quality_metrics,
 )
-from src.analytics.schemas import BEHAVIORAL_FEATURES, BEHAVIORAL_SEGMENTS, check
+from src.analytics.schemas import (
+    BEHAVIORAL_FEATURES,
+    BEHAVIORAL_SEGMENTS,
+    SEGMENT_RADAR,
+    check,
+)
 
 
 def _create_behavioral_features_pandas(
@@ -137,3 +142,66 @@ def behavioral_segmentation(
     if return_metrics:
         return result, quality_metrics
     return result
+
+
+_RADAR_FEATURES = (
+    "days_active",
+    "purchase_frequency",
+    "total_revenue",
+    "avg_order_value",
+    "n_products",
+    "n_categories",
+    "avg_basket_size",
+)
+
+
+def compute_segment_radar(
+    transactions_df: pd.DataFrame,
+    n_clusters: int = 4,
+    method: str = "kmeans",
+) -> pd.DataFrame:
+    """Radar-profile of behavioral segments on the key customer dimensions.
+
+    Runs behavioral segmentation, then averages each feature per segment and
+    min-max normalizes across segments so every feature spans [0, 1] over the
+    chart. Contracts: one row per (segment, feature).
+
+    Args:
+        transactions_df: Transaction data.
+        n_clusters: Number of behavioral segments.
+        method: Clustering algorithm ('kmeans', 'gmm').
+
+    Returns:
+        DataFrame validated against SEGMENT_RADAR (empty when segmentation
+        falls back to a single "Other" segment).
+    """
+    empty = pd.DataFrame(columns=list(SEGMENT_RADAR.columns))
+    segmented = behavioral_segmentation(transactions_df, n_clusters=n_clusters, method=method)
+    if segmented["segment"].nunique() < 2:
+        return check(empty, SEGMENT_RADAR, allow_empty=True)
+
+    features = _create_behavioral_features_pandas(transactions_df)
+    merged = segmented[["customer_id", "segment"]].merge(features, on="customer_id", how="inner")
+
+    present = [f for f in _RADAR_FEATURES if f in merged.columns]
+    if not present:
+        return check(empty, SEGMENT_RADAR, allow_empty=True)
+
+    profile = merged.groupby("segment")[present].mean().reset_index()
+    long = profile.melt(id_vars="segment", var_name="feature", value_name="mean_value")
+
+    # Replace outliers with the cross-segment mean for a stable axis
+    long = long.copy()
+    long.loc[long["mean_value"] < 0, "mean_value"] = np.nan
+
+    normalizer = (
+        long.groupby("feature")["mean_value"]
+        .transform(lambda s: (s - s.min()) / (s.max() - s.min()) if s.max() > s.min() else 0.0)
+    )
+    long["normalized_value"] = normalizer.clip(0.0, 1.0)
+    long["mean_value"] = long["mean_value"].fillna(0.0)
+
+    result = long[list(SEGMENT_RADAR.columns)].sort_values(
+        ["segment", "feature"]
+    ).reset_index(drop=True)
+    return check(result, SEGMENT_RADAR)
