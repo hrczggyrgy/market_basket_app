@@ -76,26 +76,46 @@ def xyz_analysis(df: pd.DataFrame, period: str = "W") -> pd.DataFrame:
 
 
 def product_lifecycle_stage(df: pd.DataFrame) -> pd.DataFrame:
-    """Lifecycle stage from recent vs prior period revenue growth."""
+    """Lifecycle stage from recent vs prior period revenue growth.
+
+    Compares the latest weekly period against the second-to-latest: products
+    whose most-recent week grew > ``+25%`` vs the prior week are "growth",
+    <-25% are "decline", otherwise "mature" (thresholds from config).
+    """
     df = df.copy()
     df["_period"] = df["date"].dt.to_period("W").astype(str)
     revenue = df["price"] * df["quantity"]
-    recent_mask = df["_period"] == df["_period"].max()
-    revenue_by = revenue.groupby(df["stockcode"])
-    recent = revenue_by.sum()
-    prior_mask = df["_period"] == sorted(df["_period"].unique())[-2] if len(df["_period"].unique()) > 1 else None
-    prior = revenue[prior_mask].groupby(df.loc[prior_mask, "stockcode"]).sum() if prior_mask is not None else None
-    if prior is None:
+
+    periods = sorted(df["_period"].unique())
+    if len(periods) < 2:
         return check(pd.DataFrame(columns=list(LIFECYCLE.columns)), LIFECYCLE, allow_empty=True)
+
+    recent_period, prior_period = periods[-1], periods[-2]
+    recent_mask = df["_period"] == recent_period
+    prior_mask = df["_period"] == prior_period
+
+    recent = revenue[recent_mask].groupby(df.loc[recent_mask, "stockcode"]).sum()
+    prior = revenue[prior_mask].groupby(df.loc[prior_mask, "stockcode"]).sum()
+
+    all_products = sorted(set(recent.index) | set(prior.index))
+    recent_rev = recent.reindex(all_products).fillna(0.0).to_numpy()
+    prior_rev = prior.reindex(all_products).fillna(0.0).to_numpy()
+
     table = pd.DataFrame(
         {
-            "stockcode": recent.index,
-            "recent_revenue": recent,
-            "prior_revenue": prior.reindex(recent.index).fillna(0.0),
+            "stockcode": all_products,
+            "recent_revenue": recent_rev,
+            "prior_revenue": prior_rev,
         }
-    ).reset_index(drop=True)
-    prior_rev = prior.reindex(recent.index).fillna(0.0).mask(lambda s: s == 0)
-    table["growth_pct"] = ((recent - prior_rev) / prior_rev * 100).fillna(0.0)
+    )
+    table["growth_pct"] = np.divide(
+        (recent_rev - prior_rev) * 100,
+        prior_rev,
+        out=np.zeros(len(table), dtype=float),
+        where=prior_rev > 0,
+    )
+    # prior period had no sales but recent does -> new growth; both zero -> flat
+    table.loc[(table["prior_revenue"] == 0) & (table["recent_revenue"] > 0), "growth_pct"] = 100.0
     table["stage"] = table["growth_pct"].apply(_stage_from_growth)
     return check(table, LIFECYCLE)
 

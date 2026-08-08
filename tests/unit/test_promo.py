@@ -101,6 +101,35 @@ def test_mark_promo_transactions(crafted_df: pd.DataFrame) -> None:
     assert marked.loc[marked["stockcode"] == "B", "is_promo"].sum() == 0
 
 
+def test_category_promo_timeline_clamps_negative_discount(crafted_df: pd.DataFrame) -> None:
+    """Regression: a transaction priced ABOVE its own 90th-pct baseline while
+    marked as in-promo must not yield a negative avg_discount_pct (contract
+    requires [0, 100])."""
+    d = crafted_df.copy()
+    d["category"] = "Food"
+    # Force a promo period for SKU A; raise its prices inside the window so the
+    # promo row price exceeds the stock's 90th-percentile baseline.
+    promos = pd.DataFrame(
+        {"stockcode": ["A"], "start_date": [pd.Timestamp("2026-01-05")], "end_date": [pd.Timestamp("2026-01-07")]}
+    )
+    mask = (d["stockcode"] == "A") & d["date"].between("2026-01-05", "2026-01-07")
+    d.loc[mask, "price"] = 40.0
+
+    timeline = compute_category_promo_timeline(d, promos)
+    check(timeline, CATEGORY_PROMO_TIMELINE)
+    assert not timeline.empty
+    assert (timeline["avg_discount_pct"] >= 0).all()
+    assert (timeline["avg_discount_pct"] <= 100).all()
+
+
+def test_category_promo_timeline_contract(crafted_df: pd.DataFrame) -> None:
+    d = crafted_df.copy()
+    d["category"] = "Food"
+    promos = detect_promotions(d)
+    timeline = compute_category_promo_timeline(d, promos)
+    check(timeline, CATEGORY_PROMO_TIMELINE)
+
+
 def test_compute_promo_baseline_contract_and_marking(crafted_df: pd.DataFrame) -> None:
     promos = detect_promotions(crafted_df)
     baseline = compute_promo_baseline(crafted_df, promos, seasonal_period=4)

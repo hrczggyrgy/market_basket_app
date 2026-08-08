@@ -74,9 +74,9 @@ def _render_strength_stability_scatter(rules: pd.DataFrame, table: pd.DataFrame)
     with_ci["ci_width"] = with_ci["lift_ci_upper"] - with_ci["lift_ci_lower"]
     
     # Add antecedent category for coloring
-    def get_first_antecedent(row):
-        if row["antecedents"]:
-            return list(row["antecedents"])[0]
+    def get_first_antecedent(itemset) -> str | None:
+        if itemset:
+            return list(itemset)[0]
         return None
     
     with_ci["anchor"] = with_ci["antecedents"].apply(get_first_antecedent)
@@ -127,7 +127,7 @@ def _render_strength_stability_scatter(rules: pd.DataFrame, table: pd.DataFrame)
     show(fig)
     
     st.caption(
-        "Quadrants: High Lift + Low CI Width (top-left) = Strong & Stable. "
+        "Quadrants: High Lift + Low CI Width (bottom-right) = Strong & Stable. "
         "High Lift + High CI Width (top-right) = Strong but Uncertain. "
         "Color = Lift magnitude."
     )

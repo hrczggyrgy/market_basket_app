@@ -174,7 +174,11 @@ def compute_category_promo_timeline(
 
     # per-transaction discount depth vs 90th-percentile stock baseline
     baseline_price = t.groupby("stockcode")["price"].transform(lambda s: s.quantile(0.9))
-    t["_discount_pct"] = ((baseline_price - t["price"]) / baseline_price.replace(0, np.nan) * 100).fillna(0.0)
+    t["_discount_pct"] = (
+        (baseline_price - t["price"]) / baseline_price.replace(0, np.nan) * 100
+    ).fillna(0.0)
+    # A price above the baseline is not a discount: clamp to 0%
+    t["_discount_pct"] = t["_discount_pct"].clip(lower=0.0)
 
     promo = t[t["is_promo"]]
     base = t[~t["is_promo"]]

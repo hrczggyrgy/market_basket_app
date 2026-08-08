@@ -66,6 +66,42 @@ def test_lifecycle_stage_contract(sample_df: pd.DataFrame) -> None:
     assert set(table["stage"].unique()) <= {"growth", "mature", "decline"}
 
 
+def _two_week_fixture() -> pd.DataFrame:
+    """W1 (2024-12-30..01-05) and W2 (2025-01-06..01-12) hand-computable rows."""
+    w1 = pd.date_range("2024-12-30", periods=5, freq="D")
+    w2 = pd.date_range("2025-01-06", periods=5, freq="D")
+    rows = []
+    for i, dd in enumerate(w1):
+        rows.append({"date": dd, "stockcode": "A", "transaction_id": f"T{i}", "product": "p", "customer_id": "c", "price": 10.0, "quantity": 1})
+    for i, dd in enumerate(w2):
+        rows.append({"date": dd, "stockcode": "A", "transaction_id": f"T{i + 10}", "product": "p", "customer_id": "c", "price": 15.0, "quantity": 1})
+    for i in range(3):
+        rows.append({"date": w1[i], "stockcode": "B", "transaction_id": f"B{i}", "product": "p", "customer_id": "c", "price": 10.0, "quantity": 1})
+    for i in range(2):
+        rows.append({"date": w2[i], "stockcode": "C", "transaction_id": f"C{i}", "product": "p", "customer_id": "c", "price": 10.0, "quantity": 1})
+    return pd.DataFrame(rows)
+
+
+def test_lifecycle_growth_uses_recent_period_only() -> None:
+    """Regression: growth must compare recent vs prior WEEK, not lifetime revenue."""
+    d = _two_week_fixture()
+    out = product_lifecycle_stage(d)
+    LIFECYCLE.validate(out)
+    a = out[out["stockcode"] == "A"].iloc[0]
+    # W2 revenue 75 vs W1 revenue 50 -> exactly +50%
+    assert a["recent_revenue"] == 75.0 and a["prior_revenue"] == 50.0
+    assert a["growth_pct"] == 50.0
+    assert a["stage"] == "growth"
+    # B sold only in W1 -> decline
+    assert out[out["stockcode"] == "B"]["stage"].iloc[0] == "decline"
+    assert out[out["stockcode"] == "B"]["growth_pct"].iloc[0] == -100.0
+    # C sold only in W2 -> new, growth
+    assert out[out["stockcode"] == "C"]["stage"].iloc[0] == "growth"
+
+    # stockcodes present in either week must all be represented
+    assert set(out["stockcode"]) == {"A", "B", "C"}
+
+
 def test_velocity_contract(sample_df: pd.DataFrame) -> None:
     table = compute_velocity(sample_df)
     check(table, PRODUCT_VELOCITY)

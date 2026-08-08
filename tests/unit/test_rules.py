@@ -168,3 +168,20 @@ def test_bootstrap_lift_ci(sample_df: pd.DataFrame) -> None:
     if valid.any():
         ok = bootstrapped.loc[valid]
         assert (ok["lift_ci_lower"] <= ok["lift_ci_upper"]).all()
+
+
+def test_strength_stability_anchor_apply_on_frozensets() -> None:
+    """Regression: Series.apply over a frozenset column must not subscript rows."""
+    import pandas as pd
+    from src.analytics.rules import aggregate_rules_to_categories
+
+    rules = pd.DataFrame({
+        "antecedents": [frozenset({"A"}), frozenset({"B", "C"})],
+        "consequents": [frozenset({"D"}), frozenset({"E"})],
+        "lift": [2.0, 3.0],
+        "lift_ci_lower": [1.5, 2.0],
+        "lift_ci_upper": [2.5, 4.0],
+    })
+    with_ci = rules[rules["lift_ci_lower"].notna() & rules["lift_ci_upper"].notna()].copy()
+    with_ci["anchor"] = with_ci["antecedents"].apply(lambda s: list(s)[0] if s else None)
+    assert with_ci["anchor"].tolist() == ["A", "B"]
