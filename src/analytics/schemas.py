@@ -481,6 +481,16 @@ COHORT_RETENTION = DataContract(
     ),
 )
 
+ROLE_RETENTION = DataContract(
+    name="role_retention",
+    columns=("role", "cohort", "period_index", "retained", "cohort_size", "retention_rate"),
+    validators=(
+        ValueValidator("retained", lambda s: s >= 0, "retained must be non-negative"),
+        ValueValidator("cohort_size", lambda s: s > 0, "cohort_size must be positive"),
+        ValueValidator("retention_rate", lambda s: (s >= 0) & (s <= 1), "retention_rate must be in [0, 1]"),
+    ),
+)
+
 COHORT_SIZES = DataContract(
     name="cohort_sizes",
     columns=("cohort", "n_customers", "n_transactions", "revenue"),

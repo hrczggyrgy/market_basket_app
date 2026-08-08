@@ -16,6 +16,7 @@ from src.analytics.cohort import (
     compute_cohort_ltv_curve,
     compute_cohort_sizes,
     compute_cohorts,
+    compute_role_retention,
     period_over_period_comparison,
     year_over_year_comparison,
 )
@@ -30,6 +31,7 @@ from src.analytics.schemas import (
     CUSTOMER_ENTROPY,
     IPT_CV,
     POP_COMPARISON,
+    ROLE_RETENTION,
     YOY_COMPARISON,
 )
 
@@ -140,6 +142,31 @@ def test_cohort_decay_rate_contract(sample_df: pd.DataFrame) -> None:
     COHORT_DECAY.validate(table, allow_empty=True)
     if not table.empty:
         assert table["decay_rate"].notna().all()
+
+
+def test_role_retention_contract(sample_df: pd.DataFrame) -> None:
+    table = compute_role_retention(sample_df, cohort_period="M", min_role_customers=1)
+    ROLE_RETENTION.validate(table, allow_empty=True)
+    if not table.empty:
+        assert table["retention_rate"].between(0, 1).all()
+        assert (table["cohort_size"] >= table["retained"]).all()
+        assert table["period_index"].min() == 0
+        # Each (role, cohort) starts at 100% retention
+        first = table[table["period_index"] == 0]
+        assert (first["retention_rate"] == 1.0).all()
+
+
+def test_role_retention_empty_without_category(sample_df: pd.DataFrame) -> None:
+    df = sample_df.copy().drop(columns=["category"])
+    table = compute_role_retention(df, cohort_period="M")
+    assert table.empty
+    ROLE_RETENTION.validate(table, allow_empty=True)
+
+
+def test_role_retention_deterministic(sample_df: pd.DataFrame) -> None:
+    a = compute_role_retention(sample_df, cohort_period="M", min_role_customers=1)
+    b = compute_role_retention(sample_df, cohort_period="M", min_role_customers=1)
+    assert a.equals(b)
 
 
 def test_cohort_deterministic(sample_df: pd.DataFrame) -> None:

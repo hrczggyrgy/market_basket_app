@@ -11,6 +11,7 @@ from src.analytics.cohort import (
     compute_cohort_ltv_curve,
     compute_cohort_sizes,
     compute_cohorts,
+    compute_role_retention,
     period_over_period_comparison,
     year_over_year_comparison,
 )
@@ -127,6 +128,48 @@ def _render_aov_curves(df: pd.DataFrame, cohort_period: str) -> None:
     st.caption("AOV evolution per cohort. Rising = upsell/cross-sell success; falling = discounting or mix shift.")
 
 
+def _render_role_retention_curves(df: pd.DataFrame, cohort_period: str, min_role_customers: int) -> None:
+    st.subheader(":material/group_work: Retention by Category Role")
+    overview = compute_role_retention(df, cohort_period=cohort_period, min_role_customers=min_role_customers)
+    if overview.empty:
+        show(empty_state("No role retention data"))
+        return
+
+    # Weighted-average retention curve per role (pool retain and size across cohorts)
+    agg = overview.groupby(["role", "period_index"], as_index=False).agg(retained=("retained", "sum"), cohort_size=("cohort_size", "sum"))
+    agg["retention_rate"] = agg["retained"] / agg["cohort_size"]
+
+    role_order = sorted(overview["role"].unique().tolist())
+    fig = new_fig()
+    for i, role in enumerate(role_order):
+        sub = agg[agg["role"] == role].sort_values("period_index")
+        fig.add_trace(
+            go.Scatter(
+                x=sub["period_index"],
+                y=sub["retention_rate"] * 100,
+                mode="lines+markers",
+                name=role,
+                line={"width": 2, "color": PALETTE[i % len(PALETTE)]},
+                marker={"size": 4},
+                hovertemplate="%{y:.1f}% retained<extra>" + role + "</extra>",
+            )
+        )
+    fig.update_layout(
+        xaxis={"title": "Period index since acquisition"},
+        yaxis={"title": "Retention (%)", "range": [0, 105]},
+        hovermode="x unified",
+    )
+    show(fig)
+
+    # Cohort sizes per role
+    sizes = overview.groupby("cohort", as_index=False).apply(
+        lambda g: pd.Series({r: int(g.loc[g["role"] == r, "cohort_size"].max()) if (g["role"] == r).any() else 0 for r in role_order}),
+        include_groups=False,
+    ).reset_index()
+    st.dataframe(sizes, use_container_width=True, hide_index=True)
+    st.caption("Customers per acquisition cohort by the role of their first basket's dominant category. Curves show weighted-average retention per role.")
+
+
 def _render_yoy_bars(df: pd.DataFrame) -> None:
     st.subheader(":material/calendar_month: Year-over-Year Revenue Growth")
     yoy = year_over_year_comparison(df)
@@ -179,6 +222,7 @@ def render(df: pd.DataFrame) -> None:
     with st.expander("Parameters", expanded=True):
         c1, c2 = st.columns(2)
         period = c1.selectbox("Cohort period", ["W", "M"], index=0, format_func=lambda x: "Weekly" if x == "W" else "Monthly")
+        min_role_customers = int(c2.number_input("Min customers per role cohort", 1, 200, 5))
 
     cohort_table = compute_cohorts(df, cohort_period=period)
 
@@ -188,6 +232,9 @@ def render(df: pd.DataFrame) -> None:
 
     st.divider()
     _render_retention_heatmap(cohort_table)
+
+    st.divider()
+    _render_role_retention_curves(df, cohort_period=period, min_role_customers=min_role_customers)
 
     st.divider()
     _render_revenue_heatmap(df, cohort_period=period)
