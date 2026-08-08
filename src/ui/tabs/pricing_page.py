@@ -8,6 +8,7 @@ import streamlit as st
 
 from src.analytics.category import enrich_with_categories
 from src.analytics.pricing import (
+    classify_elasticity_confidence,
     estimate_loglog_elasticity,
     estimate_hierarchical_elasticity,
     compute_kvi_score,
@@ -15,6 +16,8 @@ from src.analytics.pricing import (
 )
 from src.ui.plots import PALETTE, empty_state, render_bar_with_ci, show
 from src.ui.registry import ModeSpec
+
+CONFIDENCE_COLORS = {"high": PALETTE[2], "medium": PALETTE[3], "low": PALETTE[6]}
 
 
 def _render_kvi_quadrant(kvi: pd.DataFrame) -> go.Figure:
@@ -86,6 +89,61 @@ def _render_kvi_quadrant(kvi: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def _render_elasticity_confidence(elast: pd.DataFrame) -> None:
+    st.subheader(":material/rule: Elasticity Confidence")
+    conf = classify_elasticity_confidence(elast)
+    if conf.empty:
+        show(empty_state("No elasticity estimates to classify"))
+        return
+
+    tiers = st.multiselect(
+        "Show confidence tiers",
+        ["high", "medium", "low"],
+        default=["high", "medium"],
+        format_func=lambda t: {"high": "High (significant, tight CI)", "medium": "Medium", "low": "Low (wide CI / not significant)"}[t],
+        key="elast_conf_tiers",
+    )
+    filtered = conf[conf["confidence"].isin(tiers)] if tiers else conf
+
+    # Scatter: relative CI width vs point estimate, colored by tier
+    work = filtered.copy()
+    work["relative_ci_width"] = work["ci_width"] / work["elasticity"].abs().clip(lower=1e-6)
+    fig = go.Figure(
+        data=go.Scatter(
+            x=work["elasticity"],
+            y=work["relative_ci_width"],
+            mode="markers",
+            text=work["stockcode"].astype(str),
+            customdata=work[["confidence", "direction", "ci_lower", "ci_upper"]].to_numpy(),
+            hovertemplate="%{text}<br>elasticity %{x:.2f}<br>CI width %{y:.2f}x estimate<br>confidence %{customdata[0]}<br>direction %{customdata[1]}<br>CI [%{customdata[2]:.2f}, %{customdata[3]:.2f}]<extra></extra>",
+            marker={
+                "size": work["n_obs"].rank(pct=True) * 16 + 6,
+                "color": work["confidence"].map(CONFIDENCE_COLORS),
+                "line": {"width": 1, "color": "#333333"},
+            },
+        )
+    )
+    fig.add_vline(x=-1, line_dash="dot", line_color="#888888", annotation_text="elastic: |e|>1")
+    fig.add_vline(x=1, line_dash="dot", line_color="#888888", annotation_text="elastic: |e|>1")
+    fig.update_layout(
+        xaxis={"title": "Own-price Elasticity (log-log OLS)"},
+        yaxis={"title": "CI width as multiple of |elasticity|"},
+        height=380,
+    )
+    show(fig)
+    st.caption(
+        "x = point estimate, y = CI width relative to the estimate (lower = tighter/more precise). "
+        "Green = high confidence (p<0.05, tight CI), amber = medium, red = low (wide CI or not significant). "
+        "SKUs with a wide CI should not be re-priced on the estimate alone."
+    )
+
+    st.dataframe(
+        filtered.sort_values("confidence", key=lambda c: c.map({"high": 0, "medium": 1, "low": 2})),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
 def render(df: pd.DataFrame) -> None:
     st.subheader(":material/price_check: Pricing & Elasticity")
 
@@ -115,6 +173,8 @@ def render(df: pd.DataFrame) -> None:
                     )
                 )
                 st.caption("Elasticity < -1 means elastic demand: a 1% price cut raises quantity by more than 1%.")
+
+                _render_elasticity_confidence(elast)
             else:
                 st.dataframe(elast.sort_values("elasticity"), use_container_width=True, hide_index=True)
 

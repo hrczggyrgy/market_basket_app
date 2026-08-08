@@ -17,6 +17,7 @@ from src.analytics.pricing.causal import (
     estimate_synthetic_control_elasticity,
 )
 from src.analytics.pricing.elasticity import (
+    classify_elasticity_confidence,
     estimate_cross_price_elasticity,
     estimate_hierarchical_elasticity,
     estimate_loglog_elasticity,
@@ -29,6 +30,7 @@ from src.analytics.pricing.price_curves import (
 
 __all__ = [
     # elasticity
+    "classify_elasticity_confidence",
     "estimate_cross_price_elasticity",
     "estimate_hierarchical_elasticity",
     "estimate_loglog_elasticity",

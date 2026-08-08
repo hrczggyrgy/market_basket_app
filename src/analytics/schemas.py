@@ -1584,6 +1584,30 @@ ELASTICITY = DataContract(
     ),
 )
 
+ELASTICITY_CONFIDENCE = DataContract(
+    name="elasticity_confidence",
+    columns=(
+        "stockcode",
+        "elasticity",
+        "ci_lower",
+        "ci_upper",
+        "ci_width",
+        "p_value",
+        "significant",
+        "confidence",
+        "direction",
+        "n_obs",
+    ),
+    validators=(
+        ValueValidator("ci_width", lambda s: s >= 0, "ci_width must be non-negative"),
+        ValueValidator("p_value", lambda s: (s >= 0) & (s <= 1), "p_value must be in [0, 1]"),
+        ValueValidator("significant", lambda s: s.isin({True, False}), "significant must be boolean"),
+        ValueValidator("confidence", lambda s: s.isin({"high", "medium", "low"}), "confidence must be high/medium/low"),
+        ValueValidator("direction", lambda s: s.isin({"elastic", "unit_elastic", "inelastic"}), "direction must be elastic/unit_elastic/inelastic"),
+        ValueValidator("n_obs", lambda s: s > 0, "n_obs must be positive"),
+    ),
+)
+
 HIERARCHICAL_ELASTICITY = DataContract(
     name="hierarchical_elasticity",
     columns=(

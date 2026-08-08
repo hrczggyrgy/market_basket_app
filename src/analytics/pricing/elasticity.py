@@ -12,6 +12,7 @@ from scipy import stats
 from src.analytics.schemas import (
     CROSS_ELASTICITY,
     ELASTICITY,
+    ELASTICITY_CONFIDENCE,
     HIERARCHICAL_ELASTICITY,
     check,
 )
@@ -275,6 +276,69 @@ def estimate_hierarchical_elasticity(
 
     table = ols_df[list(HIERARCHICAL_ELASTICITY.columns)]
     return check(table, HIERARCHICAL_ELASTICITY)
+
+
+def classify_elasticity_confidence(
+    elasticity_df: pd.DataFrame,
+    ci_relative_width_threshold: float = 2.0,
+    ci_relative_width_low: float = 4.0,
+) -> pd.DataFrame:
+    """Classify elasticity estimates into confidence tiers and demand direction.
+
+    Confidence tiers (per SKU, from its 95% CI width and significance):
+    - high:   significant (p < 0.05) and CI width < ``ci_relative_width_threshold``
+              times the magnitude of the point estimate.
+    - medium: significant but wider CI, or non-significant with a tight CI.
+    - low:    otherwise (wide CI and/or non-significant) — not actionable.
+
+    ``direction`` labels the demand regime: elastic (|e| > 1.05),
+    unit_elastic (|e| in [0.95, 1.05]), inelastic (|e| < 0.95).
+
+    Args:
+        elasticity_df: Output of ``estimate_loglog_elasticity`` (ELASTICITY contract).
+        ci_relative_width_threshold: Max CI width (as multiple of |elasticity|)
+            for a high-confidence label.
+        ci_relative_width_low: CI width multiple above which the estimate is
+            considered low confidence.
+
+    Returns:
+        DataFrame validated against ELASTICITY_CONFIDENCE (empty input yields
+        an empty, validated frame).
+    """
+    empty = pd.DataFrame(columns=list(ELASTICITY_CONFIDENCE.columns))
+    if elasticity_df is None or elasticity_df.empty:
+        return check(empty, ELASTICITY_CONFIDENCE, allow_empty=True)
+
+    required = {"stockcode", "elasticity", "ci_lower", "ci_upper", "p_value", "n_obs"}
+    if not required.issubset(elasticity_df.columns):
+        return check(empty, ELASTICITY_CONFIDENCE, allow_empty=True)
+
+    df = elasticity_df.copy()
+    df["ci_width"] = df["ci_upper"] - df["ci_lower"]
+    df["significant"] = df["p_value"] < 0.05
+
+    def _tier(row: pd.Series) -> str:
+        magnitude = max(abs(row["elasticity"]), 1e-6)
+        relative = row["ci_width"] / magnitude
+        if row["significant"] and relative < ci_relative_width_threshold:
+            return "high"
+        if relative < ci_relative_width_low:
+            return "medium"
+        return "low"
+
+    df["confidence"] = df.apply(_tier, axis=1)
+
+    def _direction(e: float) -> str:
+        if abs(e) > 1.05:
+            return "elastic"
+        if abs(e) >= 0.95:
+            return "unit_elastic"
+        return "inelastic"
+
+    df["direction"] = df["elasticity"].apply(_direction)
+
+    table = df[list(ELASTICITY_CONFIDENCE.columns)].reset_index(drop=True)
+    return check(table, ELASTICITY_CONFIDENCE)
 
 
 def estimate_cross_price_elasticity(

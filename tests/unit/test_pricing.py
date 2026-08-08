@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from src.analytics.pricing import (
+    classify_elasticity_confidence,
     compute_kvi_score,
     diagnose_price_curves_1d,
     diagnose_price_curves_multivariate,
@@ -20,6 +21,7 @@ from src.analytics.pricing import (
 from src.analytics.schemas import (
     CROSS_ELASTICITY,
     ELASTICITY,
+    ELASTICITY_CONFIDENCE,
     HIERARCHICAL_ELASTICITY,
     IV_ELASTICITY,
     KVI_SCORES,
@@ -290,3 +292,48 @@ def test_hierarchical_elasticity_excludes_degenerate_cases() -> None:
     assert len(hier) == 1
     assert hier.iloc[0]["stockcode"] == "NORMAL"
     HIERARCHICAL_ELASTICITY.validate(hier, allow_empty=True)
+
+
+def _elast_fixture() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "stockcode": ["TIGHT", "WIDE", "INSIG", "UNIT", "NEG"],
+            "elasticity": [-1.5, -0.4, -2.0, -1.0, -1.2],
+            "ci_lower": [-1.6, -1.3, -3.5, -1.4, -3.0],
+            "ci_upper": [-1.4, 0.5, -0.5, -0.6, 0.6],
+            "p_value": [0.001, 0.2, 0.4, 0.01, 0.9],
+            "n_obs": [40, 15, 12, 30, 10],
+            "r_squared": [0.7, 0.3, 0.5, 0.8, 0.2],
+            "std_err": [0.1, 0.4, 0.8, 0.2, 0.9],
+            "avg_price": [10.0, 5.0, 8.0, 12.0, 7.0],
+            "avg_weekly_qty": [100.0, 50.0, 60.0, 120.0, 80.0],
+            "price_cv": [0.2, 0.3, 0.4, 0.25, 0.35],
+        }
+    )
+
+
+def test_elasticity_confidence_contract() -> None:
+    conf = classify_elasticity_confidence(_elast_fixture())
+    ELASTICITY_CONFIDENCE.validate(conf)
+    assert len(conf) == 5
+    # TIGHT: significant + relative width 0.5/1.5 = 0.33 -> high
+    assert conf.loc[conf["stockcode"] == "TIGHT", "confidence"].iloc[0] == "high"
+    # WIDE: relative width 1.8/0.4 = huge -> low
+    assert conf.loc[conf["stockcode"] == "WIDE", "confidence"].iloc[0] == "low"
+    # INSIG: not significant, relative width 3.0/2.0 = 1.5 -> medium (tight CI but not significant)
+
+
+def test_elasticity_confidence_empty() -> None:
+    conf = classify_elasticity_confidence(pd.DataFrame())
+    assert conf.empty
+    ELASTICITY_CONFIDENCE.validate(conf, allow_empty=True)
+
+
+def test_elasticity_confidence_round_trip(sample_df: pd.DataFrame) -> None:
+    elast = estimate_loglog_elasticity(sample_df, min_periods=5)
+    if elast.empty:
+        pytest.skip("sample data does not support elasticity estimation")
+    conf = classify_elasticity_confidence(elast)
+    ELASTICITY_CONFIDENCE.validate(conf, allow_empty=True)
+    if not conf.empty:
+        assert set(conf["stockcode"]).issubset(set(elast["stockcode"]))
