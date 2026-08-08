@@ -99,6 +99,7 @@ def test_category_tab_renders_scorecard(app_path) -> None:
     assert "Category Role Treemap" in body_text
     assert "Assortment Efficiency" in body_text
     assert "Category Growth Matrix" in body_text
+    assert "Scenario Grid" in body_text
     assert "Category Promo Timeline" in body_text
     assert "Category Drill-down" in body_text
 

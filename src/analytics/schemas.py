@@ -675,6 +675,25 @@ CATEGORY_ROLES = DataContract(
     ),
 )
 
+SCENARIO_GRID = DataContract(
+    name="scenario_grid",
+    columns=(
+        "category",
+        "scenario",
+        "growth_lever",
+        "weekly_growth_pct",
+        "projected_revenue",
+        "revenue_change_pct",
+        "feasible",
+        "guard_note",
+    ),
+    validators=(
+        ValueValidator("weekly_growth_pct", lambda s: s.notna(), "weekly_growth_pct must not be NaN"),
+        ValueValidator("projected_revenue", lambda s: s >= 0, "projected_revenue must be non-negative"),
+        ValueValidator("feasible", lambda s: s.isin({True, False}), "feasible must be boolean"),
+    ),
+)
+
 PRODUCT_METRICS = DataContract(
     name="product_metrics",
     columns=("stockcode", "revenue", "units", "transactions", "customers", "avg_price", "penetration"),

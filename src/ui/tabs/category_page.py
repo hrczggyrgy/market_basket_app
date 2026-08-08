@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from src.analytics.category import (
@@ -16,6 +17,7 @@ from src.analytics.category import (
 )
 from src.analytics.promo import compute_category_promo_timeline, detect_promotions
 from src.analytics.pricing import compute_kvi_score
+from src.analytics.scenarios import compute_scenario_grid
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
 
@@ -312,6 +314,68 @@ def _growth_matrix(df: pd.DataFrame) -> None:
     )
 
 
+def _scenario_grid(df: pd.DataFrame) -> None:
+    st.subheader(":material/query_stats: Scenario Grid")
+    with st.expander("Parameters", expanded=False):
+        c1, c2, c3 = st.columns(3)
+        n_weeks = int(c1.number_input("Anchor weeks", 4, 52, 12))
+        projection_weeks = int(c2.number_input("Projection weeks", 4, 52, 13))
+        uplift = float(c3.number_input("Optimistic uplift (%/wk)", -5.0, 5.0, 0.10, step=0.05))
+
+    grid = compute_scenario_grid(
+        df,
+        n_weeks=n_weeks,
+        projection_weeks=projection_weeks,
+        optimistic_uplift=uplift,
+    )
+    if grid.empty:
+        show(empty_state("Insufficient weekly history for scenario projection"))
+        return
+
+    # Grouped bars: projected revenue by scenario for each category
+    pivot = grid.pivot(index="category", columns="scenario", values="projected_revenue").reindex(
+        columns=["pessimistic", "neutral", "optimistic"]
+    )
+    fig = go.Figure()
+    scenario_colors = {
+        "pessimistic": PALETTE[6],
+        "neutral": PALETTE[0],
+        "optimistic": PALETTE[2],
+    }
+    for scenario in pivot.columns:
+        fig.add_trace(
+            go.Bar(
+                x=pivot.index,
+                y=pivot[scenario],
+                name=scenario.capitalize(),
+                marker={"color": scenario_colors[scenario]},
+            )
+        )
+    fig.update_layout(barmode="group", xaxis={"title": "Category"}, yaxis={"title": f"Projected revenue ({projection_weeks}wk)"})
+    show(fig)
+    st.caption(
+        "Pessimistic = 1-sigma below trend, Neutral = historical weekly growth compounded, "
+        "Optimistic = trend + manager uplift. Infeasible cells (outside the ±15%/wk planning "
+        "band or more than 2x growth) are flagged below."
+    )
+
+    st.dataframe(
+        grid[
+            ["category", "scenario", "growth_lever", "weekly_growth_pct", "projected_revenue", "revenue_change_pct", "feasible", "guard_note"]
+        ].sort_values(["category", "scenario"]),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    infeasible = grid[~grid["feasible"]]
+    if not infeasible.empty:
+        st.warning(
+            f"{len(infeasible)} infeasible scenario cell(s): "
+            + "; ".join(f"{r.category} ({r.scenario}): {r.guard_note}" for _, r in infeasible.head(3).iterrows())
+            + (" …" if len(infeasible) > 3 else "")
+        )
+
+
 def _promo_timeline(df: pd.DataFrame) -> None:
     st.subheader(":material/local_offer: Category Promo Timeline")
 
@@ -398,6 +462,7 @@ def render(df: pd.DataFrame) -> None:
     _treemap(scorecard)
     _assortment_efficiency(df)
     _growth_matrix(df)
+    _scenario_grid(df)
     _promo_timeline(df)
     _drilldown(df, scorecard)
 
