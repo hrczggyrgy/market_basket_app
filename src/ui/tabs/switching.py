@@ -6,7 +6,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from src.analytics.data import derive_product_lookup
 from src.analytics.switching import (
+    compute_category_switching_matrix,
     compute_switching_matrix,
     compute_transition_matrix,
     get_customer_loyalty_metrics,
@@ -60,6 +62,66 @@ def _render_sankey(df: pd.DataFrame, matrix: pd.DataFrame, top_n: int) -> None:
     fig.update_layout(height=max(400, 30 * len(all_products)), font={"size": 10})
     show(fig)
     st.caption(f"Top {top_n} product-to-product switches. Thickness = transition count.")
+
+
+def _render_category_sankey(
+    df: pd.DataFrame,
+    window_days: int,
+    min_txns: int,
+    top_categories: int = 15,
+) -> None:
+    st.subheader(":material/account_tree: Category Switching Flow (Sankey)")
+    lookup = derive_product_lookup(df)
+    cat_matrix = compute_category_switching_matrix(
+        df,
+        window_days=window_days,
+        min_transactions=min_txns,
+        product_lookup=lookup,
+    )
+    if cat_matrix.empty:
+        show(empty_state("No category switching transitions"))
+        return
+
+    top = cat_matrix.nlargest(top_categories, "count")
+    if top.empty:
+        show(empty_state("No significant category switching paths"))
+        return
+
+    sources = top["from_category"].tolist()
+    targets = top["to_category"].tolist()
+    values = top["count"].tolist()
+
+    all_cats = list(dict.fromkeys(sources + targets))
+    label_to_idx = {c: i for i, c in enumerate(all_cats)}
+    source_idx = [label_to_idx[c] for c in sources]
+    target_idx = [label_to_idx[c] for c in targets]
+    colors = [PALETTE[i % len(PALETTE)] for i in range(len(all_cats))]
+
+    fig = go.Figure(
+        data=[
+            go.Sankey(
+                arrangement="snap",
+                node={
+                    "label": all_cats,
+                    "color": colors,
+                    "pad": 15,
+                    "thickness": 20,
+                },
+                link={
+                    "source": source_idx,
+                    "target": target_idx,
+                    "value": values,
+                    "color": [PALETTE[1]] * len(values),
+                },
+            )
+        ]
+    )
+    fig.update_layout(height=max(400, 30 * len(all_cats)), font={"size": 10})
+    show(fig)
+    st.caption(
+        f"Top {top_categories} category-to-category switches. "
+        "Rolled up from product-level switching; thickness = transition count."
+    )
 
 
 def _render_switcher_loyalist(df: pd.DataFrame, matrix: pd.DataFrame) -> None:
@@ -238,6 +300,9 @@ def render(df: pd.DataFrame) -> None:
 
     st.divider()
     _render_sankey(df, matrix, top_n)
+
+    st.divider()
+    _render_category_sankey(df, window_days, min_txns)
 
     st.divider()
     _render_switcher_loyalist(df, matrix)

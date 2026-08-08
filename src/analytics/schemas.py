@@ -384,6 +384,23 @@ LOYALTY_METRICS = DataContract(
     ),
 )
 
+# Category-level switching rollup
+CATEGORY_SWITCHING = DataContract(
+    name="category_switching",
+    columns=(
+        "from_category",
+        "to_category",
+        "count",
+        "pct",
+        "product_pairs",
+    ),
+    validators=(
+        ValueValidator("count", lambda s: s >= 0, "count must be non-negative"),
+        ValueValidator("pct", lambda s: (s >= 0) & (s <= 1), "pct must be in [0, 1]"),
+        ValueValidator("product_pairs", lambda s: s >= 1, "product_pairs must be >= 1"),
+    ),
+)
+
 # ---------------------------------------------------------------------------
 # Basket metrics contracts
 # ---------------------------------------------------------------------------

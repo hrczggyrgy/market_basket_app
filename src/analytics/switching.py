@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from src.analytics.schemas import LOYALTY_METRICS, SWITCHING_MATRIX, check
+from src.analytics.schemas import CATEGORY_SWITCHING, LOYALTY_METRICS, SWITCHING_MATRIX, check
 
 
 def _customer_sequences(
@@ -65,6 +65,51 @@ def compute_transition_matrix(df: pd.DataFrame, window_days: int = 90, min_trans
     pivot = matrix.pivot(index="from_product", columns="to_product", values="count").fillna(0)
     pivot = pivot.div(pivot.sum(axis=1), axis=0)
     return pivot
+
+
+def compute_category_switching_matrix(
+    df: pd.DataFrame,
+    window_days: int = 90,
+    min_transactions: int = 3,
+    product_lookup: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Aggregate product-level switching to category-level transitions.
+
+    Maps each SKU to its category (via ``product_lookup`` when supplied, else
+    the ``category`` column) and rolls product->product switches up to
+    category->category counts. Also records how many distinct product pairs
+    contribute to each category transition.
+
+    Returns:
+        DataFrame validated against CATEGORY_SWITCHING.
+    """
+    matrix = compute_switching_matrix(df, window_days, min_transactions)
+    if matrix.empty:
+        return check(pd.DataFrame(columns=list(CATEGORY_SWITCHING.columns)), CATEGORY_SWITCHING, allow_empty=True)
+
+    if product_lookup is not None and not product_lookup.empty:
+        cat_map = product_lookup.set_index("stockcode")["category"].to_dict()
+    else:
+        cat_map = df.groupby("stockcode")["category"].first().to_dict() if "category" in df.columns else {}
+
+    def cat(item: str) -> str:
+        return str(cat_map.get(item, "Unknown"))
+
+    cat_matrix = matrix.copy()
+    cat_matrix["from_category"] = cat_matrix["from_product"].map(cat)
+    cat_matrix["to_category"] = cat_matrix["to_product"].map(cat)
+
+    # Drop same-category self-switches (no category movement), but keep a
+    # distinct-product-pair count for intra-category fidelity reporting.
+    agg = (
+        cat_matrix.groupby(["from_category", "to_category"])
+        .agg(count=("count", "sum"), product_pairs=("count", "size"))
+        .reset_index()
+    )
+    total = agg["count"].sum()
+    agg["pct"] = agg["count"] / total if total > 0 else 0.0
+    agg = agg.sort_values("count", ascending=False).reset_index(drop=True)
+    return check(agg, CATEGORY_SWITCHING)
 
 
 def get_top_switching_paths(

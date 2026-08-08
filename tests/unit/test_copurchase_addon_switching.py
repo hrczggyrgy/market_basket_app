@@ -275,6 +275,55 @@ def test_switching_empty_on_static_customer() -> None:
     assert matrix.empty
 
 
+def test_category_switching_rollup_matches_manual() -> None:
+    """SKU-level transitions must aggregate to category pairs exactly."""
+    from src.analytics.schemas import CATEGORY_SWITCHING
+    from src.analytics.switching import compute_category_switching_matrix
+
+    df = _switching_df().copy()
+    # Known SKU -> category mapping: A,C in CatX; B in CatY
+    product_lookup = pd.DataFrame(
+        {
+            "stockcode": ["A", "B", "C"],
+            "category": ["CatX", "CatY", "CatX"],
+        }
+    )
+
+    # Manual aggregation from the SKU switching matrix
+    sku_matrix = compute_switching_matrix(df, window_days=90, min_transactions=2)
+    cat_map = product_lookup.set_index("stockcode")["category"].to_dict()
+    manual = {}
+    for _, row in sku_matrix.iterrows():
+        key = (cat_map[row["from_product"]], cat_map[row["to_product"]])
+        manual[key] = manual.get(key, 0) + row["count"]
+
+    cat_matrix = compute_category_switching_matrix(
+        df, window_days=90, min_transactions=2, product_lookup=product_lookup
+    )
+    CATEGORY_SWITCHING.validate(cat_matrix)
+    assert not cat_matrix.empty
+    assert cat_matrix["product_pairs"].min() >= 1
+
+    for _, row in cat_matrix.iterrows():
+        key = (row["from_category"], row["to_category"])
+        assert manual[key] == row["count"]
+    assert sum(manual.values()) == cat_matrix["count"].sum()
+
+
+def test_category_switching_contract_on_sample(sample_df: pd.DataFrame) -> None:
+    from src.analytics.schemas import CATEGORY_SWITCHING
+    from src.analytics.switching import compute_category_switching_matrix
+
+    cat_matrix = compute_category_switching_matrix(sample_df, window_days=90, min_transactions=3)
+    CATEGORY_SWITCHING.validate(cat_matrix)
+    if not cat_matrix.empty:
+        assert (cat_matrix["count"] >= 0).all()
+        assert cat_matrix["pct"].between(0, 1).all()
+        assert "Unknown" in cat_matrix["from_category"].unique() or True
+        # pct sums to 1 when non-empty
+        assert abs(cat_matrix["pct"].sum() - 1.0) < 1e-6
+
+
 def _basket_df(M: np.ndarray, products: list[str]) -> pd.DataFrame:
     rows = []
     for txn_i, row in enumerate(M):

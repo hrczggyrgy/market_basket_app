@@ -27,6 +27,7 @@ from src.analytics.schemas import (
     # Switching
     SWITCHING_MATRIX,
     LOYALTY_METRICS,
+    CATEGORY_SWITCHING,
     # Basket metrics
     BASKET_PENETRATION,
     BASKET_OVER_TIME,
@@ -192,6 +193,7 @@ __all__ = [
     "ADDON_RECS",
     "SWITCHING_MATRIX",
     "LOYALTY_METRICS",
+    "CATEGORY_SWITCHING",
     "BASKET_PENETRATION",
     "BASKET_OVER_TIME",
     "BASKET_COMPOSITION",
