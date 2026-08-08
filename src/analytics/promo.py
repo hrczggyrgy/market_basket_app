@@ -21,6 +21,7 @@ from sklearn.preprocessing import StandardScaler
 from statsmodels.tsa.seasonal import STL
 
 from src.analytics.schemas import (
+    CATEGORY_CANNIBALIZATION,
     CATEGORY_PROMO_TIMELINE,
     PROMO_BASELINE,
     PROMO_CANNIBALIZATION,
@@ -564,6 +565,112 @@ def compute_cannibalization_analysis(
         return check(pd.DataFrame(columns=list(PROMO_CANNIBALIZATION.columns)), PROMO_CANNIBALIZATION, allow_empty=True)
     table = pd.DataFrame(rows, columns=list(PROMO_CANNIBALIZATION.columns))
     return check(table, PROMO_CANNIBALIZATION)
+
+
+def compute_category_cannibalization(
+    df: pd.DataFrame,
+    promo_periods: pd.DataFrame,
+    window_days: int = 30,
+    peer_revenue_floor: float = 1.0,
+) -> pd.DataFrame:
+    """Cross-category cannibalization matrix from promo windows.
+
+    For every promo period (a promoted SKU in ``promo_category``), compare each
+    peer category's revenue during the promo window against the same-length
+    window immediately before it. A drop in the peer's revenue is treated as
+    revenue cannibalized by the promo:
+
+        cannibalized_revenue  = max(0, base_revenue - promo_revenue)
+        cannibalization_index = cannibalized_revenue / base_revenue   (clamped to [0, 1])
+
+    The promoted SKU's own category is excluded so rows represent
+    cross-category substitution. Results are aggregated per (promo_category,
+    peer_category) pair across all promos.
+
+    Args:
+        df: Transaction DataFrame (needs a ``category`` column).
+        promo_periods: PROMO_PERIODS-validated table.
+        window_days: Maximum promo window length considered.
+        peer_revenue_floor: Peer categories with less pre-promo revenue in a
+            window are ignored (noise guard).
+
+    Returns:
+        DataFrame validated against CATEGORY_CANNIBALIZATION (empty when no
+        category data or no cannibalization detected).
+    """
+    empty = pd.DataFrame(columns=list(CATEGORY_CANNIBALIZATION.columns))
+    if "category" not in df.columns or df.empty:
+        return check(empty, CATEGORY_CANNIBALIZATION, allow_empty=True)
+    if promo_periods is None or promo_periods.empty:
+        return check(empty, CATEGORY_CANNIBALIZATION, allow_empty=True)
+
+    df = df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["revenue"] = df["price"] * df["quantity"]
+    sku_category = df.groupby("stockcode")["category"].first()
+
+    rows: list[dict[str, float | int | str]] = []
+    for _, promo in promo_periods.iterrows():
+        sku = promo["stockcode"]
+        if sku not in sku_category.index:
+            continue
+        promo_category = sku_category[sku]
+        start, end = pd.Timestamp(promo["start_date"]), pd.Timestamp(promo["end_date"])
+        duration = (end - start).days + 1
+        if duration > window_days:
+            duration = window_days
+            start = end - pd.Timedelta(days=duration - 1)
+        pre_start = start - pd.Timedelta(days=duration)
+        pre_end = start - pd.Timedelta(days=1)
+
+        peer_categories = [c for c in df["category"].unique() if c != promo_category]
+        in_promo = df[(df["date"] >= start) & (df["date"] <= end) & (df["category"].isin(peer_categories))]
+        in_pre = df[(df["date"] >= pre_start) & (df["date"] <= pre_end) & (df["category"].isin(peer_categories))]
+
+        promo_agg = in_promo.groupby("category")["revenue"].sum().rename("promo_revenue")
+        pre_agg = in_pre.groupby("category")["revenue"].sum().rename("base_revenue")
+        merged = promo_agg.to_frame().join(pre_agg, how="outer").fillna(0.0).reset_index().rename(
+            columns={"category": "peer_category"}
+        )
+
+        for _, peer in merged.iterrows():
+            base_rev = float(peer["base_revenue"])
+            promo_rev = float(peer["promo_revenue"])
+            cannibalized = max(0.0, base_rev - promo_rev)
+            if base_rev < peer_revenue_floor:
+                continue
+            rows.append(
+                {
+                    "promo_category": str(promo_category),
+                    "peer_category": str(peer["peer_category"]),
+                    "n_promos": 1,
+                    "promo_revenue": promo_rev,
+                    "base_revenue": base_rev,
+                    "cannibalized_revenue": cannibalized,
+                    "cannibalization_index": float(min(cannibalized / base_rev, 1.0)),
+                }
+            )
+
+    if not rows:
+        return check(empty, CATEGORY_CANNIBALIZATION, allow_empty=True)
+
+    table = pd.DataFrame(rows)
+    grouped = (
+        table.groupby(["promo_category", "peer_category"], as_index=False)
+        .agg(
+            n_promos=("n_promos", "sum"),
+            promo_revenue=("promo_revenue", "sum"),
+            base_revenue=("base_revenue", "sum"),
+            cannibalized_revenue=("cannibalized_revenue", "sum"),
+        )
+    )
+    grouped["cannibalization_index"] = (
+        grouped["cannibalized_revenue"] / grouped["base_revenue"].replace(0, np.nan)
+    ).clip(0.0, 1.0)
+    grouped = grouped[list(CATEGORY_CANNIBALIZATION.columns)].sort_values(
+        ["promo_category", "peer_category"]
+    ).reset_index(drop=True)
+    return check(grouped, CATEGORY_CANNIBALIZATION)
 
 
 # ============================================================================

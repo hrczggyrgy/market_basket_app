@@ -15,7 +15,11 @@ from src.analytics.category import (
     compute_category_trend,
     enrich_with_categories,
 )
-from src.analytics.promo import compute_category_promo_timeline, detect_promotions
+from src.analytics.promo import (
+    compute_category_cannibalization,
+    compute_category_promo_timeline,
+    detect_promotions,
+)
 from src.analytics.pricing import compute_kvi_score
 from src.analytics.scenarios import compute_scenario_grid
 from src.ui.plots import PALETTE, empty_state, new_fig, show
@@ -376,6 +380,57 @@ def _scenario_grid(df: pd.DataFrame) -> None:
         )
 
 
+def _category_cannibalization(df: pd.DataFrame) -> None:
+    st.subheader(":material/local_fire_department: Category Cannibalization")
+    promos = detect_promotions(df)
+    if promos.empty:
+        st.caption("No promotional periods detected with default parameters.")
+        return
+
+    cann = compute_category_cannibalization(df, promos)
+    if cann.empty:
+        st.caption("No cross-category cannibalization detected.")
+        return
+
+    # Heatmap: promo_category (rows) -> peer_category (cols), intensity = index
+    pivot = cann.pivot_table(
+        index="promo_category",
+        columns="peer_category",
+        values="cannibalization_index",
+        fill_value=0,
+    )
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=pivot.to_numpy(),
+            x=list(pivot.columns),
+            y=list(pivot.index),
+            colorscale="YlOrRd",
+            zmin=0,
+            zmax=1,
+            colorbar={"title": "Index"},
+            text=[[f"{v:.0%}" if v > 0 else "" for v in row] for row in pivot.to_numpy()],
+            texttemplate="%{text}",
+            textfont={"size": 10},
+            hovertemplate="Promo in %{y} cannibalizes %{x}: %{z:.1%}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        xaxis={"title": "Peer category (loses revenue)", "tickangle": -45},
+        yaxis={"title": "Promo category"},
+        height=max(300, len(pivot) * 32 + 80),
+    )
+    show(fig)
+    st.caption(
+        "Rows = category running promos; columns = categories that lose revenue during those "
+        "promo windows vs the prior equal-length window. Index = cannibalized / base revenue "
+        "(0-1). Diagonal excluded. High cells mean the promo shifts share out of the column "
+        "category - schedule or feature them apart."
+    )
+
+    table = cann.sort_values("cannibalized_revenue", ascending=False)
+    st.dataframe(table, use_container_width=True, hide_index=True)
+
+
 def _promo_timeline(df: pd.DataFrame) -> None:
     st.subheader(":material/local_offer: Category Promo Timeline")
 
@@ -464,6 +519,7 @@ def render(df: pd.DataFrame) -> None:
     _growth_matrix(df)
     _scenario_grid(df)
     _promo_timeline(df)
+    _category_cannibalization(df)
     _drilldown(df, scorecard)
 
 

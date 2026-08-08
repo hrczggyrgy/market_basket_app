@@ -1015,6 +1015,26 @@ PROMO_CANNIBALIZATION = DataContract(
     ),
 )
 
+CATEGORY_CANNIBALIZATION = DataContract(
+    name="category_cannibalization",
+    columns=(
+        "promo_category",
+        "peer_category",
+        "n_promos",
+        "promo_revenue",
+        "base_revenue",
+        "cannibalized_revenue",
+        "cannibalization_index",
+    ),
+    validators=(
+        ValueValidator("n_promos", lambda s: s > 0, "n_promos must be positive"),
+        ValueValidator("promo_revenue", lambda s: s >= 0, "promo_revenue must be non-negative"),
+        ValueValidator("base_revenue", lambda s: s > 0, "base_revenue must be positive"),
+        ValueValidator("cannibalized_revenue", lambda s: s >= 0, "cannibalized_revenue must be non-negative"),
+        ValueValidator("cannibalization_index", lambda s: (s >= 0) & (s <= 1), "cannibalization_index must be in [0, 1]"),
+    ),
+)
+
 UPLIFT_PROPENSITY = DataContract(
     name="uplift_propensity",
     columns=("customer_id", "propensity", "treatment"),

@@ -9,6 +9,7 @@ from src.analytics.promo import (
     calculate_promotional_lift,
     check_propensity_overlap,
     compute_cannibalization_analysis,
+    compute_category_cannibalization,
     compute_category_promo_timeline,
     compute_incrementality_waterfall,
     compute_promo_baseline,
@@ -23,6 +24,7 @@ from src.analytics.promo import (
     train_uplift_learner,
 )
 from src.analytics.schemas import (
+    CATEGORY_CANNIBALIZATION,
     CATEGORY_PROMO_TIMELINE,
     PROMO_BASELINE,
     PROMO_CANNIBALIZATION,
@@ -128,6 +130,50 @@ def test_category_promo_timeline_contract(crafted_df: pd.DataFrame) -> None:
     promos = detect_promotions(d)
     timeline = compute_category_promo_timeline(d, promos)
     check(timeline, CATEGORY_PROMO_TIMELINE)
+
+
+def test_category_cannibalization_contract(crafted_df: pd.DataFrame) -> None:
+    """Cross-category matrix must exclude the promo SKU's own category and
+    validate against CATEGORY_CANNIBALIZATION."""
+    d = crafted_df.copy()
+    d["category"] = "Food"
+    # Give SKU B a different category so promo on A looks at B as peer
+    d.loc[d["stockcode"] == "B", "category"] = "Drinks"
+    promos = detect_promotions(d)
+    assert len(promos) == 1
+
+    cann = compute_category_cannibalization(d, promos)
+    check(cann, CATEGORY_CANNIBALIZATION)
+    if not cann.empty:
+        # own-category pairs excluded
+        assert (cann["promo_category"] != cann["peer_category"]).all()
+        assert cann["cannibalization_index"].between(0, 1).all()
+        assert (cann["cannibalized_revenue"] >= 0).all()
+        assert (cann["base_revenue"] > 0).all()
+
+
+def test_category_cannibalization_empty_without_promos(sample_df: pd.DataFrame) -> None:
+    cann = compute_category_cannibalization(sample_df, pd.DataFrame())
+    assert cann.empty
+    check(cann, CATEGORY_CANNIBALIZATION, allow_empty=True)
+
+
+def test_category_cannibalization_empty_without_category() -> None:
+    df = pd.DataFrame(
+        {
+            "date": pd.date_range("2025-01-01", periods=10),
+            "transaction_id": range(10),
+            "stockcode": ["A"] * 10,
+            "product": ["a"] * 10,
+            "customer_id": ["c"] * 10,
+            "price": [1.0] * 10,
+            "quantity": [1] * 10,
+        }
+    )
+    promos = pd.DataFrame({"stockcode": ["A"], "start_date": [pd.Timestamp("2025-01-02")], "end_date": [pd.Timestamp("2025-01-04")]})
+    cann = compute_category_cannibalization(df, promos)
+    assert cann.empty
+    check(cann, CATEGORY_CANNIBALIZATION, allow_empty=True)
 
 
 def test_compute_promo_baseline_contract_and_marking(crafted_df: pd.DataFrame) -> None:
