@@ -176,3 +176,75 @@ def safe_divide(
     with np.errstate(divide="ignore", invalid="ignore"):
         result = np.divide(numerator, denominator, out=np.zeros_like(denominator), where=denominator != 0)
     return result
+
+
+def assign_basket_mission(
+    df: pd.DataFrame,
+    product_col: str = "stockcode",
+    labels: tuple[str, ...] = ("Top-Up", "Regular", "Stock-Up"),
+) -> pd.DataFrame:
+    """Assign basket-size mission (Top-Up/Regular/Stock-Up) to each transaction.
+    
+    Based on the mean basket depth of each product. Products that tend to appear
+    in small baskets are "Top-Up", large baskets are "Stock-Up".
+    
+    Args:
+        df: Transaction dataframe
+        product_col: Column with product codes
+        labels: Labels for the three tiers
+        
+    Returns:
+        DataFrame with added 'basket_mission' column per transaction
+    """
+    from src.analytics.cdt.attributes import derive_basket_size_affinity
+    
+    product_mission = derive_basket_size_affinity(df, product_col=product_col, labels=labels)
+    # For each transaction, assign the mission of its products
+    # If multiple products, use the mode (most common)
+    df = df.copy()
+    df["product_mission"] = df[product_col].map(product_mission)
+    # Aggregate to transaction level
+    txn_mission = df.groupby("transaction_id")["product_mission"].agg(
+        lambda x: x.mode().iloc[0] if not x.mode().empty else labels[1]
+    ).rename("basket_mission")
+    return df.merge(txn_mission, on="transaction_id", how="left")
+
+
+def add_segment_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Add customer segment columns from available segmentations.
+    
+    Tries RFM segment first (cheap quantile-based), then behavioral segment.
+    
+    Args:
+        df: Transaction dataframe with customer_id
+        
+    Returns:
+        DataFrame with added segment columns if available
+    """
+    df = df.copy()
+    segments_added = []
+    
+    # Try RFM segment (cheap quantile-based)
+    try:
+        from src.analytics.segmentation import rfm_segmentation, compute_rfm_features
+        rfm_features = compute_rfm_features(df)
+        rfm_seg = rfm_segmentation(rfm_features)
+        if "segment" in rfm_seg.columns:
+            seg_map = rfm_seg.set_index("customer_id")["segment"].to_dict()
+            df["rfm_segment"] = df["customer_id"].map(seg_map)
+            segments_added.append("rfm_segment")
+    except Exception:
+        pass
+    
+    # Try behavioral segment
+    try:
+        from src.analytics.segmentation import behavioral_segmentation
+        beh_seg = behavioral_segmentation(df)
+        if "segment" in beh_seg.columns:
+            seg_map = beh_seg.set_index("customer_id")["segment"].to_dict()
+            df["behavioral_segment"] = df["customer_id"].map(seg_map)
+            segments_added.append("behavioral_segment")
+    except Exception:
+        pass
+    
+    return df

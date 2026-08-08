@@ -13,11 +13,32 @@ from src.analytics.rules import create_basket_matrix
 from src.analytics.schemas import AFFINITY_PAIRS, check
 
 
+def _filter_df(
+    df: pd.DataFrame,
+    segment_col: str | None = None,
+    segment_val: str | None = None,
+    mission_col: str | None = None,
+    mission_val: str | None = None,
+) -> pd.DataFrame:
+    """Filter dataframe by segment and/or mission."""
+    result = df.copy()
+    if segment_col and segment_val and segment_col in result.columns:
+        result = result[result[segment_col] == segment_val]
+    if mission_col and mission_val and mission_col in result.columns:
+        result = result[result[mission_col] == mission_val]
+    return result
+
+
 def compute_cooccurrence_matrix(
     df: pd.DataFrame,
     top_n_products: int | None = None,
+    segment_col: str | None = None,
+    segment_val: str | None = None,
+    mission_col: str | None = None,
+    mission_val: str | None = None,
 ) -> pd.DataFrame:
     """Raw count of shared transactions per stockcode pair."""
+    df = _filter_df(df, segment_col, segment_val, mission_col, mission_val)
     basket = create_basket_matrix(df)
     if top_n_products is not None:
         counts = basket.sum().sort_values(ascending=False)
@@ -32,8 +53,13 @@ def compute_pair_trend(
     product_a: str,
     product_b: str,
     period: str = "W",
+    segment_col: str | None = None,
+    segment_val: str | None = None,
+    mission_col: str | None = None,
+    mission_val: str | None = None,
 ) -> pd.DataFrame:
     """Per-period co-occurrence count for a product pair."""
+    df = _filter_df(df, segment_col, segment_val, mission_col, mission_val)
     both = df[df["stockcode"].isin([product_a, product_b])]
     if both.empty:
         return pd.DataFrame(columns=["period", "cooccurrence"])
@@ -58,10 +84,15 @@ def compute_pair_centrality(
     df: pd.DataFrame,
     top_n_products: int = 100,
     min_cooccurrence: int = 5,
+    segment_col: str | None = None,
+    segment_val: str | None = None,
+    mission_col: str | None = None,
+    mission_val: str | None = None,
 ) -> pd.DataFrame:
     """PageRank centrality over the weighted co-occurrence graph."""
     import networkx as nx
 
+    df = _filter_df(df, segment_col, segment_val, mission_col, mission_val)
     cooccurrence = compute_cooccurrence_matrix(df, top_n_products=top_n_products)
     graph = nx.Graph()
     products = cooccurrence.index
@@ -90,7 +121,12 @@ def _affinity_and_cooccurrence(
     df: pd.DataFrame,
     min_cooccurrence: int,
     top_n_products: int | None,
+    segment_col: str | None = None,
+    segment_val: str | None = None,
+    mission_col: str | None = None,
+    mission_val: str | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
+    df = _filter_df(df, segment_col, segment_val, mission_col, mission_val)
     basket = create_basket_matrix(df)
     if top_n_products is not None:
         counts = basket.sum().sort_values(ascending=False)
@@ -124,9 +160,15 @@ def compute_affinity_matrix(
     df: pd.DataFrame,
     min_cooccurrence: int = 5,
     top_n_products: int | None = None,
+    segment_col: str | None = None,
+    segment_val: str | None = None,
+    mission_col: str | None = None,
+    mission_val: str | None = None,
 ) -> pd.DataFrame:
     """Product x product phi-coefficient affinity matrix (NaN below min co-occurrence)."""
-    affinity, _, _ = _affinity_and_cooccurrence(df, min_cooccurrence, top_n_products)
+    affinity, _, _ = _affinity_and_cooccurrence(
+        df, min_cooccurrence, top_n_products, segment_col, segment_val, mission_col, mission_val
+    )
     return affinity
 
 
@@ -136,13 +178,19 @@ def get_top_affinity_pairs(
     min_cooccurrence: int = 5,
     min_affinity: float = 0.0,
     top_n_products: int | None = 200,
+    segment_col: str | None = None,
+    segment_val: str | None = None,
+    mission_col: str | None = None,
+    mission_val: str | None = None,
 ) -> pd.DataFrame:
     """Highest-affinity product pairs with co-occurrence rates.
 
     `top_n_products` limits the candidate pool to the most-purchased products,
     which keeps pair enumeration tractable on large catalogs.
     """
-    affinity, cooccur, support = _affinity_and_cooccurrence(df, min_cooccurrence, top_n_products)
+    affinity, cooccur, support = _affinity_and_cooccurrence(
+        df, min_cooccurrence, top_n_products, segment_col, segment_val, mission_col, mission_val
+    )
     products = affinity.columns.tolist()
     rows = []
     for i in range(len(products)):
@@ -168,14 +216,22 @@ def get_top_affinity_pairs(
     return check(pairs, AFFINITY_PAIRS)
 
 
-def get_product_affinity_profile(df: pd.DataFrame, product: str, top_n: int = 10) -> pd.DataFrame:
+def get_product_affinity_profile(
+    df: pd.DataFrame,
+    product: str,
+    top_n: int = 10,
+    segment_col: str | None = None,
+    segment_val: str | None = None,
+    mission_col: str | None = None,
+    mission_val: str | None = None,
+) -> pd.DataFrame:
     """Top co-purchase partners for a single product."""
-    affinity = compute_affinity_matrix(df, min_cooccurrence=2)
+    affinity = compute_affinity_matrix(df, min_cooccurrence=2, segment_col=segment_col, segment_val=segment_val, mission_col=mission_col, mission_val=mission_val)
     if product not in affinity.index:
         return check(pd.DataFrame(columns=list(AFFINITY_PAIRS.columns)), AFFINITY_PAIRS, allow_empty=True)
     row = affinity.loc[product].drop(labels=[product]).dropna().sort_values(ascending=False)
     partners = row.head(top_n).index.tolist()
-    pairs = get_top_affinity_pairs(df, top_n=10_000, min_cooccurrence=2)
+    pairs = get_top_affinity_pairs(df, top_n=10_000, min_cooccurrence=2, segment_col=segment_col, segment_val=segment_val, mission_col=mission_col, mission_val=mission_val)
     mask = ((pairs["product_a"] == product) & pairs["product_b"].isin(partners)) | (
         (pairs["product_b"] == product) & pairs["product_a"].isin(partners)
     )
