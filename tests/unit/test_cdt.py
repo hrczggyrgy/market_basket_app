@@ -83,6 +83,44 @@ def test_similarity_ensemble(sample_df: pd.DataFrame) -> None:
     assert np.allclose(np.diag(sim.to_numpy()), 1.0)
 
 
+def test_embedding_similarity(sample_df: pd.DataFrame) -> None:
+    sim = build_similarity_matrix(
+        sample_df, method="embedding", min_product_support=2, top_n_products=50
+    )
+    assert sim.shape[0] == sim.shape[1]
+    assert (sim.index == sim.columns).all()
+    assert np.allclose(np.diag(sim.to_numpy()), 1.0)
+    assert np.isfinite(sim.to_numpy()).all()
+    assert (sim.to_numpy() >= -1e-6).all() and (sim.to_numpy() <= 1.0 + 1e-6).all()
+
+
+def test_embedding_topn_cap(sample_df: pd.DataFrame) -> None:
+    sim = build_similarity_matrix(
+        sample_df, method="embedding", min_product_support=2, top_n_products=10
+    )
+    assert sim.shape[0] == 10
+
+
+def test_bootstrap_phi_matches_matrix(sample_df: pd.DataFrame) -> None:
+    a, b = sample_df["stockcode"].unique()[:2]
+    sim = build_similarity_matrix(sample_df, method="phi", min_cooccurrence=5)
+    expected = float(sim.loc[a, b])
+    ci = bootstrap_similarity_ci(
+        sample_df, a, b, method="phi", n_resamples=5, random_seed=42
+    )
+    assert ci["estimate"] == pytest.approx(expected, abs=1e-12)
+    assert ci["n_resamples"] == 5
+    assert ci["lower"] <= ci["estimate"] <= ci["upper"]
+
+
+def test_bootstrap_embedding_raises(sample_df: pd.DataFrame) -> None:
+    a, b = sample_df["stockcode"].unique()[:2]
+    with pytest.raises(ValueError):
+        bootstrap_similarity_ci(
+            sample_df, a, b, method="embedding", n_resamples=2
+        )
+
+
 def test_bootstrap_similarity_ci(sample_df: pd.DataFrame) -> None:
     products = sample_df["stockcode"].unique()[:2]
     ci = bootstrap_similarity_ci(

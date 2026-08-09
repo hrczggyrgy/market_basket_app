@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from src.analytics.copurchase import compute_affinity_matrix
+from src.analytics.cdt.embedding import build_product_embeddings
 
 
 def _customer_product_matrix(
@@ -125,7 +126,45 @@ def compute_cosine_tfidf_matrix(
     return pd.DataFrame(sim, index=products, columns=products)
 
 
-SIMILARITY_METHODS = ("phi", "jaccard", "pmi", "cosine_tfidf", "ensemble")
+def compute_embedding_matrix(
+    transactions_df: pd.DataFrame,
+    customer_col: str = "customer_id",
+    product_col: str = "stockcode",
+    min_product_support: int = 2,
+    n_components: int = 64,
+    top_n_products: int = 2000,
+    random_seed: int = 42,
+) -> pd.DataFrame:
+    """Latent SVD cosine similarity, restricted to the top-N supported products.
+
+    Builds the sparse customer-product matrix once, derives latent product
+    vectors via TruncatedSVD and returns the dense pairwise cosine similarity
+    (bounded to the largest ``top_n_products`` supported products so memory
+    stays O(top_n^2) instead of O(n_products^2)).
+    """
+    full = _customer_product_matrix(transactions_df, customer_col, product_col, min_product_support)
+    if full.shape[1] <= top_n_products:
+        matrix = full
+    else:
+        support = full.sum(axis=0)
+        keep = support.sort_values(ascending=False).index[:top_n_products]
+        matrix = full[keep]
+
+    from scipy import sparse as sp
+
+    embeddings = build_product_embeddings(
+        sp.csr_matrix(matrix.to_numpy().astype(np.float32)),
+        n_components=n_components,
+        random_seed=random_seed,
+    )
+    sim = embeddings @ embeddings.T
+    sim = np.clip(sim, 0.0, 1.0)
+    np.fill_diagonal(sim, 1.0)
+    products = matrix.columns.tolist()
+    return pd.DataFrame(sim, index=products, columns=products)
+
+
+SIMILARITY_METHODS = ("phi", "jaccard", "pmi", "cosine_tfidf", "embedding", "ensemble")
 
 
 def build_similarity_matrix(
@@ -133,6 +172,9 @@ def build_similarity_matrix(
     method: str = "phi",
     min_cooccurrence: int = 5,
     min_product_support: int = 2,
+    n_components: int = 64,
+    top_n_products: int = 2000,
+    random_seed: int = 42,
 ) -> pd.DataFrame:
     """Dispatch to the requested similarity method."""
     if method == "phi":
@@ -143,6 +185,14 @@ def build_similarity_matrix(
         return compute_pmi_matrix(transactions_df, min_cooccurrence=min_cooccurrence, min_product_support=min_product_support)
     if method == "cosine_tfidf":
         return compute_cosine_tfidf_matrix(transactions_df, min_product_support=min_product_support)
+    if method == "embedding":
+        return compute_embedding_matrix(
+            transactions_df,
+            min_product_support=min_product_support,
+            n_components=n_components,
+            top_n_products=top_n_products,
+            random_seed=random_seed,
+        )
     if method == "ensemble":
         return build_similarity_matrix_ensemble(
             transactions_df, min_cooccurrence=min_cooccurrence, min_product_support=min_product_support
@@ -207,27 +257,75 @@ def bootstrap_similarity_ci(
     ci_level: float = 0.95,
     random_seed: int | None = None,
     min_cooccurrence: int = 5,
+    min_product_support: int = 2,
 ) -> dict[str, float]:
-    """Percentile bootstrap CI for a single similarity pair (customer resampling)."""
+    """Percentile bootstrap CI for a single similarity pair (customer resampling).
+
+    Builds the per-customer payload once, then each bootstrap draw resamples
+    customer indices and computes the pair statistic directly from the
+    contingency tables - no DataFrame concatenation, no matrix rebuild per
+    draw. Phi is basket-based (as in ``compute_affinity_matrix``), Jaccard/PMI/
+    TF-IDF are customer-based (as in the pairwise matrix methods).
+    """
     rng = np.random.default_rng(random_seed)
-    customers = transactions_df["customer_id"].unique()
-    cust_groups = {c: g for c, g in transactions_df.groupby("customer_id")}
+    customers = transactions_df["customer_id"].unique().tolist()
 
-    def _pair_value(d: pd.DataFrame) -> float:
-        matrix = build_similarity_matrix(d, method=method, min_cooccurrence=min_cooccurrence)
-        if product_a not in matrix.index or product_b not in matrix.index:
+    # Per-customer payload: products bought (counts for the customer basis)
+    # and the baskets (transaction-level product sets) for the phi basis.
+    cust_products: dict[str, frozenset] = {}
+    cust_baskets: dict[str, list[frozenset]] = {}
+    for c, g in transactions_df.groupby("customer_id"):
+        baskets = [frozenset(b) for _, b in g.groupby("transaction_id")["stockcode"]]
+        cust_products[c] = frozenset().union(*baskets) if baskets else frozenset()
+        cust_baskets[c] = baskets
+
+    customer_list = customers
+    product_sets = [cust_products[c] for c in customers]
+    basket_lists = [cust_baskets[c] for c in customers]
+
+    def _pair_value(cust_idx: np.ndarray) -> float:
+        if method == "phi":
+            baskets = [b for i in cust_idx for b in basket_lists[i]]
+            n = len(baskets)
+            both = sum(1 for b in baskets if product_a in b and product_b in b)
+            only_a = sum(1 for b in baskets if product_a in b)
+            only_b = sum(1 for b in baskets if product_b in b)
+            if both < min_cooccurrence or n == 0 or only_a == 0 or only_b == 0:
+                return 0.0
+            numerator = both * n - only_a * only_b
+            denominator = np.sqrt(only_a * (n - only_a) * only_b * (n - only_b))
+            return float(numerator / denominator) if denominator > 0 else 0.0
+
+        sets = [product_sets[i] for i in cust_idx]
+        n = len(sets)
+        both = sum(1 for s in sets if product_a in s and product_b in s)
+        only_a = sum(1 for s in sets if product_a in s)
+        only_b = sum(1 for s in sets if product_b in s)
+        if both < min_cooccurrence or n == 0 or min(only_a, only_b) == 0:
             return 0.0
-        return float(matrix.loc[product_a, product_b])
+        if method == "jaccard":
+            return float(both / (only_a + only_b - both))
+        if method == "pmi":
+            pa, pb, pab = only_a / n, only_b / n, both / n
+            with np.errstate(divide="ignore", invalid="ignore"):
+                numerator = np.log(pab / (pa * pb) + 1e-6)
+                denominator = -np.log(pab + 1e-6)
+                return float(np.clip(numerator / denominator, 0.0, 1.0)) if denominator > 0 else 0.0
+        if method == "cosine_tfidf":
+            idf_a = np.log((n + 1) / (only_a + 1)) + 1.0
+            idf_b = np.log((n + 1) / (only_b + 1)) + 1.0
+            dot = both * idf_a * idf_b
+            norm = np.sqrt(only_a) * idf_a * np.sqrt(only_b) * idf_b
+            return float(min(max(dot / norm, 0.0), 1.0)) if norm > 0 else 0.0
+        if method == "embedding":
+            raise ValueError("bootstrap_similarity_ci does not support method='embedding'")
+        raise ValueError(f"unknown similarity method {method!r}")
 
-    point = _pair_value(transactions_df)
+    point = _pair_value(np.arange(len(customers)))
     replicates: list[float] = []
     for _ in range(n_resamples):
-        cust_idx = rng.integers(0, len(customers), size=len(customers))
-        frames = [cust_groups[c] for c in customers[cust_idx]]
-        resample = pd.concat(frames, ignore_index=True)
-        if resample.empty:
-            continue
-        replicates.append(_pair_value(resample))
+        idx = rng.integers(0, len(customers), size=len(customers))
+        replicates.append(_pair_value(idx))
     if not replicates:
         return {"estimate": point, "lower": point, "upper": point, "std_error": 0.0, "n_resamples": 0}
     arr = np.asarray(replicates)

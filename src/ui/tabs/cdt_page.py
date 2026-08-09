@@ -204,15 +204,26 @@ def render(df: pd.DataFrame) -> None:
         c1, c2, c3, c4 = st.columns(4)
         method = c1.selectbox(
             "Similarity method",
-            ["phi", "jaccard", "pmi", "cosine_tfidf", "ensemble"],
+            ["embedding", "phi", "jaccard", "pmi", "cosine_tfidf", "ensemble"],
             index=0,
+            help="embedding: latent SVD cosine (fast, scalable). Legacy: pairwise metrics."
         )
         n_clusters = c2.number_input("Clusters", 2, 15, 6)
         max_depth = c3.number_input("Max tree depth", 2, 6, 3)
         top_n = c4.number_input("Top N for heatmap", 10, 60, 25)
 
+        with st.expander("Advanced", expanded=False):
+            a1, a2 = st.columns(2)
+            n_components = a1.number_input("Embedding dims", 16, 256, 64, step=16)
+            top_n_products = a2.number_input("Max products analyzed", 200, 5000, 2000, step=200)
+
     attrs = build_transaction_derived_attributes(df)
-    sim = build_similarity_matrix(df, method=method)
+    sim = build_similarity_matrix(
+        df,
+        method=method,
+        n_components=n_components,
+        top_n_products=top_n_products,
+    )
     clusters = get_cluster_assignments(df, similarity_matrix=sim, n_clusters=n_clusters)
     tree = build_cdt(
         attrs,

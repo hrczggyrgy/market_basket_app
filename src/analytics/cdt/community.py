@@ -6,6 +6,7 @@ communities with Louvain or label propagation (both shipped in networkx).
 
 from __future__ import annotations
 
+import numpy as np
 import networkx as nx
 import pandas as pd
 
@@ -17,23 +18,31 @@ def build_product_graph(
     min_cooccurrence: int = 5,
     min_weight: float = 0.0,
 ) -> nx.Graph:
-    """Weighted product graph; edge weight = phi affinity (NaN pairs dropped)."""
+    """Weighted product graph; edge weight = phi affinity (NaN pairs dropped).
+
+    Vectorized: the O(N^2) pair scan is performed with numpy triu indices
+    instead of a Python double loop, so a 2,000-product affinity matrix builds
+    in a fraction of a second.
+    """
     affinity = compute_affinity_matrix(transactions_df, min_cooccurrence=min_cooccurrence)
     graph = nx.Graph()
     products = affinity.index.tolist()
     graph.add_nodes_from(products)
-    for i in range(len(products)):
-        for j in range(i + 1, len(products)):
-            w = affinity.iloc[i, j]
-            if not _is_nan(w) and w >= min_weight:
-                graph.add_edge(products[i], products[j], weight=float(w))
+
+    values = affinity.to_numpy(dtype=float)
+    iu = np.triu_indices(values.shape[0], k=1)
+    weights = values[iu]
+    valid = ~np.isnan(weights) & (weights >= min_weight)
+    if not valid.any():
+        return graph
+    src = np.asarray(iu[0])[valid].tolist()
+    dst = np.asarray(iu[1])[valid].tolist()
+    edges = [
+        (products[s], products[d], {"weight": float(w)})
+        for s, d, w in zip(src, dst, weights[valid].tolist())
+    ]
+    graph.add_edges_from(edges)
     return graph
-
-
-def _is_nan(value: object) -> bool:
-    import math
-
-    return isinstance(value, float) and math.isnan(value)
 
 
 def detect_communities_louvain(
