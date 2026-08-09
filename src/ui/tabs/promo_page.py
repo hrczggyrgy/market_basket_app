@@ -12,7 +12,7 @@ from src.analytics.promo import (
     compute_incrementality_waterfall,
     compute_promo_baseline,
     detect_promotions,
-    pre_post_promo_lift,
+    pre_post_promo_comparison,
     promo_roi_analysis,
     promotion_timing_analysis,
 )
@@ -59,7 +59,7 @@ def _render_promo_periods(promos: pd.DataFrame) -> None:
 
 
 def _render_lift_analysis(lift: pd.DataFrame) -> None:
-    st.subheader(":material/trending_up: Promotional Lift (DiD)")
+    st.subheader(":material/trending_up: Promotional Pre/Post Comparison")
     if lift.empty:
         show(empty_state("No significant promotional lift detected"))
         return
@@ -247,7 +247,7 @@ def render(df: pd.DataFrame) -> None:
         _render_promo_periods(promos)
 
     with tab2:
-        lift = pre_post_promo_lift(df, promo_periods=promos)
+        lift = pre_post_promo_comparison(df, promo_periods=promos)
         _render_lift_analysis(lift)
 
     with tab3:
