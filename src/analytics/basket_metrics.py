@@ -84,19 +84,22 @@ def compute_customer_entropy(df: pd.DataFrame) -> pd.DataFrame:
 def compute_ipt_cv(df: pd.DataFrame) -> pd.DataFrame:
     """Coefficient of variation of basket size for each product's baskets."""
     basket_sizes = df.groupby("transaction_id")["stockcode"].nunique()
-    rows = []
-    for stockcode, group in df.groupby("stockcode"):
-        sizes = basket_sizes.loc[group["transaction_id"].unique()]
-        rows.append(
-            {
-                "stockcode": stockcode,
-                "mean_ipt": float(sizes.mean()),
-                "std_ipt": float(sizes.std(ddof=0)),
-                "cv_ipt": float(variation(sizes)),
-                "n_transactions": int(len(sizes)),
-            }
-        )
-    table = pd.DataFrame(rows).sort_values("cv_ipt", ascending=False).reset_index(drop=True)
+    # Get unique (transaction_id, stockcode) pairs - each product in each basket
+    prod_txn = df[["transaction_id", "stockcode"]].drop_duplicates()
+    merged = prod_txn.merge(basket_sizes.rename("basket_size"), on="transaction_id", how="left")
+
+    agg = merged.groupby("stockcode")["basket_size"].agg(
+        mean_ipt="mean",
+        std_ipt=lambda s: float(s.std(ddof=0)),
+        cv_ipt=lambda s: float(variation(s)),
+        n_transactions="size",
+    ).reset_index()
+
+    table = agg.sort_values("cv_ipt", ascending=False).reset_index(drop=True)
+    table["mean_ipt"] = table["mean_ipt"].astype(float)
+    table["std_ipt"] = table["std_ipt"].astype(float)
+    table["cv_ipt"] = table["cv_ipt"].astype(float)
+    table["n_transactions"] = table["n_transactions"].astype(int)
     return check(table, IPT_CV)
 
 

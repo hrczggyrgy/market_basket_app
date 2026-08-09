@@ -43,16 +43,29 @@ def compute_switching_matrix(
 ) -> pd.DataFrame:
     """Transition counts between consecutive purchases: A -> B."""
     seq = _customer_sequences(df, window_days, min_transactions)
-    rows = []
-    for _, row in seq.iterrows():
-        prev_set = set(row["prev_products"].split(","))
-        cur_set = set(row["products"].split(","))
-        for frm in prev_set - cur_set:
-            for to in cur_set - prev_set:
-                rows.append({"from_product": frm, "to_product": to})
-    if not rows:
+    if seq.empty:
         return check(pd.DataFrame(columns=list(SWITCHING_MATRIX.columns)), SWITCHING_MATRIX, allow_empty=True)
-    matrix = pd.DataFrame(rows).groupby(["from_product", "to_product"]).size().reset_index(name="count")
+
+    # Vectorized: expand products into lists, then create all cross pairs
+    seq = seq.copy()
+    seq["prev_list"] = seq["prev_products"].str.split(",")
+    seq["cur_list"] = seq["products"].str.split(",")
+
+    # Explode to get all from->to combinations per row
+    exploded = seq.explode("prev_list").explode("cur_list")
+    exploded = exploded.rename(columns={"prev_list": "from_product", "cur_list": "to_product"})
+
+    # Keep only actual switches (different products)
+    switched = exploded[exploded["from_product"] != exploded["to_product"]]
+
+    if switched.empty:
+        return check(pd.DataFrame(columns=list(SWITCHING_MATRIX.columns)), SWITCHING_MATRIX, allow_empty=True)
+
+    matrix = (
+        switched.groupby(["from_product", "to_product"])
+        .size()
+        .reset_index(name="count")
+    )
     matrix["pct"] = matrix["count"] / matrix["count"].sum()
     return check(matrix, SWITCHING_MATRIX)
 

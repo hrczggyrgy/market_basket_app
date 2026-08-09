@@ -121,6 +121,9 @@ def _render_velocity_repeat(full: pd.DataFrame) -> None:
         return
 
     merged = velocity.merge(repeat, on="stockcode", how="inner")
+    # Add revenue back for sizing/coloring
+    if "revenue" in full.columns:
+        merged = merged.merge(full[["stockcode", "revenue"]], on="stockcode", how="left")
 
     fig = px.scatter(
         merged,
