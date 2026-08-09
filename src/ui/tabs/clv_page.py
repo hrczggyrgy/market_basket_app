@@ -18,18 +18,40 @@ def _render_clv_distribution(customers: pd.DataFrame) -> None:
         show(empty_state("No CLV data"))
         return
 
-    fig = px.histogram(
-        customers,
-        x="predicted_clv",
-        nbins=40,
-        color="clv_segment",
-        color_discrete_map={"Platinum": PALETTE[0], "Gold": PALETTE[2], "Silver": PALETTE[4], "Bronze": PALETTE[1]},
-        marginal="box",
-        hover_data=["customer_id"],
-    )
-    fig.update_layout(xaxis={"title": "Predicted CLV ($)"}, yaxis={"title": "Count"})
-    show(fig)
-    st.caption("Histogram of predicted CLV by segment. Box = IQR/median.")
+    tab1, tab2 = st.tabs(["Histogram", "Violin"])
+
+    with tab1:
+        fig = px.histogram(
+            customers,
+            x="predicted_clv",
+            nbins=40,
+            color="clv_segment",
+            color_discrete_map={"Platinum": PALETTE[0], "Gold": PALETTE[2], "Silver": PALETTE[4], "Bronze": PALETTE[1]},
+            marginal="box",
+            hover_data=["customer_id"],
+        )
+        fig.update_layout(xaxis={"title": "Predicted CLV ($)"}, yaxis={"title": "Count"})
+        show(fig)
+        st.caption("Histogram of predicted CLV by segment. Box = IQR/median.")
+
+    with tab2:
+        fig = px.violin(
+            customers,
+            x="clv_segment",
+            y="predicted_clv",
+            color="clv_segment",
+            color_discrete_map={"Platinum": PALETTE[0], "Gold": PALETTE[2], "Silver": PALETTE[4], "Bronze": PALETTE[1]},
+            box=True,
+            points="outliers",
+            hover_data=["customer_id"],
+        )
+        fig.update_layout(
+            xaxis={"title": "CLV Segment"},
+            yaxis={"title": "Predicted CLV ($)"},
+            showlegend=False,
+        )
+        show(fig)
+        st.caption("Violin plot showing CLV density per segment. Box = IQR/median; width = density.")
 
 
 def _render_clv_with_ci(customers: pd.DataFrame) -> None:
