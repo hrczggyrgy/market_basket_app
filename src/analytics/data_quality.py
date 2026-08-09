@@ -44,6 +44,9 @@ class DataQualityReport:
     incomplete_rows: int = 0
     incomplete_row_details: Dict[str, int] = field(default_factory=dict)
     
+    # Duplicate transactions (exact duplicate rows)
+    duplicate_count: int = 0
+    
     # Volume warning
     volume_warning: Optional[str] = None
     n_transactions: int = 0
@@ -72,6 +75,7 @@ class DataQualityReport:
             "basket_outlier_threshold": self.basket_outlier_threshold,
             "incomplete_rows": self.incomplete_rows,
             "incomplete_row_details": self.incomplete_row_details,
+            "duplicate_count": self.duplicate_count,
             "volume_warning": self.volume_warning,
             "n_transactions": self.n_transactions,
             "n_products": self.n_products,
@@ -90,6 +94,7 @@ class DataQualityReport:
             basket_outlier_threshold=d.get("basket_outlier_threshold", 0),
             incomplete_rows=d.get("incomplete_rows", 0),
             incomplete_row_details=d.get("incomplete_row_details", {}),
+            duplicate_count=d.get("duplicate_count", 0),
             volume_warning=d.get("volume_warning"),
             n_transactions=d.get("n_transactions", 0),
             n_products=d.get("n_products", 0),
@@ -162,7 +167,10 @@ def assess_data_quality(
         incomplete_mask = df[available_required].isna().any(axis=1)
         report.incomplete_rows = int(incomplete_mask.sum())
     
-    # 4. Volume warning based on catalog size
+    # 4. Check for duplicate transactions (exact duplicate rows)
+    report.duplicate_count = int(df.duplicated().sum())
+    
+    # 5. Volume warning based on catalog size
     n_skus = report.n_products
     min_txns = None
     for threshold, min_t in sorted(min_viable_transactions.items()):
