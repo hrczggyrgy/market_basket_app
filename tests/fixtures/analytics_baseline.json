@@ -215,7 +215,7 @@
     ],
     "success": true
   },
-  "calculate_promotional_lift": {
+  "pre_post_promo_lift": {
     "columns": [
       "promo_id",
       "stockcode",

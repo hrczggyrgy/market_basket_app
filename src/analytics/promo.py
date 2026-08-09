@@ -228,7 +228,11 @@ def compute_promo_baseline(
     promo_periods: pd.DataFrame,
     seasonal_period: int = 52,
 ) -> pd.DataFrame:
-    """Product-week baseline via STL decomposition (4-week rolling fallback if short)."""
+    """Product-week baseline via STL decomposition (4-week rolling fallback if short).
+    
+    Promo weeks are masked out before STL fitting to avoid leakage of promotional
+    spikes into the baseline trend/seasonal components.
+    """
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
@@ -245,15 +249,29 @@ def compute_promo_baseline(
     results = []
     for stockcode, sku in weekly.groupby("stockcode", sort=False):
         sku = sku.sort_values("week").reset_index(drop=True)
-        if len(sku) >= seasonal_period * 2:
+        # Mask promo weeks before fitting baseline
+        non_promo_mask = ~sku["is_promo"]
+        units_non_promo = sku.loc[non_promo_mask, "actual_units"].to_numpy(dtype=float)
+        revenue_non_promo = sku.loc[non_promo_mask, "actual_revenue"].to_numpy(dtype=float)
+        
+        if len(sku) >= seasonal_period * 2 and non_promo_mask.sum() >= seasonal_period:
             try:
-                units = sku["actual_units"].to_numpy(dtype=float)
-                revenue = sku["actual_revenue"].to_numpy(dtype=float)
-                baseline_units = np.maximum(STL(units, seasonal=seasonal_period, robust=True).fit().trend, 0)
-                baseline_units += np.maximum(STL(units, seasonal=seasonal_period, robust=True).fit().seasonal, 0)
-                baseline_revenue = np.maximum(STL(revenue, seasonal=seasonal_period, robust=True).fit().trend, 0)
-                baseline_revenue += np.maximum(STL(revenue, seasonal=seasonal_period, robust=True).fit().seasonal, 0)
-            except Exception:
+                # Fit STL on non-promo data only
+                units_interp = np.interp(
+                    np.arange(len(sku)),
+                    np.where(non_promo_mask)[0],
+                    units_non_promo
+                )
+                revenue_interp = np.interp(
+                    np.arange(len(sku)),
+                    np.where(non_promo_mask)[0],
+                    revenue_non_promo
+                )
+                baseline_units = np.maximum(STL(units_interp, seasonal=seasonal_period, robust=True).fit().trend, 0)
+                baseline_units += np.maximum(STL(units_interp, seasonal=seasonal_period, robust=True).fit().seasonal, 0)
+                baseline_revenue = np.maximum(STL(revenue_interp, seasonal=seasonal_period, robust=True).fit().trend, 0)
+                baseline_revenue += np.maximum(STL(revenue_interp, seasonal=seasonal_period, robust=True).fit().seasonal, 0)
+            except (ValueError, RuntimeError, np.linalg.LinAlgError):
                 baseline_units = sku["actual_units"].rolling(4, min_periods=1).mean().shift(1).fillna(sku["actual_units"])
                 baseline_revenue = sku["actual_revenue"].rolling(4, min_periods=1).mean().shift(1).fillna(sku["actual_revenue"])
         else:
@@ -269,12 +287,26 @@ def compute_promo_baseline(
     return check(table, PROMO_BASELINE, allow_empty=True)
 
 
-def calculate_promotional_lift(
+def pre_post_promo_comparison(
     df: pd.DataFrame,
     promo_periods: pd.DataFrame,
     baseline_days: int = 30,
 ) -> pd.DataFrame:
-    """Per-promo DiD-style lift vs the same-duration window before the promo."""
+    """Per-promo pre/post comparison vs the same-duration window before the promo.
+
+    THIS IS NOT A DIFFERENCE-IN-DIFFERENCES (DiD) ESTIMATOR. DiD requires a control group
+    that is unaffected by the treatment. Here we only compare the same SKU's revenue
+    before vs during the promo, which confounds promo effects with seasonality and trends.
+    
+    USE FOR DESCRIPTIVE PRE/POST COMPARISON ONLY. NOT FOR CAUSAL INFERENCE.
+    """
+    import warnings
+    warnings.warn(
+        "pre_post_promo_comparison is a simple pre/post comparison, NOT a DiD estimator. "
+        "Results are confounded by seasonality and trends. NOT for causal inference.",
+        UserWarning,
+        stacklevel=2
+    )
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
@@ -377,8 +409,8 @@ def promo_roi_analysis(
     ci_level: float = 0.9,
     n_resamples: int = 1000,
 ) -> pd.DataFrame:
-    """Promo ROI with a percentile bootstrap CI on incremental revenue."""
-    lift = calculate_promotional_lift(df, promo_periods, baseline_days=baseline_days)
+    """Promo ROI with a percentile bootstrap CI on total incremental revenue."""
+    lift = pre_post_promo_comparison(df, promo_periods, baseline_days=baseline_days)
     if lift.empty:
         return check(pd.DataFrame(columns=list(PROMO_ROI.columns)), PROMO_ROI, allow_empty=True)
     df = df.copy()
@@ -400,9 +432,12 @@ def promo_roi_analysis(
         ci_low = ci_high = float(inc_rev)
         if len(t_baskets) >= 3 and len(c_baskets) >= 3:
             try:
+                # Bootstrap on total incremental revenue (not basket mean)
+                def _total_diff(t, c):
+                    return float(np.sum(t) - np.sum(c))
                 res = bootstrap(
                     (t_baskets, c_baskets),
-                    _diff_means,
+                    _total_diff,
                     n_resamples=n_resamples,
                     confidence_level=ci_level,
                     method="percentile",

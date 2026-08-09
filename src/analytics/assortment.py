@@ -90,7 +90,7 @@ def _evaluate_solution(
             continue
         in_kept = edges["to_product"].isin(kept)
         if in_kept.any():
-            recovered += float(edges.loc[in_kept, "revenue_at_risk"].sum())
+            recovered += float(edges.loc[in_kept, "observed_switching_recovery_proxy"].sum())
 
     unmet = lost - recovered
     expected = kept_revenue + recovered
@@ -147,10 +147,10 @@ def optimize_assortment_milp(
             transactions_df, top_n=top_n
         )
     if demand_transference_df is None or demand_transference_df.empty:
-        dt_edges = pd.DataFrame(columns=["from_product", "to_product", "revenue_at_risk"])
+        dt_edges = pd.DataFrame(columns=["from_product", "to_product", "observed_switching_recovery_proxy"])
     else:
         dt_edges = demand_transference_df[
-            ["from_product", "to_product", "revenue_at_risk"]
+            ["from_product", "to_product", "observed_switching_recovery_proxy"]
         ]
     dt_edges = dt_edges[dt_edges["from_product"].isin(revenue.index) & dt_edges["to_product"].isin(revenue.index)]
 
@@ -168,23 +168,68 @@ def optimize_assortment_milp(
     recovery = np.zeros(n)
     for _, e in dt_edges.iterrows():
         if e["from_product"] in idx and e["to_product"] in idx:
-            recovery[idx[e["from_product"]]] += float(e["revenue_at_risk"])
+            recovery[idx[e["from_product"]]] += float(e["observed_switching_recovery_proxy"])
 
-    coeff = direct + recovery_margin * recovery
-    c = -coeff
+    coeff = direct  # Remove recovery term from direct coefficient - handled via z_ij variables
+
+    # Build z_ij variables for each transference edge
+    edge_list = []
+    edge_recovery = []
+    for _, e in dt_edges.iterrows():
+        if e["from_product"] in idx and e["to_product"] in idx:
+            i = idx[e["from_product"]]
+            j = idx[e["to_product"]]
+            edge_list.append((i, j))
+            edge_recovery.append(float(e["observed_switching_recovery_proxy"]))
+    
+    m = len(edge_list)
+    
+    # New variable structure: x_1...x_n, z_1...z_m
+    # Total variables: n + m
+    total_vars = n + m
+    
+    # Objective: maximize direct*x + recovery_margin * sum(edge_recovery * z)
+    # c is negative because milp minimizes
+    c = np.zeros(total_vars)
+    c[:n] = -direct
+    for k in range(m):
+        c[n + k] = -recovery_margin * edge_recovery[k]
+
+    # Integrality: x_i are binary, z_ij are binary
+    integrality = np.ones(total_vars, dtype=bool)
 
     constraints: list[LinearConstraint] = []
-    rows_skus = np.ones((1, n))
+    # Max SKUs: sum x_i <= max_skus
+    rows_skus = np.zeros((1, total_vars))
+    rows_skus[0, :n] = 1.0
     constraints.append(LinearConstraint(rows_skus, -np.inf, max_skus))
-    rows_cov = revenue.values.astype(float).reshape(1, n)
+    
+    # Coverage: sum revenue_i * x_i >= min_coverage * total_revenue
+    rows_cov = np.zeros((1, total_vars))
+    rows_cov[0, :n] = revenue.values.astype(float)
     constraints.append(LinearConstraint(rows_cov, min_coverage * float(revenue.sum()), np.inf))
+    
+    # Category: at least one SKU per category
     category_of = _category_of(transactions_df)
     for cat in dict.fromkeys(category_of.get(p) for p in products if category_of.get(p)):
         cat_skus = [i for i, p in enumerate(products) if category_of.get(p) == cat]
         if cat_skus:
-            row = np.zeros(n)
-            row[cat_skus] = 1
+            row = np.zeros((1, total_vars))
+            row[0, cat_skus] = 1.0
             constraints.append(LinearConstraint(row, 1, np.inf))
+    
+    # z_ij constraints: z_ij <= x_j and z_ij <= 1 - x_i
+    for k, (i, j) in enumerate(edge_list):
+        # z_ij <= x_j  =>  z_ij - x_j <= 0
+        row1 = np.zeros(total_vars)
+        row1[n + k] = 1.0
+        row1[j] = -1.0
+        constraints.append(LinearConstraint(row1, -np.inf, 0.0))
+        # z_ij <= 1 - x_i  =>  z_ij + x_i <= 1
+        row2 = np.zeros(total_vars)
+        row2[n + k] = 1.0
+        row2[i] = 1.0
+        constraints.append(LinearConstraint(row2, -np.inf, 1.0))
 
     relaxed_to: float | None = None
     coverage_attempt = min_coverage
@@ -195,7 +240,7 @@ def optimize_assortment_milp(
         )
         result = milp(
             c=c,
-            integrality=np.ones(n),
+            integrality=integrality,
             bounds=Bounds(0, 1),
             constraints=constraints,
             options={"time_limit": time_limit_seconds},
@@ -210,6 +255,7 @@ def optimize_assortment_milp(
     if result is None or not result.success:
         raise RuntimeError(f"MILP solver failed: {result.message}")
 
+    # Only the first n variables are x_i (product selection)
     selected = [p for i, p in enumerate(products) if result.x[i] > 0.5]
     metrics: dict[str, object] = {
         "solver_status": MILP_STATUS.get(result.status, "unknown"),

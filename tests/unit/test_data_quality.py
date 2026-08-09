@@ -74,21 +74,6 @@ def test_basket_outliers_detected() -> None:
     assert "T20" in report.basket_outlier_txn_ids  # The large basket
 
 
-def test_duplicate_transactions_detected() -> None:
-    df = pd.DataFrame({
-        "date": ["2024-01-01", "2024-01-01", "2024-01-02"],
-        "transaction_id": ["T1", "T1", "T2"],
-        "stockcode": ["A", "A", "B"],
-        "product": ["Product A", "Product A", "Product B"],
-        "customer_id": ["C1", "C1", "C2"],
-        "price": [10.0, 10.0, 20.0],
-        "quantity": [1, 1, 1],
-    })
-    report = assess_data_quality(df)
-    assert report.duplicate_count == 1
-    assert "T1" in report.duplicate_txn_ids
-
-
 def test_incomplete_rows_detected() -> None:
     df = pd.DataFrame({
         "date": ["2024-01-01", "2024-01-01", None],
@@ -149,8 +134,6 @@ def test_generate_quality_summary() -> None:
         basket_outlier_txn_ids=["T1", "T2"],
         basket_outlier_threshold=10,
         basket_size_percentile=0.99,
-        duplicate_count=5,
-        duplicate_txn_ids=["T1", "T2", "T3", "T4", "T5"],
         incomplete_rows=3,
         incomplete_row_details={"date": 2, "price": 1},
         volume_warning="Low volume",
@@ -158,7 +141,6 @@ def test_generate_quality_summary() -> None:
     summary = generate_quality_summary(report)
     assert "Low-frequency products" in summary
     assert "Basket size outliers" in summary
-    assert "Duplicate transactions" in summary
     assert "Incomplete rows" in summary
     assert "Volume warning" in summary
 
@@ -170,8 +152,6 @@ def test_report_serialization() -> None:
         basket_outlier_txn_ids=["T1"],
         basket_size_percentile=0.99,
         basket_outlier_threshold=10,
-        duplicate_txn_ids=["T1"],
-        duplicate_count=1,
         incomplete_rows=2,
         incomplete_row_details={"date": 2},
         volume_warning="Test warning",
@@ -188,8 +168,6 @@ def test_report_serialization() -> None:
     assert restored.basket_outlier_txn_ids == ["T1"]
     assert restored.basket_size_percentile == 0.99
     assert restored.basket_outlier_threshold == 10
-    assert restored.duplicate_txn_ids == ["T1"]
-    assert restored.duplicate_count == 1
     assert restored.incomplete_rows == 2
     assert restored.incomplete_row_details == {"date": 2}
     assert restored.volume_warning == "Test warning"

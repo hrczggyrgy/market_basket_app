@@ -6,15 +6,15 @@ Public API
   estimate_cross_price_elasticity
 - kvi: compute_kvi_score
 - price_curves: diagnose_price_curves_1d, diagnose_price_curves_multivariate
-- causal: estimate_iv_elasticity, estimate_rdd_elasticity,
-  estimate_synthetic_control_elasticity, causal_uplift_t_s
+- causal: local_price_response, iv_elasticity_manual_2sls,
+  synthetic_control_estimate, causal_uplift_t_s
 """
 
 from src.analytics.pricing.causal import (
     causal_uplift_t_s,
-    estimate_iv_elasticity,
-    estimate_rdd_elasticity,
-    estimate_synthetic_control_elasticity,
+    iv_elasticity_manual_2sls,
+    local_price_response,
+    synthetic_control_estimate,
 )
 from src.analytics.pricing.elasticity import (
     classify_elasticity_confidence,
@@ -42,7 +42,7 @@ __all__ = [
     "diagnose_price_curves_multivariate",
     # causal
     "causal_uplift_t_s",
-    "estimate_iv_elasticity",
-    "estimate_rdd_elasticity",
-    "estimate_synthetic_control_elasticity",
+    "iv_elasticity_manual_2sls",
+    "local_price_response",
+    "synthetic_control_estimate",
 ]

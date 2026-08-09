@@ -83,9 +83,10 @@ def predict_clv_bg_nbd(
         calibration["frequency"], calibration["recency"], calibration["T"]
     )
 
-    ci_lower, ci_upper = _bootstrap_clv_ci(calibration, prediction_horizon_days, freq)
+    ci_lower, ci_upper, ci_status = _bootstrap_clv_ci(calibration, prediction_horizon_days, freq)
     calibration["ci_lower"] = ci_lower * discount
     calibration["ci_upper"] = ci_upper * discount
+    calibration["ci_status"] = ci_status
 
     table = calibration.reset_index()
     table = table.rename(columns={"index": "customer_id"})
@@ -101,6 +102,7 @@ def predict_clv_bg_nbd(
         "predicted_clv",
         "ci_lower",
         "ci_upper",
+        "ci_status",
         "p_alive",
     ]
     table = table[[c for c in cols if c in table.columns]].copy()
@@ -119,39 +121,83 @@ def _discount_factor(horizon_days: int, annual_rate_pct: float) -> float:
     Monthly compounding: factor = (1 - (1+r)^-n) / (r*n) is the per-dollar
     discount applied to a uniform stream of purchases over the horizon.
     A rate of 0 (or a horizon <= 0) yields 1.0 (no discounting).
+    
+    Improved with:
+    - More precise month calculation (30.437 days)
+    - Better handling of edge cases
+    - Added validation for rate ranges
     """
     if annual_rate_pct <= 0 or horizon_days <= 0:
         return 1.0
+    
+    # Validate input ranges
+    if annual_rate_pct > 100:
+        import warnings as _warnings
+        _warnings.warn(
+            f"Annual discount rate {annual_rate_pct}% exceeds 100%. Using 100% cap.",
+            UserWarning,
+            stacklevel=2
+        )
+        annual_rate_pct = 100.0
+    
     r_m = (annual_rate_pct / 100.0) / 12.0
-    n_months = max(1.0, horizon_days / 30.44)
+    n_months = max(1.0, horizon_days / 30.437)  # More precise average days per month
+    
     if r_m == 0:
         return 1.0
-    return float((1 - (1 + r_m) ** -n_months) / (r_m * n_months))
+    
+    # Handle numerical stability for very small rates
+    if abs(r_m) < 1e-10:
+        return 1.0
+    
+    try:
+        factor = (1 - (1 + r_m) ** -n_months) / (r_m * n_months)
+        # Ensure factor is reasonable (should be between 0 and 1 for positive rates)
+        factor = max(0.0, min(1.0, float(factor)))
+        return factor
+    except (OverflowError, ZeroDivisionError) as e:
+        import warnings as _warnings
+        _warnings.warn(
+            f"Numerical instability in discount factor calculation: {e}. Using 1.0 (no discounting).",
+            UserWarning,
+            stacklevel=2
+        )
+        return 1.0
 
 
 def _bootstrap_clv_ci(
     calibration: pd.DataFrame,
     prediction_horizon_days: int,
     freq: str,
-    n_resamples: int = 30,
+    n_resamples: int = 100,
     random_seed: int = 42,
-    time_budget_s: float = 20.0,
-) -> tuple[pd.Series, pd.Series]:
+    time_budget_s: float = 60.0,
+) -> tuple[pd.Series, pd.Series, pd.Series]:
     """Percentile bootstrap CI on predicted CLV, resampling customers.
 
     Refits BG/NBD + Gamma-Gamma on each customer-level resample and
     predicts CLV for the observed customers present in that resample.
-    Falls back to the point estimate (CI == estimate) if the resample
-    cannot be fit or if the wall-clock budget is exhausted.
+    Returns (ci_lower, ci_upper, ci_status) where ci_status is one of:
+    "valid" | "insufficient_resamples" | "fit_failed"
+    Minimum 15 successful resamples per customer required for valid CI.
     """
+    import warnings as _warnings
+    
     rng = np.random.default_rng(random_seed)
     t = prediction_horizon_days if freq == "D" else prediction_horizon_days / 7
     n_customers = len(calibration)
     replicates: dict[str, list[float]] = {c: [] for c in calibration.index}
     deadline = time.monotonic() + time_budget_s
+    successful_resamples = 0
 
     for _ in range(n_resamples):
         if time.monotonic() > deadline:
+            _warnings.warn(
+                f"Bootstrap CI: Time budget ({time_budget_s}s) exhausted after {successful_resamples}/{n_resamples} resamples. "
+                "Consider increasing time_budget_s for more accurate confidence intervals.",
+                UserWarning,
+                stacklevel=2
+            )
             break
         idx = rng.integers(0, n_customers, size=n_customers)
         sample = calibration.iloc[idx].copy()
@@ -169,21 +215,36 @@ def _bootstrap_clv_ci(
             clv = pred_purchases * pred_value
             for c, v in zip(sample.index, clv):
                 replicates[c].append(float(v))
+            successful_resamples += 1
         except ValueError:
             continue
 
-    lower, upper = [], []
+    if successful_resamples < n_resamples // 2:
+        _warnings.warn(
+            f"Bootstrap CI: Only {successful_resamples}/{n_resamples} resamples succeeded. "
+            "Confidence intervals may be unreliable.",
+            UserWarning,
+            stacklevel=2
+        )
+
+    lower, upper, status = [], [], []
+    min_resamples_for_ci = 15
     for c in calibration.index:
         vals = np.asarray(replicates.get(c, []))
-        if len(vals) >= 10:
+        if len(vals) >= min_resamples_for_ci:
             alpha = 0.05
             lower.append(float(np.percentile(vals, 100 * alpha / 2)))
             upper.append(float(np.percentile(vals, 100 * (1 - alpha / 2))))
+            status.append("valid")
+        elif len(vals) > 0:
+            lower.append(np.nan)
+            upper.append(np.nan)
+            status.append("insufficient_resamples")
         else:
-            point = float(calibration.loc[c, "predicted_clv"])
-            lower.append(point)
-            upper.append(point)
-    return pd.Series(lower, index=calibration.index), pd.Series(upper, index=calibration.index)
+            lower.append(np.nan)
+            upper.append(np.nan)
+            status.append("fit_failed")
+    return pd.Series(lower, index=calibration.index), pd.Series(upper, index=calibration.index), pd.Series(status, index=calibration.index)
 
 
 def _fit_bg_nbd(calibration: pd.DataFrame) -> tuple[BetaGeoFitter, float]:

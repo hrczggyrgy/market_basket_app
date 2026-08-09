@@ -98,7 +98,9 @@ class ValidationHarness:
 
         # Add-on
         from src.analytics.addon import get_addon_recommendations
-        _run_and_store("addon", "get_addon_recommendations", get_addon_recommendations, self.df, anchor="SKU001", top_n=10, min_lift=1.2)
+        # Use a real product from the data as anchor
+        anchor_sku = self.df["stockcode"].iloc[0] if len(self.df) > 0 else "SKU001"
+        _run_and_store("addon", "get_addon_recommendations", get_addon_recommendations, self.df, anchor=anchor_sku, top_n=10, min_lift=1.2)
 
         # Switching
         from src.analytics.switching import compute_switching_matrix, get_customer_loyalty_metrics
@@ -154,7 +156,7 @@ class ValidationHarness:
         from src.analytics.promo import (
             detect_promotions,
             compute_promo_baseline,
-            calculate_promotional_lift,
+            pre_post_promo_comparison,
             compute_incrementality_waterfall,
             promo_roi_analysis,
         )
@@ -162,7 +164,7 @@ class ValidationHarness:
         baseline_df = None
         if promo_periods.success:
             baseline_df = _run_and_store("promo", "compute_promo_baseline", compute_promo_baseline, self.df, promo_periods=promo_periods.diagnostics.get("output", promo_periods.output_shape and self.df))
-            _run_and_store("promo", "calculate_promotional_lift", calculate_promotional_lift, self.df, promo_periods=promo_periods.diagnostics.get("output", promo_periods.output_shape and self.df))
+            _run_and_store("promo", "pre_post_promo_comparison", pre_post_promo_comparison, self.df, promo_periods=promo_periods.diagnostics.get("output", promo_periods.output_shape and self.df))
             if baseline_df.success:
                 _run_and_store("promo", "compute_incrementality_waterfall", compute_incrementality_waterfall, baseline_df.diagnostics.get("output", baseline_df.output_shape and self.df))
             _run_and_store("promo", "promo_roi_analysis", promo_roi_analysis, self.df, promo_periods=promo_periods.diagnostics.get("output", promo_periods.output_shape and self.df))
@@ -173,15 +175,6 @@ class ValidationHarness:
         if clv.success:
             _run_and_store("clv", "compute_clv_customer_df", compute_clv_customer_df, self.df)
 
-        # Transference
-        from src.analytics.transference import (
-            compute_demand_transference_matrix,
-            compute_substitutable_demand_percentage,
-            delist_impact_analysis,
-            build_substitution_matrix_mnl,
-            compute_cross_price_elasticity,
-            compute_recovery_hhi,
-        )
         # Transference
         from src.analytics.transference import (
             compute_demand_transference_matrix,
@@ -210,9 +203,14 @@ class ValidationHarness:
             evaluate_assortment,
             compare_assortment_scenarios,
         )
-        _run_and_store("assortment", "optimize_assortment_heuristic", optimize_assortment_heuristic, self.df)
-        _run_and_store("assortment", "evaluate_assortment", evaluate_assortment, [], self.df)
-        _run_and_store("assortment", "compare_assortment_scenarios", compare_assortment_scenarios, self.df, [])
+        assort = _run_and_store("assortment", "optimize_assortment_heuristic", optimize_assortment_heuristic, self.df)
+        if assort.success:
+            kept_skus = assort.diagnostics.get("output", assort.output_shape and self.df)[0] if isinstance(assort.diagnostics.get("output"), tuple) else self.df["stockcode"].unique()[:10]
+            _run_and_store("assortment", "evaluate_assortment", evaluate_assortment, kept_skus, self.df)
+            _run_and_store("assortment", "compare_assortment_scenarios", compare_assortment_scenarios, self.df, kept_skus)
+        else:
+            _run_and_store("assortment", "evaluate_assortment", evaluate_assortment, self.df["stockcode"].unique()[:10], self.df)
+            _run_and_store("assortment", "compare_assortment_scenarios", compare_assortment_scenarios, self.df, self.df["stockcode"].unique()[:10])
 
         # CDT
         from src.analytics.cdt import (
@@ -250,8 +248,8 @@ class ValidationHarness:
             estimate_hierarchical_elasticity,
             compute_kvi_score,
             diagnose_price_curves_1d,
-            estimate_iv_elasticity,
-            estimate_rdd_elasticity,
+            iv_elasticity_manual_2sls,
+            local_price_response,
             causal_uplift_t_s,
         )
         elast = _run_and_store("pricing", "estimate_loglog_elasticity", estimate_loglog_elasticity, self.df)
@@ -259,8 +257,10 @@ class ValidationHarness:
             _run_and_store("pricing", "estimate_hierarchical_elasticity", estimate_hierarchical_elasticity, self.df)
             _run_and_store("pricing", "compute_kvi_score", compute_kvi_score, self.df, elast.diagnostics.get("output", elast.output_shape and self.df))
         _run_and_store("pricing", "diagnose_price_curves_1d", diagnose_price_curves_1d, self.df)
-        _run_and_store("pricing", "estimate_iv_elasticity", estimate_iv_elasticity, self.df, "cost")
-        _run_and_store("pricing", "estimate_rdd_elasticity", estimate_rdd_elasticity, self.df)
+        # Only run IV if cost column exists
+        if "cost" in self.df.columns:
+            _run_and_store("pricing", "iv_elasticity_manual_2sls", iv_elasticity_manual_2sls, self.df, "cost")
+        _run_and_store("pricing", "local_price_response", local_price_response, self.df)
 
         return self.results
 

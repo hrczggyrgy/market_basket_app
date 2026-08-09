@@ -20,6 +20,7 @@ def survival_analysis(
     transactions_df: pd.DataFrame,
     prediction_horizon_days: int = 90,
     freq: str = "D",
+    as_of_date: Optional[pd.Timestamp] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Survival analysis for customer churn/retention.
@@ -31,6 +32,8 @@ def survival_analysis(
         transactions_df: Transaction data
         prediction_horizon_days: Horizon for survival prediction
         freq: 'D' for daily, 'W' for weekly
+        as_of_date: If provided, compute features ONLY on data up to this date
+            (temporal holdout to prevent leakage). Use for training on historical data.
 
     Returns:
         (survival_predictions_df, diagnostics_df)
@@ -41,6 +44,10 @@ def survival_analysis(
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
+
+    # Apply temporal holdout if as_of_date provided
+    if as_of_date is not None:
+        df = df[df["date"] <= pd.Timestamp(as_of_date)]
 
     # Prepare duration data
     snapshot_date = df["date"].max()
@@ -142,8 +149,15 @@ def survival_analysis(
 def kaplan_meier_estimates(
     transactions_df: pd.DataFrame,
     observation_window_days: int = 365,
+    as_of_date: Optional[pd.Timestamp] = None,
 ) -> pd.DataFrame:
     """Compute Kaplan-Meier survival estimates for all customers.
+
+    Args:
+        transactions_df: Transaction data
+        observation_window_days: Days in observation window
+        as_of_date: If provided, compute features ONLY on data up to this date
+            (temporal holdout to prevent leakage).
 
     Returns:
         DataFrame with timeline and survival_prob columns.
@@ -154,6 +168,10 @@ def kaplan_meier_estimates(
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
+
+    # Apply temporal holdout if as_of_date provided
+    if as_of_date is not None:
+        df = df[df["date"] <= pd.Timestamp(as_of_date)]
 
     snapshot = df["date"].max()
     cutoff = snapshot - pd.Timedelta(observation_window_days, unit="D")

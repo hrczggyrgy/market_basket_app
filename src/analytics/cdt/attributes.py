@@ -19,7 +19,11 @@ def derive_price_tier(
     n_tiers: int = 3,
     labels: tuple[str, ...] = ("Budget", "Mainstream", "Premium"),
 ) -> pd.Series:
-    """Tier products by robust median selling price (robust to promo spikes)."""
+    """Tier products by robust median selling price (robust to promo spikes).
+
+    NOTE: Price tiers are RELATIVE to the current catalog (quantile-based).
+    They are NOT absolute price thresholds. Use for relative positioning only.
+    """
     med_price = transactions_df.groupby(product_col)["price"].median()
     effective_q = min(n_tiers, med_price.nunique())
     if effective_q < 2 or med_price.nunique() == 1:
@@ -34,13 +38,25 @@ def derive_velocity_tier(
     n_tiers: int = 3,
     labels: tuple[str, ...] = ("Slow-Moving", "Medium", "Fast-Moving"),
 ) -> pd.Series:
-    """Tier products by units sold per active selling month."""
+    """Tier products by units sold per TOTAL observation month (including zero months).
+
+    Also computes active_rate = active_months / total_months as a separate metric.
+    """
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["month"] = df["date"].dt.to_period("M")
+    
+    total_months = df["month"].nunique()
     total_units = df.groupby(product_col)["quantity"].sum()
     active_months = df.groupby(product_col)["month"].nunique()
-    velocity = (total_units / active_months.replace(0, np.nan)).rename("monthly_units")
+    
+    # Velocity: total units per TOTAL observation month (including zero months)
+    velocity = (total_units / total_months).rename("velocity_per_month")
+    
+    # Active rate: fraction of months with sales
+    active_rate = (active_months / total_months).rename("active_rate")
+    
+    # Tier velocity
     effective_q = min(n_tiers, velocity.nunique())
     if velocity.nunique() <= 1:
         return pd.Series([labels[0]] * len(velocity), index=velocity.index, name="velocity_tier")
@@ -80,23 +96,32 @@ def derive_seasonality_class(
     ``seasonal_cv_threshold`` with at least 6 active months marks Seasonal.
     Products sold in fewer than ``sporadic_support_threshold`` of all months
     are Sporadic; otherwise Steady.
+
+    FIX: CV is calculated using ALL months (including zeros for missing months),
+    not just active months. This prevents inflating CV for sporadic products.
     """
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["month"] = df["date"].dt.to_period("M")
-    all_months = df["month"].nunique()
+    all_months = sorted(df["month"].unique())
+    n_months = len(all_months)
+    
+    # Create complete monthly grid with zeros for missing months
     monthly = df.groupby([product_col, "month"])["quantity"].sum().reset_index()
-
+    
     classes: dict[str, str] = {}
     for prod, grp in monthly.groupby(product_col):
-        n_active = grp["month"].nunique()
-        demand = grp["quantity"].to_numpy()
+        # Create full monthly series including zeros
+        demand_series = grp.set_index("month").reindex(all_months, fill_value=0)["quantity"]
+        demand = demand_series.to_numpy()
         annual_mean = demand.mean()
         if annual_mean > 0:
             cv = float(demand.std(ddof=1) / annual_mean)
         else:
             cv = 0.0
-        if n_active / all_months < sporadic_support_threshold:
+        
+        n_active = (demand > 0).sum()
+        if n_active / n_months < sporadic_support_threshold:
             classes[prod] = "Sporadic"
         elif cv > seasonal_cv_threshold and n_active >= 6:
             classes[prod] = "Seasonal"
@@ -110,14 +135,23 @@ def derive_substitution_tier(
     product_col: str = "stockcode",
     n_tiers: int = 3,
     labels: tuple[str, ...] = ("Unique", "Moderately-Substitutable", "Highly-Substitutable"),
+    external_dt: Optional[pd.DataFrame] = None,
 ) -> pd.Series:
-    """Tier products by substitutability via demand transference SDP scores."""
+    """Tier products by substitutability via demand transference SDP scores.
+
+    WARNING: If external_dt is not provided, this uses the SAME data for
+    transference computation, creating circularity with CDT clustering.
+    To avoid circularity, pass pre-computed transference from a holdout period.
+    """
     from src.analytics.transference import (
         compute_demand_transference_matrix,
         compute_substitutable_demand_percentage,
     )
 
-    dt = compute_demand_transference_matrix(transactions_df)
+    if external_dt is not None:
+        dt = external_dt
+    else:
+        dt = compute_demand_transference_matrix(transactions_df)
     if dt.empty:
         return pd.Series(
             [labels[0]] * len(transactions_df[product_col].unique()),
@@ -135,8 +169,22 @@ def derive_substitution_tier(
 def build_transaction_derived_attributes(
     transactions_df: pd.DataFrame,
     product_col: str = "stockcode",
+    train_period_end: pd.Timestamp | str | None = None,
 ) -> pd.DataFrame:
-    """Assemble the CDT attribute table for every product."""
+    """Assemble the CDT attribute table for every product.
+
+    Args:
+        transactions_df: Full transaction dataset
+        product_col: Product column name
+        train_period_end: If provided, compute attributes ONLY on data up to this date
+            (temporal holdout to prevent circularity). Use for training CDT on historical data.
+    """
+    if train_period_end is not None:
+        # Filter to training period only
+        transactions_df = transactions_df.copy()
+        transactions_df["date"] = pd.to_datetime(transactions_df["date"])
+        transactions_df = transactions_df[transactions_df["date"] <= pd.Timestamp(train_period_end)]
+    
     tiers: dict[str, pd.Series] = {
         "price_tier": derive_price_tier(transactions_df, product_col),
         "velocity_tier": derive_velocity_tier(transactions_df, product_col),

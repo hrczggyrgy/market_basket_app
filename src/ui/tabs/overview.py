@@ -142,8 +142,13 @@ def _render_revenue_trend(df: pd.DataFrame) -> None:
     series = revenue.groupby(key).sum().sort_index()
     series.index = pd.to_datetime(series.index)
 
-    # SPC analysis
-    spc = spc_revenue_trend(series)
+    # SPC analysis with error handling
+    try:
+        spc = spc_revenue_trend(series)
+    except Exception as e:
+        st.error(f"Failed to compute SPC analysis: {e}")
+        st.info("This may be due to insufficient data points. Try a different time period.")
+        return
 
     fig = new_fig()
     # UCL/LCL bands

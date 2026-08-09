@@ -40,10 +40,6 @@ class DataQualityReport:
     basket_size_percentile: float = 0.99
     basket_outlier_threshold: int = 0
     
-    # Duplicate transactions
-    duplicate_txn_ids: List[str] = field(default_factory=list)
-    duplicate_count: int = 0
-    
     # Incomplete rows (missing required fields)
     incomplete_rows: int = 0
     incomplete_row_details: Dict[str, int] = field(default_factory=dict)
@@ -62,7 +58,6 @@ class DataQualityReport:
         return any([
             len(self.low_freq_products) > 0,
             len(self.basket_outlier_txn_ids) > 0,
-            self.duplicate_count > 0,
             self.incomplete_rows > 0,
             self.volume_warning is not None,
         ])
@@ -75,8 +70,6 @@ class DataQualityReport:
             "basket_outlier_txn_ids": self.basket_outlier_txn_ids,
             "basket_size_percentile": self.basket_size_percentile,
             "basket_outlier_threshold": self.basket_outlier_threshold,
-            "duplicate_txn_ids": self.duplicate_txn_ids,
-            "duplicate_count": self.duplicate_count,
             "incomplete_rows": self.incomplete_rows,
             "incomplete_row_details": self.incomplete_row_details,
             "volume_warning": self.volume_warning,
@@ -95,8 +88,6 @@ class DataQualityReport:
             basket_outlier_txn_ids=d.get("basket_outlier_txn_ids", []),
             basket_size_percentile=d.get("basket_size_percentile", 0.99),
             basket_outlier_threshold=d.get("basket_outlier_threshold", 0),
-            duplicate_txn_ids=d.get("duplicate_txn_ids", []),
-            duplicate_count=d.get("duplicate_count", 0),
             incomplete_rows=d.get("incomplete_rows", 0),
             incomplete_row_details=d.get("incomplete_row_details", {}),
             volume_warning=d.get("volume_warning"),
@@ -161,17 +152,7 @@ def assess_data_quality(
         outliers = basket_sizes[basket_sizes > threshold]
         report.basket_outlier_txn_ids = outliers.index.tolist()
     
-    # 3. Check for duplicate transactions (same transaction_id + stockcode + customer_id + date + price + qty)
-    # We consider a row duplicate if all required columns match
-    dup_cols = ["transaction_id", "stockcode", "customer_id", "date", "price", "quantity"]
-    available_dup_cols = [c for c in dup_cols if c in df.columns]
-    if len(available_dup_cols) >= 3:  # Need at least transaction_id + stockcode + one more
-        dup_mask = df.duplicated(subset=available_dup_cols, keep="first")
-        report.duplicate_count = int(dup_mask.sum())
-        if report.duplicate_count > 0:
-            report.duplicate_txn_ids = df.loc[dup_mask, "transaction_id"].tolist()
-    
-    # 4. Check for incomplete rows (missing required fields)
+    # 3. Check for incomplete rows (missing required fields)
     required_cols = ["transaction_id", "stockcode", "customer_id", "date", "price", "quantity"]
     available_required = [c for c in required_cols if c in df.columns]
     if available_required:
@@ -181,7 +162,7 @@ def assess_data_quality(
         incomplete_mask = df[available_required].isna().any(axis=1)
         report.incomplete_rows = int(incomplete_mask.sum())
     
-    # 5. Volume warning based on catalog size
+    # 4. Volume warning based on catalog size
     n_skus = report.n_products
     min_txns = None
     for threshold, min_t in sorted(min_viable_transactions.items()):
@@ -249,12 +230,6 @@ def generate_quality_summary(report: DataQualityReport) -> str:
             f"(threshold: {report.basket_outlier_threshold} items/basket)."
         )
     
-    if report.duplicate_count > 0:
-        lines.append(
-            f"⚠️ **Duplicate transactions**: {report.duplicate_count} duplicate rows detected "
-            f"(same transaction_id + stockcode + customer_id + date + price + qty)."
-        )
-    
     if report.incomplete_rows > 0:
         details = ", ".join(f"{col}: {cnt}" for col, cnt in report.incomplete_row_details.items())
         lines.append(
@@ -269,3 +244,88 @@ def generate_quality_summary(report: DataQualityReport) -> str:
         lines.append("✅ No data quality issues detected.")
     
     return "\n\n".join(lines)
+
+
+def compute_quality_score(report: DataQualityReport) -> float:
+    """Compute a 0-1 quality score from a DataQualityReport.
+    
+    Score components:
+    - Volume adequacy: 30% weight
+    - Low-frequency products: 25% weight  
+    - Basket outliers: 15% weight
+    - Incomplete rows: 20% weight
+    - Coverage: 10% weight
+    
+    Returns:
+        Float in [0, 1] where 1 = perfect quality
+    """
+    score = 1.0
+    
+    # Volume adequacy (30%)
+    if report.volume_warning:
+        # Extract actual vs recommended
+        try:
+            parts = report.volume_warning.split(": ")
+            actual_str = parts[1].split(" transactions")[0]
+            actual = int(actual_str.replace(",", ""))
+            recommended_str = parts[2].split(" for")[0]
+            recommended = int(recommended_str.replace(",", ""))
+            volume_ratio = min(1.0, actual / recommended)
+            score -= 0.30 * (1.0 - volume_ratio)
+        except (ValueError, IndexError, AttributeError):
+            score -= 0.15  # Default penalty if parsing fails
+    
+    # Low-frequency products (25%)
+    n_low_freq = len(report.low_freq_products)
+    n_total = max(1, report.n_products)
+    low_freq_ratio = n_low_freq / n_total
+    score -= 0.25 * min(1.0, low_freq_ratio * 2)  # Cap at 2x penalty
+    
+    # Basket outliers (15%)
+    n_outliers = len(report.basket_outlier_txn_ids)
+    n_transactions = max(1, report.n_transactions)
+    outlier_ratio = n_outliers / n_transactions
+    score -= 0.15 * min(1.0, outlier_ratio * 10)  # Cap penalty
+    
+    # Incomplete rows (20%)
+    incomplete_ratio = report.incomplete_rows / max(1, report.n_transactions)
+    score -= 0.20 * min(1.0, incomplete_ratio * 100)
+    
+    # Coverage bonus (10% - if we have category/brand/etc)
+    coverage_bonus = 0.0
+    # This would be set by the caller if they have optional columns
+    
+    return max(0.0, min(1.0, score + coverage_bonus))
+
+
+def attach_quality_metadata(
+    df: pd.DataFrame, 
+    quality_score: float,
+    quality_report: Optional[DataQualityReport] = None
+) -> pd.DataFrame:
+    """Attach quality metadata to a DataFrame output.
+    
+    Adds a '_quality' column with JSON-serialized quality info.
+    """
+    import json
+    result = df.copy()
+    meta = {
+        "quality_score": round(quality_score, 3),
+        "timestamp": pd.Timestamp.now().isoformat(),
+    }
+    if quality_report:
+        meta["report"] = quality_report.to_dict()
+    result["_quality"] = [json.dumps(meta)] * len(result)
+    return result
+
+
+def get_quality_score(df: pd.DataFrame) -> Optional[float]:
+    """Extract quality score from a DataFrame with _quality column."""
+    if "_quality" not in df.columns or len(df) == 0:
+        return None
+    try:
+        import json
+        meta = json.loads(df["_quality"].iloc[0])
+        return meta.get("quality_score")
+    except (json.JSONDecodeError, KeyError, IndexError):
+        return None

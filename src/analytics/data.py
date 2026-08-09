@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from src.analytics.schemas import TRANSACTIONS
-from src.analytics.data_quality import DataQualityReport, assess_data_quality
+from src.analytics.data_quality import DataQualityReport, assess_data_quality, DataQualityError
 
 REQUIRED_COLUMNS = list(TRANSACTIONS.columns)
 
@@ -41,15 +41,27 @@ def detect_column_mapping(columns: list[str]) -> dict[str, str]:
     return mapping
 
 
-def _clean_id(value: str) -> str:
-    """Render IDs from numeric sources without a trailing '.0' (85123.0 -> 85123)."""
-    value = value.strip()
+def _clean_id(value: str | float | None) -> str | pd.NA:
+    """Render IDs from numeric sources without a trailing '.0' (85123.0 -> 85123).
+    
+    Returns pd.NA for missing/NaN values instead of the string "nan".
+    """
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return pd.NA
+    value = str(value).strip()
+    if value == "" or value.lower() == "nan":
+        return pd.NA
     try:
         if "." in value and float(value).is_integer():
             return str(int(float(value)))
     except ValueError:
         pass
     return value
+
+
+def _is_valid_id(series: pd.Series) -> pd.Series:
+    """Check if IDs are valid (not pd.NA and not empty string)."""
+    return series.notna() & series.ne("")
 
 
 def load_transactions(
@@ -61,7 +73,14 @@ def load_transactions(
 
     Returns (df, warning_message, dropped_rows, quality_report). The returned df satisfies the
     TRANSACTIONS contract. Missing optional columns are simply absent.
+    
+    Enhanced with consistent data quality validation and error handling.
     """
+    from src.analytics.config import get_config
+    from src.analytics.data_quality import DataQualityError
+    
+    config = get_config()
+    
     if isinstance(source, (str, Path)):
         raw = pd.read_csv(source, low_memory=False)
     else:
@@ -76,31 +95,59 @@ def load_transactions(
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df["price"] = pd.to_numeric(df["price"], errors="coerce")
     df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce")
-    df["customer_id"] = df["customer_id"].apply(lambda v: _clean_id(str(v)))
-    df["stockcode"] = df["stockcode"].apply(lambda v: _clean_id(str(v)))
-    df["transaction_id"] = df["transaction_id"].apply(lambda v: _clean_id(str(v)))
+    df["customer_id"] = df["customer_id"].apply(_clean_id)
+    df["stockcode"] = df["stockcode"].apply(_clean_id)
+    df["transaction_id"] = df["transaction_id"].apply(_clean_id)
 
     return_mask = (df["price"] < 0) | (df["quantity"] < 0)
     return_count = int(return_mask.sum())
     return_value = float(abs((df.loc[return_mask, "price"] * df.loc[return_mask, "quantity"]).sum())) if return_count else 0.0
 
     before = len(df)
-    valid = (
+    # Transaction-level validity (required for all analyses)
+    transaction_valid = (
         df["date"].notna()
         & df["price"].notna()
         & df["price"].gt(0)
         & df["quantity"].notna()
         & df["quantity"].gt(0)
+        & df["transaction_id"].notna()
         & df["transaction_id"].ne("")
+        & df["stockcode"].notna()
         & df["stockcode"].ne("")
     )
-    df = df.loc[valid].copy()
-    df["quantity"] = df["quantity"].astype(int)
+    # Customer-level validity (required for customer analytics)
+    customer_valid = df["customer_id"].notna() & df["customer_id"].ne("")
+    
+    # For general transaction analyses, only transaction_valid is required
+    # Customer analytics will use the intersection
+    df = df.loc[transaction_valid].copy()
+    # Preserve fractional quantities (e.g., weighted goods)
+    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce")
     dropped = int(before - len(df))
 
-    for extra in ("category", "brand", "size", "flavor", "variant", "promo_flag", "cost", "is_online", "channel"):
-        if extra in raw.columns:
-            df[extra] = raw.loc[df.index, extra]
+    # Optional columns: auto-detect via same canonical mapping (case-insensitive)
+    optional_candidates = {
+        "category": ["category", "cat", "product_category", "category_name"],
+        "brand": ["brand", "brand_name", "manufacturer"],
+        "size": ["size", "package_size", "unit_size"],
+        "flavor": ["flavor", "flavour", "variant", "flavor_name"],
+        "variant": ["variant", "variant_name", "flavor"],
+        "promo_flag": ["promo_flag", "promo", "is_promo", "on_promotion", "promotion"],
+        "cost": ["cost", "unit_cost", "cost_price", "wholesale_price"],
+        "is_online": ["is_online", "online", "channel_online", "ecommerce"],
+        "channel": ["channel", "sales_channel", "channel_name", "store_type"],
+    }
+    # Use the same canonical mapping normalization for optional columns
+    raw_cols_normalized = {c.strip().lower(): c for c in raw.columns}
+    for canonical, candidates in optional_candidates.items():
+        for candidate in candidates:
+            candidate_norm = candidate.strip().lower()
+            if candidate_norm in raw_cols_normalized:
+                src_col = raw_cols_normalized[candidate_norm]
+                if src_col in raw.columns:
+                    df[canonical] = raw.loc[df.index, src_col]
+                break
 
     warning = ""
     if dropped > 0:
@@ -113,6 +160,10 @@ def load_transactions(
         quality_report = assess_data_quality(df)
         if quality_report.volume_warning:
             warning = (warning + "; " if warning else "") + quality_report.volume_warning
+        
+        # Consistent quality gate enforcement
+        if getattr(config, "fail_on_quality_issues", False) and quality_report.has_issues():
+            raise DataQualityError(quality_report)
 
     return df.reset_index(drop=True), warning, dropped, quality_report
 
@@ -171,8 +222,25 @@ def is_positive_price_series(series: pd.Series) -> bool:
 def safe_divide(
     numerator: float | np.ndarray, denominator: float | np.ndarray
 ) -> float | np.ndarray:
-    """Division that yields 0.0 where the denominator is zero."""
+    """Division that yields 0.0 where the denominator is zero.
+    
+    Enhanced with numerical stability checks and warnings for edge cases.
+    """
+    import warnings as _warnings
+    
     denominator = np.asarray(denominator, dtype=float)
+    numerator = np.asarray(numerator, dtype=float)
+    
+    # Check for near-zero denominators
+    near_zero_mask = np.abs(denominator) < 1e-10
+    if np.any(near_zero_mask):
+        _warnings.warn(
+            f"Division by near-zero values detected in {np.sum(near_zero_mask)} cases. "
+            "Results may be numerically unstable.",
+            UserWarning,
+            stacklevel=2
+        )
+    
     with np.errstate(divide="ignore", invalid="ignore"):
         result = np.divide(numerator, denominator, out=np.zeros_like(denominator), where=denominator != 0)
     return result
@@ -221,6 +289,9 @@ def add_segment_columns(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame with added segment columns if available
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     df = df.copy()
     segments_added = []
     
@@ -233,8 +304,8 @@ def add_segment_columns(df: pd.DataFrame) -> pd.DataFrame:
             seg_map = rfm_seg.set_index("customer_id")["segment"].to_dict()
             df["rfm_segment"] = df["customer_id"].map(seg_map)
             segments_added.append("rfm_segment")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"RFM segmentation failed: {e}")
     
     # Try behavioral segment
     try:
@@ -244,7 +315,10 @@ def add_segment_columns(df: pd.DataFrame) -> pd.DataFrame:
             seg_map = beh_seg.set_index("customer_id")["segment"].to_dict()
             df["behavioral_segment"] = df["customer_id"].map(seg_map)
             segments_added.append("behavioral_segment")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Behavioral segmentation failed: {e}")
+    
+    if not segments_added:
+        logger.info("No segment columns could be added")
     
     return df

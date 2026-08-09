@@ -9,13 +9,17 @@ from src.analytics.schemas import VALUE_BASED_SEGMENTS, check
 
 
 def value_based_segmentation(
-    transactions_df: pd.DataFrame, prediction_horizon_days: int = 90
+    transactions_df: pd.DataFrame, 
+    prediction_horizon_days: int = 90,
+    as_of_date: Optional[pd.Timestamp] = None,
 ) -> pd.DataFrame:
     """Value-based segmentation with predicted CLV.
 
     Args:
         transactions_df: Transaction data
         prediction_horizon_days: Horizon for prediction; used to define historical vs future
+        as_of_date: If provided, compute features ONLY on data up to this date
+            (temporal holdout to prevent leakage). Use for training on historical data.
 
     Returns:
         DataFrame with features, predicted CLV, and value_segment per customer.
@@ -23,6 +27,10 @@ def value_based_segmentation(
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
+
+    # Apply temporal holdout if as_of_date provided
+    if as_of_date is not None:
+        df = df[df["date"] <= pd.Timestamp(as_of_date)]
 
     snapshot_date = df["date"].max()
     cutoff_date = snapshot_date - pd.Timedelta(prediction_horizon_days, unit="D")

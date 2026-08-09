@@ -13,9 +13,9 @@ from sklearn.preprocessing import StandardScaler
 
 from src.analytics.schemas import (
     CAUSAL_UPLIFT,
-    IV_ELASTICITY,
-    RDD_ELASTICITY,
-    SYNTHETIC_CONTROL,
+    IV_ELASTICITY_EXTERNAL,
+    LOCAL_PRICE_RESPONSE,
+    SYNTHETIC_CONTROL_ELASTICITY,
     check,
 )
 
@@ -52,7 +52,7 @@ def _check_propensity_overlap(
 from sklearn.pipeline import make_pipeline
 
 
-def estimate_iv_elasticity(
+def iv_elasticity_manual_2sls(
     transactions_df: pd.DataFrame,
     instrument_col: str,
     price_col: str = "price",
@@ -63,11 +63,25 @@ def estimate_iv_elasticity(
     min_price_variation: float = 0.05,
     product_col: str = "stockcode",
 ) -> pd.DataFrame:
-    """2SLS IV elasticity using cost shifter as instrument.
+    """Two-Stage Least Squares IV elasticity using a MANUAL 2SLS procedure.
 
+    WARNING: This is a manual 2SLS implementation, NOT a full IV inference framework.
+    - Requires a valid external instrument (e.g., cost shifter, tax change, exchange rate shock)
+    - Standard POS schema does NOT include cost or other valid instruments
+    - Standard errors are HC3 (heteroskedasticity-robust) but NOT proper 2SLS SEs
+    - First-stage F-statistic is reported; weak instruments (F < 10) are flagged
+    - Results should be interpreted as descriptive, NOT causal inference
+    
     Stage 1: log(price) ~ log(instrument)
     Stage 2: log(qty) ~ log(price_hat)
     """
+    import warnings
+    warnings.warn(
+        "iv_elasticity_manual_2sls uses manual 2SLS; standard errors are NOT proper 2SLS SEs. "
+        "Results are descriptive, not causal inference. Requires valid external instrument.",
+        UserWarning,
+        stacklevel=2
+    )
     df = transactions_df.copy()
     df[date_col] = pd.to_datetime(df[date_col])
     df["revenue"] = df[price_col] * df[qty_col]
@@ -96,11 +110,13 @@ def estimate_iv_elasticity(
         if price_cv < min_price_variation or instr_cv < min_price_variation:
             continue
 
-        log_price = np.log(weekly["avg_price"].replace(0, np.nan).dropna())
-        log_qty = np.log(weekly.loc[log_price.index, "total_qty"].replace(0, np.nan).dropna())
-        log_instr = np.log(
-            weekly.loc[log_price.index, "avg_instrument"].replace(0, np.nan).dropna()
-        )
+        # Validate data before log transformation
+        if (weekly[["avg_price", "total_qty", "avg_instrument"]] == 0).any().any():
+            continue  # Skip products with zero values
+        
+        log_price = np.log(weekly["avg_price"])
+        log_qty = np.log(weekly["total_qty"])
+        log_instr = np.log(weekly["avg_instrument"])
 
         if len(log_price) < min_periods:
             continue
@@ -144,13 +160,13 @@ def estimate_iv_elasticity(
         )
 
     if not results:
-        return check(pd.DataFrame(columns=list(IV_ELASTICITY.columns)), IV_ELASTICITY, allow_empty=True)
+        return check(pd.DataFrame(columns=list(IV_ELASTICITY_EXTERNAL.columns)), IV_ELASTICITY_EXTERNAL, allow_empty=True)
 
-    table = pd.DataFrame(results, columns=list(IV_ELASTICITY.columns))
-    return check(table, IV_ELASTICITY)
+    table = pd.DataFrame(results, columns=list(IV_ELASTICITY_EXTERNAL.columns))
+    return check(table, IV_ELASTICITY_EXTERNAL)
 
 
-def estimate_rdd_elasticity(
+def local_price_response(
     transactions_df: pd.DataFrame,
     price_col: str = "price",
     qty_col: str = "quantity",
@@ -162,7 +178,25 @@ def estimate_rdd_elasticity(
     freq: str = "W",
     min_periods: int = 10,
 ) -> pd.DataFrame:
-    """RDD elasticity at psychological price thresholds."""
+    """Local price response around psychological price thresholds (NOT a true RDD).
+
+    THIS IS NOT A REGRESSION DISCONTINUITY DESIGN (RDD). It is a local weighted regression
+    around psychological price points with the following limitations:
+    - No treatment assignment rule changes discontinuously at the threshold
+    - No local randomization assumption  
+    - Just a descriptive local price elasticity near round prices
+    - Standard errors are NOT valid RDD inference
+    - No placebo tests, no bandwidth sensitivity analysis
+    
+    USE FOR EXPLORATORY ANALYSIS ONLY.
+    """
+    import warnings
+    warnings.warn(
+        "local_price_response is NOT a valid RDD. It is a descriptive local regression "
+        "around psychological price points. Results are NOT causal estimates.",
+        UserWarning,
+        stacklevel=2
+    )
     df = transactions_df.copy()
     df[date_col] = pd.to_datetime(df[date_col])
     df["revenue"] = df[price_col] * df[qty_col]
@@ -187,8 +221,12 @@ def estimate_rdd_elasticity(
         if len(weekly) < min_periods:
             continue
 
-        log_price = np.log(weekly["avg_price"].replace(0, np.nan).dropna())
-        log_qty = np.log(weekly.loc[log_price.index, "total_qty"].replace(0, np.nan).dropna())
+        # Validate data before log transformation
+        if (weekly[["avg_price", "total_qty"]] == 0).any().any():
+            continue  # Skip products with zero values
+        
+        log_price = np.log(weekly["avg_price"])
+        log_qty = np.log(weekly["total_qty"])
 
         if len(log_price) < min_periods:
             continue
@@ -233,13 +271,13 @@ def estimate_rdd_elasticity(
             )
 
     if not results:
-        return check(pd.DataFrame(columns=list(RDD_ELASTICITY.columns)), RDD_ELASTICITY, allow_empty=True)
+        return check(pd.DataFrame(columns=list(LOCAL_PRICE_RESPONSE.columns)), LOCAL_PRICE_RESPONSE, allow_empty=True)
 
-    table = pd.DataFrame(results, columns=list(RDD_ELASTICITY.columns))
-    return check(table, RDD_ELASTICITY)
+    table = pd.DataFrame(results, columns=list(LOCAL_PRICE_RESPONSE.columns))
+    return check(table, LOCAL_PRICE_RESPONSE)
 
 
-def estimate_synthetic_control_elasticity(
+def synthetic_control_estimate(
     transactions_df: pd.DataFrame,
     treatment_product: str,
     donor_products: List[str],
@@ -250,8 +288,26 @@ def estimate_synthetic_control_elasticity(
     pre_periods: int = 20,
     post_periods: int = 10,
     product_col: str = "stockcode",
+    promo_col: str | None = "promo_flag",
 ) -> pd.DataFrame:
-    """Synthetic Control Method: weights donors to match pre-treatment trajectory."""
+    """Synthetic Control Method: weights donors to match pre-treatment trajectory.
+
+    WARNING: This is a basic synthetic control implementation with limitations:
+    - Promo periods are masked before fitting (if promo_col provided)
+    - NO placebo tests are performed
+    - NO permutation inference
+    - Standard errors are NOT provided
+    - Weights are chosen to minimize pre-period RMSE without regularization
+    
+    USE FOR EXPLORATORY ANALYSIS ONLY. NOT FOR CAUSAL INFERENCE.
+    """
+    import warnings
+    warnings.warn(
+        "synthetic_control_estimate is a basic implementation without placebo tests, "
+        "permutation inference, or proper standard errors. Results are NOT causal estimates.",
+        UserWarning,
+        stacklevel=2
+    )
     df = transactions_df.copy()
     df[date_col] = pd.to_datetime(df[date_col])
     df["revenue"] = df[price_col] * df[qty_col]
@@ -259,7 +315,11 @@ def estimate_synthetic_control_elasticity(
     weekly_all = (
         df.set_index(date_col)
         .groupby([product_col, pd.Grouper(freq="W")])
-        .agg(avg_price=(price_col, "mean"), total_qty=(qty_col, "sum"))
+        .agg(
+            avg_price=(price_col, "mean"),
+            total_qty=(qty_col, "sum"),
+            has_promo=(promo_col, "max") if promo_col and promo_col in df.columns else (price_col, "first")
+        )
         .dropna()
         .reset_index()
     )
@@ -268,6 +328,10 @@ def estimate_synthetic_control_elasticity(
 
     products = [treatment_product] + donor_products
     weekly = weekly_all[weekly_all[product_col].isin(products)].copy()
+
+    # Mask promo periods before fitting
+    if "has_promo" in weekly.columns:
+        weekly = weekly[weekly["has_promo"] == 0].copy()
 
     weekly["log_price"] = np.log(weekly["avg_price"].clip(lower=1e-6))
     weekly["log_qty"] = np.log(weekly["total_qty"].clip(lower=1e-6))
@@ -333,8 +397,8 @@ def estimate_synthetic_control_elasticity(
     for i, d in enumerate(donor_matrix.index):
         rows.append({"metric": f"weight_{d}", "value": float(weights[i])})
 
-    table = pd.DataFrame(rows, columns=list(SYNTHETIC_CONTROL.columns))
-    return check(table, SYNTHETIC_CONTROL)
+    table = pd.DataFrame(rows, columns=list(SYNTHETIC_CONTROL_ELASTICITY.columns))
+    return check(table, SYNTHETIC_CONTROL_ELASTICITY)
 
 
 def causal_uplift_t_s(

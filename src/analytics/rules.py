@@ -61,8 +61,30 @@ def run_fpgrowth(
     basket: pd.DataFrame,
     min_support: float = 0.01,
     max_len: int = 3,
+    max_skus: int = 5000,
 ) -> pd.DataFrame:
-    """Frequent itemsets via mlxtend FP-Growth, with itemset length added."""
+    """Frequent itemsets via mlxtend FP-Growth, with itemset length added.
+
+    Args:
+        basket: Binary basket matrix (transaction_id x stockcode)
+        min_support: Minimum support threshold
+        max_len: Maximum itemset length
+        max_skus: Maximum number of SKUs to process (scalability guard)
+    """
+    n_skus = basket.shape[1]
+    if n_skus > max_skus:
+        # Sample SKUs by support to reduce dimensionality
+        sku_support = basket.mean().sort_values(ascending=False)
+        top_skus = sku_support.head(max_skus).index
+        basket = basket[top_skus]
+        import warnings
+        warnings.warn(
+            f"FP-Growth: SKU count ({n_skus}) exceeds max_skus ({max_skus}). "
+            f"Using top {max_skus} SKUs by support.",
+            UserWarning,
+            stacklevel=2
+        )
+
     freq = fpgrowth(basket, min_support=min_support, use_colnames=True, max_len=max_len)
     if freq.empty:
         return check(pd.DataFrame(columns=list(FREQUENT_ITEMSETS.columns)), FREQUENT_ITEMSETS, allow_empty=True)
@@ -157,13 +179,69 @@ def flag_redundant_rules(rules: pd.DataFrame) -> pd.DataFrame:
     return check(result, RULES)
 
 
+def benjamini_hochberg_fdr(p_values: np.ndarray, alpha: float = 0.05) -> np.ndarray:
+    """Benjamini-Hochberg procedure for FDR control.
+    
+    Returns q-values (FDR-adjusted p-values).
+    
+    Args:
+        p_values: Array of p-values
+        alpha: Target FDR level
+        
+    Returns:
+        Array of q-values (same shape as input)
+    """
+    n = len(p_values)
+    if n == 0:
+        return np.array([])
+    
+    # Sort p-values and keep original indices
+    sorted_idx = np.argsort(p_values)
+    sorted_p = p_values[sorted_idx]
+    
+    # Compute q-values
+    q_values = np.zeros(n)
+    for i, p in enumerate(sorted_p):
+        # BH: q_i = min(p_i * n / (i+1), 1) for i from 1 to n
+        q = p * n / (i + 1)
+        q_values[sorted_idx[i]] = min(q, 1.0)
+    
+    # Monotonicity correction: q_i <= q_{i+1}
+    for i in range(n - 2, -1, -1):
+        if q_values[i] > q_values[i + 1]:
+            q_values[i] = q_values[i + 1]
+    
+    return q_values
+
+
+def add_fdr_correction(rules: pd.DataFrame, p_value_col: str = "p_value") -> pd.DataFrame:
+    """Add Benjamini-Hochberg FDR corrected q-values to rules DataFrame.
+    
+    Args:
+        rules: DataFrame of association rules
+        p_value_col: Column name containing p-values for lift test
+        
+    Returns:
+        Rules DataFrame with added 'q_value' column
+    """
+    check(rules, RULES, allow_empty=True)
+    if rules.empty or p_value_col not in rules.columns:
+        return rules
+    
+    p_values = rules[p_value_col].values
+    q_values = benjamini_hochberg_fdr(p_values)
+    result = rules.copy()
+    result["q_value"] = q_values
+    return check(result, RULES)
+
+
 def bootstrap_lift_ci(
     df: pd.DataFrame,
     rules: pd.DataFrame,
     metric: str = "confidence",
     min_threshold: float = 0.05,
     max_len: int = 3,
-    n_resamples: int = 25,
+    n_resamples: int = 1000,
     seed: int = 42,
 ) -> pd.DataFrame:
     """Customer-level bootstrap CI on lift for each rule.
@@ -180,6 +258,7 @@ def bootstrap_lift_ci(
 
     rng = np.random.default_rng(seed)
     customers = np.asarray(df["customer_id"].unique())
+    cust_groups = {c: g for c, g in df.groupby("customer_id")}
 
     def rule_key(row: pd.Series) -> tuple[frozenset, frozenset]:
         return (frozenset(row["antecedents"]), frozenset(row["consequents"]))
@@ -188,7 +267,9 @@ def bootstrap_lift_ci(
 
     lifts: dict[int, list[float]] = {i: [] for i in rules.index}
     for _ in range(n_resamples):
-        sample = df[df["customer_id"].isin(rng.choice(customers, size=len(customers), replace=True))]
+        cust_idx = rng.integers(0, len(customers), size=len(customers))
+        frames = [cust_groups[c] for c in customers[cust_idx]]
+        sample = pd.concat(frames, ignore_index=True)
         if sample.empty:
             continue
         basket = create_basket_matrix(sample)
@@ -242,15 +323,21 @@ def rules_to_table(rules: pd.DataFrame, product_lookup: pd.DataFrame | None = No
 def aggregate_rules_to_categories(
     rules: pd.DataFrame,
     product_lookup: pd.DataFrame,
+    transactions_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Aggregate SKU-level association rules to category-level rules.
     
     Maps antecedents and consequents to their categories, then aggregates
-    by (antecedent_category, consequent_category) computing weighted averages.
+    by (antecedent_category, consequent_category) computing basket-count-based lift.
+    
+    Category lift is computed from basket counts: 
+    lift = P(antecedent_cat & consequent_cat) / (P(antecedent_cat) * P(consequent_cat))
+    where probabilities are estimated from transaction basket frequencies.
     
     Args:
         rules: DataFrame of SKU-level rules (RULES contract)
         product_lookup: DataFrame with stockcode -> category mapping
+        transactions_df: Optional transaction data for computing basket-based category lift
         
     Returns:
         DataFrame validated against CATEGORY_RULES contract
@@ -271,18 +358,74 @@ def aggregate_rules_to_categories(
     rules_cat["antecedent_category"] = rules_cat["antecedents"].map(map_to_category)
     rules_cat["consequent_category"] = rules_cat["consequents"].map(map_to_category)
     
+    # Compute basket-based category lift if transaction data provided
+    if transactions_df is not None:
+        # Create basket matrix for category-level analysis
+        from src.analytics.rules import create_basket_matrix
+        cat_basket = transactions_df.copy()
+        cat_basket["category"] = cat_basket["stockcode"].map(cat_map)
+        cat_basket = cat_basket.dropna(subset=["category"])
+        
+        # Per-basket category presence
+        cat_basket_matrix = (
+            cat_basket.groupby(["transaction_id", "category"])
+            .size()
+            .unstack(fill_value=0)
+            .clip(upper=1)
+            .astype(bool)
+        )
+        
+        n_baskets = len(cat_basket_matrix)
+        cat_support = cat_basket_matrix.mean()
+        
+        def compute_cat_lift(row):
+            ante_cats = row["antecedent_category"].split(" + ")
+            cons_cats = row["consequent_category"].split(" + ")
+            
+            # P(antecedent_cat) = all antecedent categories present
+            if len(ante_cats) == 1:
+                ante_mask = cat_basket_matrix[ante_cats[0]]
+            else:
+                ante_mask = cat_basket_matrix[ante_cats].all(axis=1)
+            
+            if len(cons_cats) == 1:
+                cons_mask = cat_basket_matrix[cons_cats[0]]
+            else:
+                cons_mask = cat_basket_matrix[cons_cats].all(axis=1)
+            
+            both_mask = ante_mask & cons_mask
+            p_both = both_mask.mean()
+            p_ante = ante_mask.mean()
+            p_cons = cons_mask.mean()
+            
+            if p_ante > 0 and p_cons > 0:
+                return float(p_both / (p_ante * p_cons))
+            return 1.0
+        
+        rules_cat["cat_lift"] = rules_cat.apply(compute_cat_lift, axis=1)
+    else:
+        # Fallback to SKU-level lift mean (but warn)
+        import warnings
+        warnings.warn(
+            "aggregate_rules_to_categories: No transactions_df provided. "
+            "Category lift computed as mean of SKU-level lifts (not basket-based).",
+            UserWarning,
+            stacklevel=2
+        )
+        rules_cat["cat_lift"] = rules_cat["lift"]
+    
     # Aggregate by category pair
     agg = rules_cat.groupby(["antecedent_category", "consequent_category"]).agg(
         rule_count=("lift", "count"),
         support=("support", "mean"),
         confidence=("confidence", "mean"),
-        lift=("lift", "mean"),
-        avg_lift=("lift", "mean"),
+        lift=("lift", "mean"),  # SKU-level mean lift
+        avg_lift=("cat_lift", "mean"),  # Basket-based category lift (renamed for schema compatibility)
         max_lift=("lift", "max"),
     ).reset_index()
     
-    # Sort by lift (primary), then rule_count
-    agg = agg.sort_values(["lift", "rule_count"], ascending=[False, False]).reset_index(drop=True)
+    # Sort by basket-based category lift (primary), then rule_count
+    agg = agg.sort_values(["avg_lift", "rule_count"], ascending=[False, False]).reset_index(drop=True)
     
     return check(agg, CATEGORY_RULES, allow_empty=True)
 

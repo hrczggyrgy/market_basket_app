@@ -47,7 +47,7 @@ CATEGORY_PRICE_PARAMS = {
     "Pet": (2.2, 0.4),         # $6-20
 }
 
-# Segment definitions with realistic parameters
+# Segment definitions with realistic parameters and category preferences
 SEGMENTS = {
     "champion": {
         "weight": 0.10,
@@ -57,6 +57,7 @@ SEGMENTS = {
         "price_sensitivity": 0.7,
         "promo_responsiveness": 0.3,
         "churn_prob": 0.0001,
+        "category_preferences": {"Coffee": 1.5, "Bakery": 1.3, "Personal Care": 1.2},  # Premium preferences
     },
     "regular": {
         "weight": 0.25,
@@ -66,6 +67,7 @@ SEGMENTS = {
         "price_sensitivity": 1.0,
         "promo_responsiveness": 0.5,
         "churn_prob": 0.0005,
+        "category_preferences": {"Dairy": 1.2, "Snacks": 1.1, "Household": 1.0},  # Balanced preferences
     },
     "occasional": {
         "weight": 0.35,
@@ -75,6 +77,7 @@ SEGMENTS = {
         "price_sensitivity": 1.3,
         "promo_responsiveness": 0.8,
         "churn_prob": 0.002,
+        "category_preferences": {"Snacks": 1.4, "Beverages": 1.3, "Bakery": 1.2},  # Impulse purchases
     },
     "at_risk": {
         "weight": 0.20,
@@ -84,6 +87,7 @@ SEGMENTS = {
         "price_sensitivity": 1.5,
         "promo_responsiveness": 1.0,
         "churn_prob": 0.01,
+        "category_preferences": {"Household": 0.8, "Pet": 0.7},  # Reduced engagement
     },
     "new": {
         "weight": 0.10,
@@ -93,6 +97,7 @@ SEGMENTS = {
         "price_sensitivity": 1.1,
         "promo_responsiveness": 0.6,
         "churn_prob": 0.001,
+        "category_preferences": {"Coffee": 1.2, "Beverages": 1.3, "Snacks": 1.1},  # Exploratory
     },
 }
 
@@ -212,23 +217,54 @@ def _promo_windows(catalog: pd.DataFrame, n_days: int, seed: int) -> dict[str, l
     return windows
 
 
-def _seasonal_demand(day_of_year: int, category: str) -> float:
-    """Return seasonal multiplier for category on given day (1-365)."""
+def _seasonal_demand(day_of_year: int, category: str, year: int = 2024) -> float:
+    """Return seasonal multiplier for category on given day (1-366 for leap years).
+    
+    Enhanced with:
+    - Leap year support (366 days)
+    - More realistic holiday patterns
+    - Business day awareness
+    """
+    # Handle leap years
+    days_in_year = 366 if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0) else 365
+    
     # Convert to radians (2π per year)
-    t = 2 * np.pi * day_of_year / 365.0
+    t = 2 * np.pi * day_of_year / days_in_year
 
-    # Base seasonal patterns
+    # Enhanced seasonal patterns with more realistic holiday effects
     seasonal = {
         "Coffee": 1.0 + 0.15 * np.cos(t - np.pi/2),      # Peak in winter
         "Beverages": 1.0 + 0.20 * np.sin(t),             # Peak in summer
-        "Bakery": 1.0 + 0.10 * np.cos(t - np.pi),        # Peak in holidays
+        "Bakery": 1.0 + 0.12 * np.cos(t - np.pi),        # Peak in holidays
         "Snacks": 1.0 + 0.10 * np.sin(t + np.pi/4),      # Slight summer peak
         "Dairy": 1.0 + 0.05 * np.cos(t),                 # Mild seasonal
         "Household": 1.0 + 0.08 * np.cos(t - np.pi),     # Holiday cleaning
         "Personal Care": 1.0 + 0.07 * np.sin(t),         # Mild summer
         "Pet": 1.0,                                      # No seasonality
     }
-    return seasonal.get(category, 1.0)
+    
+    base_multiplier = seasonal.get(category, 1.0)
+    
+    # Add holiday spikes for key shopping periods
+    # Approximate major holiday periods (simplified for demo)
+    holiday_multipliers = {
+        "Christmas": (day_of_year >= 359 and day_of_year <= 365) or (day_of_year <= 2),
+        "Thanksgiving": 330 <= day_of_year <= 336,  # Late November
+        "BlackFriday": 332 <= day_of_year <= 333,   # Day after Thanksgiving
+        "SummerSale": 180 <= day_of_year <= 186,    # Early July
+    }
+    
+    holiday_boost = 1.0
+    if holiday_multipliers["Christmas"]:
+        holiday_boost = 1.3  # Strong holiday shopping
+    elif holiday_multipliers["Thanksgiving"]:
+        holiday_boost = 1.2
+    elif holiday_multipliers["BlackFriday"]:
+        holiday_boost = 1.4  # Major shopping event
+    elif holiday_multipliers["SummerSale"]:
+        holiday_boost = 1.15
+    
+    return base_multiplier * holiday_boost
 
 
 def _weekly_demand(day_of_week: int, category: str) -> float:
@@ -273,10 +309,17 @@ def _pick_basket_products(
     basket_size: int,
     rng: np.random.Generator,
     affinity_boost: float = 3.0,
+    category_preferences: dict = None,
 ) -> list[str]:
-    """Pick remaining products for basket using category affinity."""
+    """Pick remaining products for basket using category affinity and segment preferences."""
     weights = catalog["popularity"].to_numpy().copy()
     available = set(catalog["product"]) - set(picked)
+    
+    # Apply segment category preferences
+    if category_preferences:
+        for cat, multiplier in category_preferences.items():
+            cat_mask = catalog["category"] == cat
+            weights[cat_mask] *= multiplier
 
     while len(picked) < basket_size and available:
         # Boost affinity categories
@@ -396,7 +439,7 @@ def generate_transactions(
             purchase_prob = base_rate * lifecycle["purchase_mult"]
 
             # Seasonal and weekly adjustments
-            purchase_prob *= _seasonal_demand(doy, "overall") if False else 1.0
+            purchase_prob *= _seasonal_demand(doy, "Coffee", year=2024) if False else 1.0
             # Apply category-agnostic weekly pattern (we'll handle per-category in basket)
 
             if rng.random() > purchase_prob:
@@ -411,22 +454,28 @@ def generate_transactions(
             basket_size = int(rng.poisson(max(1.5, base_basket * lifecycle["basket_mult"])))
             basket_size = max(1, min(basket_size, 12))
 
-            # Pick products with affinity logic
+            # Pick products with affinity logic and segment preferences
             picked: list[str] = []
+            
+            # Get segment category preferences
+            cat_prefs = seg_params.get("category_preferences", {})
 
             # Theme-based bundle (15% chance)
             if rng.random() < 0.15 and AFFINITY_THEMES:
                 theme_name = rng.choice(list(AFFINITY_THEMES.keys()))
                 theme_cats = AFFINITY_THEMES[theme_name]
                 for cat in theme_cats:
-                    cat_products = catalog[catalog["category"] == cat]["product"].tolist()
-                    if cat_products and len(picked) < basket_size:
-                        prod = rng.choice(cat_products)
-                        if prod not in picked:
-                            picked.append(prod)
+                    # Apply segment preference multiplier
+                    pref_multiplier = cat_prefs.get(cat, 1.0)
+                    if rng.random() < pref_multiplier and len(picked) < basket_size:
+                        cat_products = catalog[catalog["category"] == cat]["product"].tolist()
+                        if cat_products:
+                            prod = rng.choice(cat_products)
+                            if prod not in picked:
+                                picked.append(prod)
 
-            # Fill rest of basket
-            picked = _pick_basket_products(catalog, picked, basket_size, rng)
+            # Fill rest of basket with segment preferences
+            picked = _pick_basket_products(catalog, picked, basket_size, rng, category_preferences=cat_prefs)
 
             state["last_purchase_day"] = day_idx
             state["purchase_count"] += 1

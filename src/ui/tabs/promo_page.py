@@ -8,11 +8,11 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.analytics.promo import (
-    calculate_promotional_lift,
     compute_cannibalization_analysis,
     compute_incrementality_waterfall,
     compute_promo_baseline,
     detect_promotions,
+    pre_post_promo_lift,
     promo_roi_analysis,
     promotion_timing_analysis,
 )
@@ -247,7 +247,7 @@ def render(df: pd.DataFrame) -> None:
         _render_promo_periods(promos)
 
     with tab2:
-        lift = calculate_promotional_lift(df, promo_periods=promos)
+        lift = pre_post_promo_lift(df, promo_periods=promos)
         _render_lift_analysis(lift)
 
     with tab3:

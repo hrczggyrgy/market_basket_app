@@ -58,7 +58,11 @@ def perform_hierarchical_clustering(
 
 
 def _safe_linkage_method(method: str) -> str:
-    return "ward" if method in {"phi", "jaccard", "pmi", "cosine_tfidf", "ensemble"} else method
+    # Ward linkage only valid for Euclidean distances
+    # For arbitrary similarities (phi, jaccard, pmi, etc.), use average linkage
+    if method in {"ward"}:
+        return "ward"
+    return "average"  # default to average linkage for non-Euclidean distances
 
 
 def _infer_sim_method(method: str) -> str:
@@ -83,7 +87,8 @@ def find_optimal_clusters_sklearn(
     if len(condensed) < 1 or len(similarity_matrix) < 3:
         return check(pd.DataFrame(columns=list(CDT_OPTIMAL_K.columns)), CDT_OPTIMAL_K, allow_empty=True)
 
-    linkage_matrix = linkage(condensed, method="ward")
+    # Use average linkage for non-Euclidean distances
+    linkage_matrix = linkage(condensed, method="average")
     n = len(similarity_matrix)
     upper = min(max_clusters, n - 1)
     rows: list[dict[str, float | int]] = []

@@ -24,11 +24,22 @@ from src.analytics.schemas import (
 
 def _create_behavioral_features_pandas(
     transactions_df: pd.DataFrame,
+    as_of_date: Optional[pd.Timestamp] = None,
 ) -> pd.DataFrame:
-    """Create behavioral features for each customer using pandas."""
+    """Create behavioral features for each customer using pandas.
+
+    Args:
+        transactions_df: Transaction data
+        as_of_date: If provided, compute features ONLY on data up to this date
+            (temporal holdout to prevent leakage).
+    """
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
+
+    # Apply temporal holdout if as_of_date provided
+    if as_of_date is not None:
+        df = df[df["date"] <= pd.Timestamp(as_of_date)]
 
     cat_col_behav = "category" if "category" in df.columns else "stockcode"
 
@@ -65,6 +76,7 @@ def behavioral_segmentation(
     return_metrics: bool = False,
     method: str = "kmeans",
     interactive: bool = True,  # WF-5: adaptive n_init
+    as_of_date: Optional[pd.Timestamp] = None,
 ) -> pd.DataFrame | tuple[pd.DataFrame, dict]:
     """Behavioral segmentation based on purchase patterns.
 
@@ -74,12 +86,14 @@ def behavioral_segmentation(
         return_metrics: Also return cluster quality metrics dict
         method: Clustering algorithm ('kmeans', 'gmm')
         interactive: If True, use n_init=3 for fast interactive runs; if False, use n_init=10 for quality
+        as_of_date: If provided, compute features ONLY on data up to this date
+            (temporal holdout to prevent leakage). Use for training on historical data.
 
     Returns:
         DataFrame with cluster assignments; if return_metrics is True,
         returns (DataFrame, metrics_dict).
     """
-    behavioral = _create_behavioral_features_pandas(transactions_df)
+    behavioral = _create_behavioral_features_pandas(transactions_df, as_of_date=as_of_date)
 
     feature_cols = [c for c in behavioral.columns if c != "customer_id"]
     n_samples = len(behavioral)

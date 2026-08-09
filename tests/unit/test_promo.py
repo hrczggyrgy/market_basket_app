@@ -6,7 +6,6 @@ import pytest
 
 from src.analytics.promo import (
     build_uplift_dataset,
-    calculate_promotional_lift,
     check_propensity_overlap,
     compute_cannibalization_analysis,
     compute_category_cannibalization,
@@ -18,6 +17,7 @@ from src.analytics.promo import (
     evaluate_uplift_model,
     halo_effect_analysis,
     mark_promo_transactions,
+    pre_post_promo_lift,
     promotion_timing_analysis,
     promo_roi_analysis,
     score_uplift_by_customer,
@@ -190,9 +190,12 @@ def test_compute_promo_baseline_empty(crafted_df: pd.DataFrame) -> None:
     check(baseline, PROMO_BASELINE, allow_empty=True)
 
 
-def test_calculate_promotional_lift(crafted_df: pd.DataFrame) -> None:
+def test_pre_post_promo_lift(crafted_df: pd.DataFrame) -> None:
     promos = detect_promotions(crafted_df)
-    lift = calculate_promotional_lift(crafted_df, promos)
+    lift = pre_post_promo_lift(crafted_df, promos)
+    # Validate against the contract (PROMO_LIFT)
+    from src.analytics.schemas import PROMO_LIFT
+    PROMO_LIFT.validate(lift)
     check(lift, PROMO_LIFT)
     row = lift.iloc[0]
     assert row["stockcode"] == "A"

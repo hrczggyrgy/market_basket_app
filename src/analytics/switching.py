@@ -1,8 +1,11 @@
-"""Product switching analysis.
+"""Observed Product Switching Analysis.
 
 Tracks consecutive purchases per customer: when a customer buys product B in
 a later transaction after having bought A earlier (within a window), that is
-a switch A -> B.
+an observed switch A -> B.
+
+WARNING: This is an OBSERVED correlation, NOT a causal counterfactual estimate.
+It assumes switching behavior is invariant to delisting (no strategic response).
 """
 
 from __future__ import annotations
@@ -16,13 +19,31 @@ def _customer_sequences(
     df: pd.DataFrame,
     window_days: int,
     min_transactions: int,
+    seasonal_adjustment: bool = False,
 ) -> pd.DataFrame:
+    """Extract customer purchase sequences with optional seasonal adjustment.
+    
+    Args:
+        df: Transaction data
+        window_days: Maximum gap between consecutive purchases to consider a switch
+        min_transactions: Minimum transactions per customer to include
+        seasonal_adjustment: If True, adjusts window based on day-of-week patterns
+    """
     df = df.sort_values(["customer_id", "date", "transaction_id"])
+    
+    # Add seasonal features if adjustment is enabled
+    if seasonal_adjustment:
+        df["day_of_week"] = df["date"].dt.dayofweek
+        df["is_weekend"] = df["day_of_week"] >= 5
+        # Weekend purchases get longer windows (people shop less frequently on weekends)
+        df["seasonal_window"] = window_days * (1.5 if df["is_weekend"].any() else 1.0)
+    
     seq = (
         df.groupby(["customer_id", "transaction_id"])
         .agg(
             date=("date", "first"),
             products=("stockcode", lambda s: ",".join(sorted(set(s)))),
+            is_weekend=("is_weekend", "first") if seasonal_adjustment else ("date", lambda x: False),
         )
         .reset_index()
     )
@@ -30,7 +51,14 @@ def _customer_sequences(
     seq["prev_products"] = seq.groupby("customer_id")["products"].shift(1)
     seq = seq.dropna(subset=["prev_products"])
     seq["gap_days"] = (seq["date"] - seq["prev_date"]).dt.days
-    seq = seq[seq["gap_days"].le(window_days)]
+    
+    # Apply seasonal window adjustment if enabled
+    if seasonal_adjustment:
+        seq["adjusted_window"] = window_days * seq["is_weekend"].apply(lambda x: 1.5 if x else 1.0)
+        seq = seq[seq["gap_days"].le(seq["adjusted_window"])]
+    else:
+        seq = seq[seq["gap_days"].le(window_days)]
+    
     counts = seq.groupby("customer_id").size().reset_index(name="n")
     keep = counts[counts["n"].ge(min_transactions - 1)]["customer_id"]
     return seq[seq["customer_id"].isin(keep)]
@@ -40,9 +68,20 @@ def compute_switching_matrix(
     df: pd.DataFrame,
     window_days: int = 90,
     min_transactions: int = 3,
+    seasonal_adjustment: bool = False,
 ) -> pd.DataFrame:
-    """Transition counts between consecutive purchases: A -> B."""
-    seq = _customer_sequences(df, window_days, min_transactions)
+    """Observed transition counts between consecutive purchases: A -> B.
+
+    WARNING: This is an OBSERVED correlation, NOT a causal counterfactual estimate.
+    It assumes switching behavior is invariant to delisting (no strategic response).
+    
+    Args:
+        df: Transaction data
+        window_days: Maximum gap between consecutive purchases to consider a switch
+        min_transactions: Minimum transactions per customer to include
+        seasonal_adjustment: If True, adjusts window based on day-of-week patterns
+    """
+    seq = _customer_sequences(df, window_days, min_transactions, seasonal_adjustment)
     if seq.empty:
         return check(pd.DataFrame(columns=list(SWITCHING_MATRIX.columns)), SWITCHING_MATRIX, allow_empty=True)
 
@@ -70,13 +109,33 @@ def compute_switching_matrix(
     return check(matrix, SWITCHING_MATRIX)
 
 
-def compute_transition_matrix(df: pd.DataFrame, window_days: int = 90, min_transactions: int = 3) -> pd.DataFrame:
-    """Square from->to transition probability matrix (rows sum to 1)."""
+def compute_transition_matrix(df: pd.DataFrame, window_days: int = 90, min_transactions: int = 3, normalize: bool = True) -> pd.DataFrame:
+    """Square from->to observed transition probability matrix (rows sum to 1).
+
+    WARNING: This is an OBSERVED correlation, NOT a causal counterfactual estimate.
+    It assumes switching behavior is invariant to delisting (no strategic response).
+    
+    If normalize=True (default), returns P(to | from) - probability of switching to B given A was switched from.
+    If normalize=False, returns raw counts.
+    
+    Adds an absorbing "no_switch" state representing customers who don't switch away.
+    """
     matrix = compute_switching_matrix(df, window_days, min_transactions)
     if matrix.empty:
         return pd.DataFrame()
     pivot = matrix.pivot(index="from_product", columns="to_product", values="count").fillna(0)
-    pivot = pivot.div(pivot.sum(axis=1), axis=0)
+    
+    if normalize:
+        # Add "no_switch" absorbing state - represents probability of not switching
+        # For customers who switch away from A, P(to | from) is given by normalized counts
+        # We add an explicit "no_switch" column to represent staying with the same product
+        row_sums = pivot.sum(axis=1)
+        # Normalize to get P(to | from switched)
+        pivot = pivot.div(row_sums.replace(0, 1), axis=0).fillna(0)
+        # Add absorbing state for "no switch" - probability of not switching
+        pivot["no_switch"] = 1.0 - pivot.sum(axis=1)
+        pivot["no_switch"] = pivot["no_switch"].clip(lower=0)
+    
     return pivot
 
 

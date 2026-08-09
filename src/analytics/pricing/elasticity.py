@@ -44,8 +44,15 @@ def _ols_loglog(
     log_price: pd.Series,
     log_qty: pd.Series,
     use_robust: bool = True,
+    time_dummies: Optional[pd.DataFrame] = None,
 ) -> Tuple[float, float, float, float, float, float, float]:
-    """Single SKU log-log OLS: returns elasticity, std_err, p_value, r2, ci_low, ci_high, n_obs."""
+    """Single SKU log-log OLS: returns elasticity, std_err, p_value, r2, ci_low, ci_high, n_obs.
+    
+    Enhanced with numerical stability checks and robust error handling.
+    Optional time_dummies can be included as fixed effects.
+    """
+    import warnings as _warnings
+    
     if len(log_price) < 3:
         raise ValueError("insufficient observations")
 
@@ -65,34 +72,74 @@ def _ols_loglog(
     if reason:
         raise ValueError(f"degenerate case: {reason}")
 
-    if use_robust:
-        X = sm.add_constant(log_price)
-        model = sm.OLS(log_qty, X).fit(cov_type="HC3")
-        elasticity = float(model.params[log_price.name])
-        std_err = float(model.bse[log_price.name])
-        p_value = float(model.pvalues[log_price.name])
-        r2 = float(model.rsquared)
-        conf = model.conf_int().loc[log_price.name]
-        ci_low, ci_high = float(conf[0]), float(conf[1])
-    else:
-        slope, intercept, r, p, se = stats.linregress(log_price, log_qty)
-        # Guard against NaN from linregress (constant x or y at certain n)
-        if not np.isfinite(slope) or not np.isfinite(p) or not np.isfinite(se):
-            raise ValueError("linregress produced non-finite result")
-        elasticity = float(slope)
-        std_err = float(se)
-        p_value = float(p)
-        r2 = float(r**2)
-        ci_low = elasticity - 1.96 * std_err
-        ci_high = elasticity + 1.96 * std_err
+    # Additional numerical stability checks
+    if np.any(np.abs(log_price) > 10):  # Check for extreme log values
+        _warnings.warn(
+            f"Extreme log price values detected (max: {log_price.max():.2f}). "
+            "Elasticity estimates may be unreliable.",
+            UserWarning,
+            stacklevel=2
+        )
+    
+    if np.any(np.abs(log_qty) > 10):  # Check for extreme log values
+        _warnings.warn(
+            f"Extreme log quantity values detected (max: {log_qty.max():.2f}). "
+            "Elasticity estimates may be unreliable.",
+            UserWarning,
+            stacklevel=2
+        )
 
-    # Final sanity checks
-    if not (0.0 <= p_value <= 1.0):
-        raise ValueError(f"p_value out of range: {p_value}")
-    if not np.isfinite(elasticity) or not np.isfinite(std_err) or not np.isfinite(r2):
-        raise ValueError("non-finite regression output")
+    try:
+        if use_robust:
+            X = sm.add_constant(log_price)
+            if time_dummies is not None:
+                # Align time dummies with log_price index
+                time_dummies_aligned = time_dummies.loc[log_price.index]
+                X = pd.concat([X, time_dummies_aligned], axis=1)
+            model = sm.OLS(log_qty, X).fit(cov_type="HC3")
+            elasticity = float(model.params[log_price.name])
+            std_err = float(model.bse[log_price.name])
+            p_value = float(model.pvalues[log_price.name])
+            r2 = float(model.rsquared)
+            conf = model.conf_int().loc[log_price.name]
+            ci_low, ci_high = float(conf[0]), float(conf[1])
+        else:
+            slope, intercept, r, p, se = stats.linregress(log_price, log_qty)
+            # Guard against NaN from linregress (constant x or y at certain n)
+            if not np.isfinite(slope) or not np.isfinite(p) or not np.isfinite(se):
+                raise ValueError("linregress produced non-finite result")
+            elasticity = float(slope)
+            std_err = float(se)
+            p_value = float(p)
+            r2 = float(r**2)
+            ci_low = elasticity - 1.96 * std_err
+            ci_high = elasticity + 1.96 * std_err
 
-    return elasticity, std_err, p_value, r2, ci_low, ci_high, len(log_price)
+        # Final sanity checks
+        if not (0.0 <= p_value <= 1.0):
+            raise ValueError(f"p_value out of range: {p_value}")
+        if not np.isfinite(elasticity) or not np.isfinite(std_err) or not np.isfinite(r2):
+            raise ValueError("non-finite regression output")
+        
+        # Check for economically implausible elasticities
+        if abs(elasticity) > 10:
+            _warnings.warn(
+                f"Extreme elasticity value detected: {elasticity:.2f}. "
+                "This may indicate data quality issues or model misspecification.",
+                UserWarning,
+                stacklevel=2
+            )
+
+        return elasticity, std_err, p_value, r2, ci_low, ci_high, len(log_price)
+    
+    except Exception as e:
+        _warnings.warn(
+            f"OLS regression failed: {e}. "
+            "This SKU will be skipped in elasticity estimation.",
+            UserWarning,
+            stacklevel=2
+        )
+        raise
 
 
 def estimate_loglog_elasticity(
@@ -105,11 +152,25 @@ def estimate_loglog_elasticity(
     min_periods: int = 10,
     min_price_variation: float = 0.05,
     use_robust_se: bool = True,
+    add_time_fe: bool = True,
 ) -> pd.DataFrame:
     """Per-SKU log-log OLS elasticity with diagnostics.
 
+    WARNING: This estimates OBSERVED price response, NOT causal elasticity.
+    - Endogeneity: price and quantity are simultaneously determined
+    - No instrument for price; OLS is biased if demand/supply shocks correlate
+    - Results are descriptive: "how quantity co-varies with price historically"
+    - For causal inference, use IV, RDD, or experimental methods (with valid instruments)
+    
     Returns DataFrame with one row per SKU meeting minimum data requirements.
     """
+    import warnings
+    warnings.warn(
+        "estimate_loglog_elasticity estimates OBSERVED price response, NOT causal elasticity. "
+        "Price endogeneity is not addressed. Results are descriptive only.",
+        UserWarning,
+        stacklevel=2
+    )
     df = transactions_df.copy()
     df[date_col] = pd.to_datetime(df[date_col])
     df["revenue"] = df[price_col] * df[qty_col]
@@ -133,8 +194,15 @@ def estimate_loglog_elasticity(
         if price_cv < min_price_variation:
             continue
 
-        log_price = np.log(weekly["avg_price"].replace(0, np.nan).dropna())
-        log_qty = np.log(weekly.loc[log_price.index, "total_qty"].replace(0, np.nan).dropna())
+        # Validate data before log transformation
+        zero_prices = (weekly["avg_price"] == 0).sum()
+        zero_qty = (weekly["total_qty"] == 0).sum()
+        
+        if zero_prices > 0 or zero_qty > 0:
+            continue  # Skip products with zero prices/quantities
+        
+        log_price = np.log(weekly["avg_price"])
+        log_qty = np.log(weekly["total_qty"])
 
         # Align indices (fixes misaligned dropna bug)
         common_idx = log_price.index.intersection(log_qty.index)
@@ -148,11 +216,27 @@ def estimate_loglog_elasticity(
         if log_price.nunique() < _MIN_DISTINCT_PRICES:
             continue
 
+        # Create time fixed effects if requested
+        time_dummies = None
         try:
+            if add_time_fe and len(weekly) > 1:
+                # Create week-of-year and month dummies (dropping first to avoid collinearity)
+                # Use isocalendar().week for pandas >= 2.0 compatibility
+                if hasattr(weekly.index, 'isocalendar'):
+                    week_values = weekly.index.isocalendar().week
+                else:
+                    week_values = weekly.index.week
+                week_dummies = pd.get_dummies(week_values, prefix='week', drop_first=True)
+                month_dummies = pd.get_dummies(weekly.index.month, prefix='month', drop_first=True)
+                time_dummies = pd.concat([week_dummies, month_dummies], axis=1)
+                # Align with log_price index
+                time_dummies = time_dummies.loc[log_price.index]
+
             elast, se, pval, r2, ci_low, ci_high, n_obs = _ols_loglog(
-                log_price, log_qty, use_robust_se
+                log_price, log_qty, use_robust_se, time_dummies=time_dummies
             )
-        except Exception:
+        except (ValueError, np.linalg.LinAlgError, RuntimeError) as e:
+            # Skip products where regression fails
             continue
 
         results.append(
@@ -187,9 +271,22 @@ def estimate_hierarchical_elasticity(
 ) -> pd.DataFrame:
     """Empirical Bayes / partial pooling elasticity with James-Stein shrinkage.
 
+    WARNING: This estimates OBSERVED price response, NOT causal elasticity.
+    - Endogeneity: price and quantity are simultaneously determined
+    - Shrinkage is toward category mean, does not address endogeneity
+    - Results are descriptive: "how quantity co-varies with price historically"
+    - For causal inference, use IV, RDD, or experimental methods (with valid instruments)
+
     Individual SKU elasticities are shrunk toward their category mean using
     variance-weighted shrinkage: weight = between_var / (within_var + between_var).
     """
+    import warnings
+    warnings.warn(
+        "estimate_hierarchical_elasticity estimates OBSERVED price response, NOT causal elasticity. "
+        "Price endogeneity is not addressed. Results are descriptive only.",
+        UserWarning,
+        stacklevel=2
+    )
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
@@ -214,8 +311,15 @@ def estimate_hierarchical_elasticity(
         if price_cv < min_price_variation:
             continue
 
-        log_price = np.log(weekly["avg_price"].replace(0, np.nan).dropna())
-        log_qty = np.log(weekly.loc[log_price.index, "total_qty"].replace(0, np.nan).dropna())
+        # Validate data before log transformation
+        zero_prices = (weekly["avg_price"] == 0).sum()
+        zero_qty = (weekly["total_qty"] == 0).sum()
+        
+        if zero_prices > 0 or zero_qty > 0:
+            continue  # Skip products with zero prices/quantities
+        
+        log_price = np.log(weekly["avg_price"])
+        log_qty = np.log(weekly["total_qty"])
 
         # Align indices
         common_idx = log_price.index.intersection(log_qty.index)
@@ -230,7 +334,7 @@ def estimate_hierarchical_elasticity(
 
         try:
             elast, se, pval, r2, _, _, n_obs = _ols_loglog(log_price, log_qty, use_robust=False)
-        except Exception:
+        except (ValueError, np.linalg.LinAlgError, RuntimeError):
             continue
 
         ols_results.append(
@@ -351,8 +455,22 @@ def estimate_cross_price_elasticity(
 ) -> pd.DataFrame:
     """Bivariate log-log OLS cross-price elasticity for specified pairs.
 
+    WARNING: This estimates OBSERVED cross-price response, NOT causal elasticity.
+    - Endogeneity: prices and quantities are simultaneously determined
+    - No instruments for prices; OLS is biased if demand/supply shocks correlate
+    - Results are descriptive: "how quantity of A co-varies with price of B historically"
+    - Positive cross_elasticity suggests substitutes; negative suggests complements
+    - For causal inference, use IV or experimental methods
+
     log(qty_A) = alpha + beta_own * log(price_A) + beta_cross * log(price_B)
     """
+    import warnings
+    warnings.warn(
+        "estimate_cross_price_elasticity estimates OBSERVED cross-price response, NOT causal elasticity. "
+        "Price endogeneity is not addressed. Results are descriptive only.",
+        UserWarning,
+        stacklevel=2
+    )
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
@@ -388,9 +506,13 @@ def estimate_cross_price_elasticity(
         if cv_a < min_price_variation or cv_b < min_price_variation:
             continue
 
-        log_price_a = np.log(weekly["avg_price_a"].replace(0, np.nan))
-        log_price_b = np.log(weekly["avg_price_b"].replace(0, np.nan))
-        log_qty_a = np.log(weekly["total_qty_a"].replace(0, np.nan))
+        # Validate data before log transformation
+        if (weekly[["avg_price_a", "avg_price_b", "total_qty_a"]] == 0).any().any():
+            continue  # Skip products with zero prices/quantities
+        
+        log_price_a = np.log(weekly["avg_price_a"])
+        log_price_b = np.log(weekly["avg_price_b"])
+        log_qty_a = np.log(weekly["total_qty_a"])
 
         # Align indices and drop any NaN
         common_idx = log_price_a.index.intersection(log_price_b.index).intersection(log_qty_a.index)
@@ -409,8 +531,23 @@ def estimate_cross_price_elasticity(
         if log_price_a.nunique() < _MIN_DISTINCT_PRICES or log_price_b.nunique() < _MIN_DISTINCT_PRICES:
             continue
 
+        # Create time fixed effects
+        time_dummies = None
+        if len(weekly) > 1:
+            # Use isocalendar().week for pandas >= 2.0 compatibility
+            if hasattr(weekly.index, 'isocalendar'):
+                week_values = weekly.index.isocalendar().week
+            else:
+                week_values = weekly.index.week
+            week_dummies = pd.get_dummies(week_values, prefix='week', drop_first=True)
+            month_dummies = pd.get_dummies(weekly.index.month, prefix='month', drop_first=True)
+            time_dummies = pd.concat([week_dummies, month_dummies], axis=1)
+            time_dummies = time_dummies.loc[log_price_a.index]
+
         X = np.column_stack([log_price_a.values, log_price_b.values])
         X = sm.add_constant(X)
+        if time_dummies is not None:
+            X = np.column_stack([X, time_dummies.values])
         y = log_qty_a.values
 
         try:
@@ -422,7 +559,7 @@ def estimate_cross_price_elasticity(
             own_p = float(model.pvalues[1])
             cross_p = float(model.pvalues[2])
             r2 = float(model.rsquared)
-        except Exception:
+        except (ValueError, np.linalg.LinAlgError, RuntimeError):
             continue
 
         results.append(

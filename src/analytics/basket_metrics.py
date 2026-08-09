@@ -63,17 +63,29 @@ def compute_basket_composition(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def compute_customer_entropy(df: pd.DataFrame) -> pd.DataFrame:
-    """Per-customer product-mix entropy (variety of purchasing)."""
+    """Per-customer transaction-line mix entropy (variety of purchasing).
+
+    Computes Shannon entropy over the distribution of SKUs in a customer's
+    transaction lines. This is a measure of product-mix diversity within
+    individual customer baskets, NOT a general purchase diversity metric.
+
+    Renamed from "Product Mix Entropy" to "Transaction-line Mix Entropy"
+    to avoid confusion with broader product diversity metrics.
+    """
     counts = df.groupby(["customer_id", "stockcode"]).size().unstack(fill_value=0)
     probs = counts.div(counts.sum(axis=1), axis=0)
     entropies = probs.apply(lambda row: entropy(row), axis=1)
     n_distinct = (counts > 0).sum(axis=1)
     max_entropy = np_log(n_distinct)
+    
+    # n_purchases should be transaction count (not line count)
+    n_transactions = df.groupby("customer_id")["transaction_id"].nunique()
+    
     table = pd.DataFrame(
         {
             "customer_id": counts.index,
             "n_distinct_products": n_distinct,
-            "n_purchases": counts.sum(axis=1),
+            "n_purchases": n_transactions,
             "entropy": entropies,
             "normalized_entropy": (entropies / max_entropy).fillna(0.0).clip(0, 1),
         }
@@ -168,7 +180,90 @@ def spc_revenue_trend(
 
 
 def np_log(series: pd.Series) -> pd.Series:
-    """Natural log with zeros mapped to 0 (avoid -inf)."""
+    """Natural log with zeros mapped to 0 (avoid -inf) with warning."""
     import numpy as np
+    import warnings as _warnings
 
+    zero_count = (series == 0).sum()
+    if zero_count > 0:
+        _warnings.warn(
+            f"Entropy calculation: {zero_count} zero values replaced with 1 to avoid log(0). "
+            "This may bias entropy estimates downward.",
+            UserWarning,
+            stacklevel=2
+        )
     return series.replace(0, 1).apply(np.log)
+
+
+# ============================================================
+# Canonical Basket Metrics
+# ============================================================
+
+def compute_basket_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute canonical basket-level metrics per transaction.
+
+    Returns a DataFrame with one row per transaction_id and the following
+    canonical columns:
+    - basket_units: total quantity (sum of quantity)
+    - basket_lines: number of distinct SKU lines in the basket
+    - basket_distinct_skus: number of distinct SKUs (same as basket_lines for now)
+    - basket_revenue: total revenue (sum of price * quantity)
+
+    These canonical definitions ensure consistency across all analytics.
+    """
+    df = df.copy()
+    df["revenue"] = df["price"] * df["quantity"]
+    
+    agg = df.groupby("transaction_id").agg(
+        basket_units=("quantity", "sum"),
+        basket_lines=("stockcode", "nunique"),
+        basket_distinct_skus=("stockcode", "nunique"),
+        basket_revenue=("revenue", "sum"),
+    ).reset_index()
+    
+    return agg
+
+
+def compute_basket_summary(df: pd.DataFrame) -> pd.DataFrame:
+    """Summary statistics of canonical basket metrics across all transactions."""
+    basket_metrics = compute_basket_metrics(df)
+    
+    summary = pd.DataFrame({
+        "metric": [
+            "basket_units",
+            "basket_lines", 
+            "basket_distinct_skus",
+            "basket_revenue",
+        ],
+        "mean": [
+            basket_metrics["basket_units"].mean(),
+            basket_metrics["basket_lines"].mean(),
+            basket_metrics["basket_distinct_skus"].mean(),
+            basket_metrics["basket_revenue"].mean(),
+        ],
+        "median": [
+            basket_metrics["basket_units"].median(),
+            basket_metrics["basket_lines"].median(),
+            basket_metrics["basket_distinct_skus"].median(),
+            basket_metrics["basket_revenue"].median(),
+        ],
+        "std": [
+            basket_metrics["basket_units"].std(),
+            basket_metrics["basket_lines"].std(),
+            basket_metrics["basket_distinct_skus"].std(),
+            basket_metrics["basket_revenue"].std(),
+        ],
+        "min": [
+            basket_metrics["basket_units"].min(),
+            basket_metrics["basket_lines"].min(),
+            basket_metrics["basket_distinct_skus"].min(),
+            basket_metrics["basket_revenue"].min(),
+        ],
+        "max": [
+            basket_metrics["basket_units"].max(),
+            basket_metrics["basket_lines"].max(),
+            basket_metrics["basket_distinct_skus"].max(),
+            basket_metrics["basket_revenue"].max(),
+        ],
+    })
+    return summary

@@ -55,13 +55,17 @@ def compute_demand_transference_matrix(
     product_col: str = "stockcode",
     top_n: int | None = None,
 ) -> pd.DataFrame:
-    """Revenue-weighted demand transference for each ordered product pair.
+    """Revenue-weighted observed switching for each ordered product pair.
 
-    DT(A -> B) = P(switch A->B) * revenue_share(A) and
-    revenue_at_risk(A -> B) = P(switch A->B) * revenue(A), where
-    P(switch A->B) is the switching count normalized by all switches away
-    from A. ``revenue_at_risk`` therefore sums across A's substitutes to the
-    expected revenue recovered if A is delisted.
+    observed_switching_transference(A -> B) = P(switch A->B) * revenue_share(A)
+    observed_switching_recovery_proxy(A -> B) = P(switch A->B) * revenue(A)
+
+    WHERE P(switch A->B) is the switching count normalized by all switches away
+    from A. ``observed_switching_recovery_proxy`` therefore sums across A's substitutes
+    to the OBSERVED revenue recovery if A is delisted.
+
+    WARNING: This is an OBSERVED correlation, NOT a causal counterfactual estimate.
+    It assumes switching behavior is invariant to delisting (no strategic response).
     """
     df = transactions_df.copy()
     df["revenue"] = revenue_column(df)
@@ -82,9 +86,9 @@ def compute_demand_transference_matrix(
         ]
 
     result["revenue_share_from"] = result["from_product"].map(revenue_share).fillna(0.0)
-    result["demand_transference"] = result["switch_rate"] * result["revenue_share_from"]
+    result["observed_switching_transference"] = result["switch_rate"] * result["revenue_share_from"]
     result["revenue_from"] = result["from_product"].map(product_revenue).fillna(0.0)
-    result["revenue_at_risk"] = result["switch_rate"] * result["revenue_from"]
+    result["observed_switching_recovery_proxy"] = result["switch_rate"] * result["revenue_from"]
 
     table = (
         result[
@@ -93,11 +97,11 @@ def compute_demand_transference_matrix(
                 "to_product",
                 "switch_rate",
                 "revenue_share_from",
-                "demand_transference",
-                "revenue_at_risk",
+                "observed_switching_transference",
+                "observed_switching_recovery_proxy",
             ]
         ]
-        .sort_values("demand_transference", ascending=False)
+        .sort_values("observed_switching_transference", ascending=False)
         .reset_index(drop=True)
     )
     return check(table, DEMAND_TRANSFERENCE)
@@ -110,9 +114,11 @@ def compute_substitutable_demand_percentage(
 ) -> pd.DataFrame:
     """Substitutable Demand Percentage per product.
 
-    SDP(A) = sum of revenue at risk away from A / total revenue. High SDP
-    (>= 0.8) marks a highly substitutable delist candidate; low SDP
+    SDP(A) = sum of observed switching recovery proxy away from A / total revenue.
+    High SDP (>= 0.8) marks a highly substitutable delist candidate; low SDP
     (< 0.2) marks a unique demand driver that must stay in stock.
+    
+    WARNING: Based on observed switching correlations, NOT causal estimates.
     """
     df = transactions_df.copy()
     df["revenue"] = revenue_column(df)
@@ -121,8 +127,8 @@ def compute_substitutable_demand_percentage(
     if total_revenue <= 0:
         return check(pd.DataFrame(columns=list(SDP_SCORES.columns)), SDP_SCORES, allow_empty=True)
 
-    sdp = demand_transference_df.groupby("from_product")["revenue_at_risk"].sum() / total_revenue
-    table = sdp.reset_index().rename(columns={"from_product": product_col, "revenue_at_risk": "sdp"})
+    sdp = demand_transference_df.groupby("from_product")["observed_switching_recovery_proxy"].sum() / total_revenue
+    table = sdp.reset_index().rename(columns={"from_product": product_col, "observed_switching_recovery_proxy": "sdp"})
     return check(table, SDP_SCORES)
 
 
@@ -134,8 +140,10 @@ def delist_impact_analysis(
 ) -> pd.DataFrame:
     """Per-product revenue impact of a simulated delist.
 
-    ``revenue_recovered`` is the sum of ``revenue_at_risk`` for the delisted
+    ``observed_revenue_recovered`` is the sum of ``observed_switching_recovery_proxy`` for the delisted
     product's transfers; ``net_revenue_impact`` = recovered - own revenue.
+    
+    WARNING: This is based on OBSERVED switching correlations, NOT causal estimates.
     """
     df = transactions_df.copy()
     df["revenue"] = revenue_column(df)
@@ -147,7 +155,7 @@ def delist_impact_analysis(
         transferred = float(
             demand_transference_df[
                 demand_transference_df["from_product"] == prod
-            ]["revenue_at_risk"].sum()
+            ]["observed_switching_recovery_proxy"].sum()
         )
         rows.append(
             {
@@ -177,6 +185,8 @@ def node_delist_impact(
 
     ``node_sdp`` = internal recovery / node revenue, a measure of how
     self-contained each cluster (e.g. CDT leaf) is against delists.
+    
+    WARNING: Based on observed switching correlations, NOT causal estimates.
     """
     df = transactions_df.copy()
     df["revenue"] = revenue_column(df)
@@ -189,8 +199,8 @@ def node_delist_impact(
         node_dt = demand_transference_df[
             demand_transference_df["from_product"].isin(node_products)
         ]
-        internal = float(node_dt[node_dt["to_product"].isin(node_products)]["revenue_at_risk"].sum())
-        external = float(node_dt[~node_dt["to_product"].isin(node_products)]["revenue_at_risk"].sum())
+        internal = float(node_dt[node_dt["to_product"].isin(node_products)]["observed_switching_recovery_proxy"].sum())
+        external = float(node_dt[~node_dt["to_product"].isin(node_products)]["observed_switching_recovery_proxy"].sum())
         rows.append(
             {
                 "node_id": node_id,
@@ -244,7 +254,7 @@ def build_substitution_matrix_markov(
     return pd.DataFrame(P_k, index=products, columns=products)
 
 
-def build_substitution_matrix_mnl(
+def build_similarity_substitution_score(
     transactions_df: pd.DataFrame,
     similarity_matrix: pd.DataFrame,
     price_col: str = "price",
@@ -253,13 +263,29 @@ def build_substitution_matrix_mnl(
     utility_weight_revenue_share: float = 0.5,
     price_sensitivity_floor: float = 0.0,
 ) -> pd.DataFrame:
-    """Multinomial Logit substitution probabilities minus a price floor offset.
+    """Similarity-based substitution score (formerly MNL model).
 
+    WARNING: This is a HEURISTIC similarity-based score, NOT a multinomial logit model.
+    - No price coefficient estimation; uses fixed utility weights
+    - No choice data; similarity is used as a proxy for substitution
+    - Softmax over similarity + price + revenue is a scoring heuristic, NOT a discrete choice model
+    - Results are descriptive similarity scores, NOT probability of substitution
+    
+    USE FOR EXPLORATORY ANALYSIS ONLY.
+    
     U(j | i removed) = w_price * price_j + w_sim * sim(i, j)
                       + w_rev * log(revenue_j + 1)
     with a softmax over the products j != i. Uses median price and total
     revenue per product from the transaction snapshot.
     """
+    import warnings
+    warnings.warn(
+        "build_similarity_substitution_score is a heuristic similarity-based score, "
+        "NOT a multinomial logit model. No price coefficients are estimated. "
+        "Results are descriptive similarity scores, NOT substitution probabilities.",
+        UserWarning,
+        stacklevel=2
+    )
     df = transactions_df.copy()
     df["revenue"] = revenue_column(df)
     product_revenue = df.groupby("stockcode")["revenue"].sum()
@@ -294,6 +320,10 @@ def build_substitution_matrix_mnl(
         P[valid[:, 0]] = exp_U[valid[:, 0]] / exp_U[valid[:, 0]].sum(axis=1, keepdims=True)
 
     return pd.DataFrame(P, index=products, columns=products)
+
+
+# Backward compatibility alias
+build_substitution_matrix_mnl = build_similarity_substitution_score
 
 
 def build_similarity_matrix(
@@ -412,9 +442,13 @@ def compute_cross_price_elasticity(
         if cv_a < min_price_variation or cv_b < min_price_variation:
             continue
 
-        log_price_a = np.log(weekly["avg_price_a"].replace(0, np.nan))
-        log_price_b = np.log(weekly["avg_price_b"].replace(0, np.nan))
-        log_qty_a = np.log(weekly["total_qty_a"].replace(0, np.nan))
+        # Validate data before log transformation
+        if (weekly[["avg_price_a", "avg_price_b", "total_qty_a"]] == 0).any().any():
+            continue  # Skip products with zero values
+        
+        log_price_a = np.log(weekly["avg_price_a"])
+        log_price_b = np.log(weekly["avg_price_b"])
+        log_qty_a = np.log(weekly["total_qty_a"])
         valid = log_price_a.notna() & log_price_b.notna() & log_qty_a.notna()
         if valid.sum() < min_periods:
             continue
@@ -454,14 +488,16 @@ def compute_recovery_hhi(demand_transference_df: pd.DataFrame) -> pd.DataFrame:
     HHI = sum(s_i^2) over shares of recovered revenue. ~1 indicates a single
     substitute captures most demand (fragile); ~0 indicates diversified,
     robust recovery.
+    
+    WARNING: Based on observed switching correlations, NOT causal estimates.
     """
     rows = []
     for delisted in demand_transference_df["from_product"].unique():
         dt = demand_transference_df[demand_transference_df["from_product"] == delisted]
-        total_risk = float(dt["revenue_at_risk"].sum())
+        total_risk = float(dt["observed_switching_recovery_proxy"].sum())
         if total_risk <= 0:
             continue
-        shares = dt.groupby("to_product")["revenue_at_risk"].sum() / total_risk
+        shares = dt.groupby("to_product")["observed_switching_recovery_proxy"].sum() / total_risk
         rows.append(
             {
                 "delisted_product": delisted,
@@ -513,7 +549,7 @@ def bootstrap_demand_transference_ci(
     rows: list[dict[str, float | int | str]] = []
     for pair_row in point.head(max_pairs).itertuples(index=False):
         from_p, to_p = pair_row.from_product, pair_row.to_product
-        estimate = float(pair_row.demand_transference)
+        estimate = float(pair_row.observed_switching_transference)
         replicates: list[float] = []
         for _ in range(n_resamples):
             cust_idx = rng.integers(0, len(customers), size=len(customers))
@@ -525,7 +561,7 @@ def bootstrap_demand_transference_ci(
             if rt.empty:
                 continue
             match = rt[(rt["from_product"] == from_p) & (rt["to_product"] == to_p)]
-            replicates.append(float(match["demand_transference"].iloc[0]) if not match.empty else 0.0)
+            replicates.append(float(match["observed_switching_transference"].iloc[0]) if not match.empty else 0.0)
 
         if not replicates:
             continue

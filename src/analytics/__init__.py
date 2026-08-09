@@ -4,7 +4,7 @@ Core analytics modules for market basket analysis, customer segmentation,
 demand transference, assortment optimization, pricing elasticity, and more.
 """
 
-from src.analytics.config import AnalyticsConfig, DEFAULT_CONFIG, get_config, update_config
+from src.analytics.config import AnalyticsConfig, DEFAULT_CONFIG, get_config, update_config, set_global_config
 from src.analytics.schemas import (
     check,
     contract,
@@ -123,6 +123,40 @@ from src.analytics.schemas import (
     CAUSAL_UPLIFT,
 )
 from src.analytics.validation import ValidationHarness, run_validation, export_baseline, assert_validation
+from src.analytics.reliability import (
+    ReliabilityLevel,
+    ReliabilityDimension,
+    ReliabilityScore,
+    AnalysisEligibility,
+    compute_reliability,
+    check_analysis_eligibility,
+    attach_reliability,
+    filter_by_reliability,
+)
+from src.analytics.data_quality import (
+    DataQualityReport,
+    DataQualityError,
+    assess_data_quality,
+    filter_data_by_quality,
+    generate_quality_summary,
+    compute_quality_score,
+    attach_quality_metadata,
+    get_quality_score,
+)
+from src.analytics.statistical_contract import (
+    StatisticalClaimType,
+    ReliabilityLevel,
+    StatisticalAssumption,
+    StatisticalContract,
+    ELASTICITY_CONTRACT,
+    CLV_CONTRACT,
+    ASSORTMENT_CONTRACT,
+    attach_contract,
+    get_contract,
+    register_contract,
+    validate_against_contract,
+    CONTRACT_REGISTRY,
+)
 
 # Package version
 __version__ = "2.0.0"
@@ -153,11 +187,43 @@ __all__ = [
     "DEFAULT_CONFIG",
     "get_config",
     "update_config",
+    "set_global_config",
     # Validation
     "ValidationHarness",
     "run_validation",
     "export_baseline",
     "assert_validation",
+    # Reliability
+    "ReliabilityLevel",
+    "ReliabilityDimension",
+    "ReliabilityScore",
+    "AnalysisEligibility",
+    "compute_reliability",
+    "check_analysis_eligibility",
+    "attach_reliability",
+    "filter_by_reliability",
+    # Data Quality
+    "DataQualityReport",
+    "DataQualityError",
+    "assess_data_quality",
+    "filter_data_by_quality",
+    "generate_quality_summary",
+    "compute_quality_score",
+    "attach_quality_metadata",
+    "get_quality_score",
+    # Statistical Contracts
+    "StatisticalClaimType",
+    "ReliabilityLevel",
+    "StatisticalAssumption",
+    "StatisticalContract",
+    "ELASTICITY_CONTRACT",
+    "CLV_CONTRACT",
+    "ASSORTMENT_CONTRACT",
+    "attach_contract",
+    "get_contract",
+    "register_contract",
+    "validate_against_contract",
+    "CONTRACT_REGISTRY",
     # Modules (access via src.analytics.<module>)
     "assortment",
     "basket_metrics",

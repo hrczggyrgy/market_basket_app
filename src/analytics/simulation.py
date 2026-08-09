@@ -237,8 +237,15 @@ def _promo_windows(catalog: pd.DataFrame, config: SimulationConfig, seed: int) -
 # Calendar
 # ------------------------------------------------------------------------- #
 
-def _seasonal_demand(day_of_year: int, category: str, strength: float = 1.0) -> float:
-    t = 2 * np.pi * day_of_year / 365.0
+def _seasonal_demand(day_of_year: int, category: str, strength: float = 1.0, year: int = 2024) -> float:
+    """Return seasonal multiplier for category on given day (1-366 for leap years).
+    
+    Enhanced with leap year support and holiday effects.
+    """
+    # Handle leap years
+    days_in_year = 366 if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0) else 365
+    
+    t = 2 * np.pi * day_of_year / days_in_year
     seasonal = {
         "Coffee": 1.0 + 0.15 * np.cos(t - np.pi / 2),
         "Beverages": 1.0 + 0.20 * np.sin(t),
@@ -250,7 +257,15 @@ def _seasonal_demand(day_of_year: int, category: str, strength: float = 1.0) -> 
         "Pet": 1.0,
     }
     base = seasonal.get(category, 1.0)
-    return 1.0 + strength * (base - 1.0)
+    
+    # Add holiday effects
+    holiday_boost = 1.0
+    if (day_of_year >= 359 and day_of_year <= days_in_year) or (day_of_year <= 2):
+        holiday_boost = 1.2  # Christmas/New Year
+    elif 332 <= day_of_year <= 333:
+        holiday_boost = 1.3  # Black Friday
+    
+    return 1.0 + strength * (base * holiday_boost - 1.0)
 
 
 def _weekly_demand(day_of_week: int, category: str, strength: float = 1.0) -> float:
@@ -515,7 +530,7 @@ def generate_sample_transactions(config: SimulationConfig) -> pd.DataFrame:
 
                 if _weekly_demand(dow, cat, config.weekend_strength) > 1.0 and rng.random() < 0.3:
                     qty += 1
-                if _seasonal_demand(doy, cat, config.seasonal_strength) > 1.0 and rng.random() < 0.2:
+                if _seasonal_demand(doy, cat, config.seasonal_strength, year=2024) > 1.0 and rng.random() < 0.2:
                     qty += 1
 
                 cost = round(price * 0.6, 2)

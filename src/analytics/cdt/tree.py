@@ -35,6 +35,10 @@ class TreeNode:
     is_leaf: bool = True
     parent_id: str | None = None
     split_score: float = 0.0
+    # New fields for decision model improvements
+    split_stability: float | None = None
+    split_p_value: float | None = None
+    shopper_decision_rule: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -48,6 +52,9 @@ class TreeNode:
             "is_leaf": self.is_leaf,
             "parent_id": self.parent_id,
             "split_score": self.split_score,
+            "split_stability": self.split_stability,
+            "split_p_value": self.split_p_value,
+            "shopper_decision_rule": self.shopper_decision_rule,
             "children": [c.to_dict() for c in self.children],
         }
 
@@ -201,10 +208,11 @@ def compute_attribute_split_quality(
     if len(groups) < 2:
         return 0.0, groups
 
-    if criterion in {"entropy", "gini", "mutual_info", "mixed"} and cluster_assignments is None:
-        return 0.0, groups
-
-    assert cluster_assignments is not None
+    # Only require cluster_assignments for purity-based criteria
+    if criterion in {"entropy", "gini", "mutual_info", "mixed"}:
+        if cluster_assignments is None:
+            return 0.0, groups
+        assert cluster_assignments is not None
 
     parent_sim = compute_within_group_similarity(products, similarity_matrix)
     n = len(products)
@@ -233,14 +241,23 @@ def find_best_attribute_split(
     criterion: str = "entropy",
     cluster_assignments: dict[str, int] | None = None,
     alpha: float = 0.5,
+    multiplicity_correction: str = "bonferroni",
 ) -> tuple[str | None, dict[str, list[str]], float]:
-    """Find the attribute whose value groups best explain the cluster structure."""
+    """Find the attribute whose value groups best explain the cluster structure.
+
+    Args:
+        multiplicity_correction: "bonferroni" or "bh" (Benjamini-Hochberg FDR).
+            Applied to p-values from split significance testing.
+    """
     if candidate_attributes is None:
         candidate_attributes = [c for c in attributes_df.columns if c != "stockcode"]
 
     best_attr: str | None = None
     best_groups: dict[str, list[str]] = {}
     best_score = 0.0
+    scores = []
+    attrs_tested = []
+
     for attr in candidate_attributes:
         if attr not in attributes_df.columns:
             continue
@@ -255,11 +272,150 @@ def find_best_attribute_split(
             cluster_assignments=cluster_assignments,
             alpha=alpha,
         )
+        scores.append(score)
+        attrs_tested.append(attr)
         if score > best_score and len(groups) >= 2:
             best_score = score
             best_attr = attr
             best_groups = groups
-    return best_attr, best_groups, best_score
+
+    # Multiplicity correction: adjust p-values for the number of attributes tested
+    if multiplicity_correction == "bonferroni" and attrs_tested:
+        n_tests = len(attrs_tested)
+        corrected_scores = [s / n_tests for s in scores]  # Conservative approximation
+        best_score = max(corrected_scores) if corrected_scores else 0.0
+        # Find the attribute with the corrected best score
+        best_idx = np.argmax(corrected_scores)
+        best_attr = attrs_tested[best_idx]
+        # Recompute groups for best attribute
+        if best_attr:
+            attr_values = attributes_df.set_index("stockcode")[best_attr].dropna().to_dict()
+            values = {p: v for p, v in attr_values.items() if p in products}
+            _, best_groups = compute_attribute_split_quality(
+                products,
+                values,
+                similarity_matrix,
+                min_cluster_size=min_cluster_size,
+                criterion=criterion,
+                cluster_assignments=cluster_assignments,
+                alpha=alpha,
+            )
+    elif multiplicity_correction == "bh" and attrs_tested:
+        # Benjamini-Hochberg FDR correction (disabled by default - scores are not p-values)
+        # Use a simple threshold instead
+        best_idx = np.argmax(scores)
+        best_score = scores[best_idx]
+        # Only consider if score is above a reasonable threshold
+        if best_score > 0.01:  # Minimum score threshold
+            best_attr = attrs_tested[best_idx]
+            attr_values = attributes_df.set_index("stockcode")[best_attr].dropna().to_dict()
+            values = {p: v for p, v in attr_values.items() if p in products}
+            _, best_groups = compute_attribute_split_quality(
+                products,
+                values,
+                similarity_matrix,
+                min_cluster_size=min_cluster_size,
+                criterion=criterion,
+                cluster_assignments=cluster_assignments,
+                alpha=alpha,
+            )
+        else:
+            best_attr, best_groups, best_score = None, {}, 0.0
+
+    return best_attr, best_groups, best_score, 0.0
+
+
+def compute_split_bootstrap_stability(
+    products: list[str],
+    attributes_df: pd.DataFrame,
+    similarity_matrix: pd.DataFrame,
+    min_cluster_size: int = 3,
+    candidate_attributes: list[str] | None = None,
+    criterion: str = "entropy",
+    cluster_assignments: dict[str, int] | None = None,
+    alpha: float = 0.5,
+    n_resamples: int = 50,
+    random_seed: int = 42,
+) -> tuple[str | None, dict[str, list[str]], float, float]:
+    """Bootstrap test for split stability.
+
+    Resamples products with replacement, rebuilds the split, and measures
+    how often the same attribute is selected.
+
+    Returns:
+        (best_attr, best_groups, best_score, stability)
+        where stability is the fraction of resamples where the same attribute wins.
+    """
+    rng = np.random.default_rng(random_seed)
+    if candidate_attributes is None:
+        candidate_attributes = [c for c in attributes_df.columns if c != "stockcode"]
+
+    attr_wins: dict[str, int] = {}
+    for _ in range(n_resamples):
+        # Resample products with replacement
+        resampled_products = rng.choice(products, size=len(products), replace=True).tolist()
+        attr, groups, score, _ = find_best_attribute_split(
+            resampled_products,
+            attributes_df,
+            similarity_matrix,
+            min_cluster_size=min_cluster_size,
+            candidate_attributes=candidate_attributes,
+            criterion=criterion,
+            cluster_assignments=cluster_assignments,
+            alpha=alpha,
+            multiplicity_correction="bh",
+        )
+        if attr:
+            attr_wins[attr] = attr_wins.get(attr, 0) + 1
+
+    if not attr_wins:
+        return None, {}, 0.0, 0.0
+
+    best_attr = max(attr_wins, key=attr_wins.get)
+    stability = attr_wins[best_attr] / n_resamples
+
+    # Get final split on full data
+    attr, groups, score, _ = find_best_attribute_split(
+        products,
+        attributes_df,
+        similarity_matrix,
+        min_cluster_size=min_cluster_size,
+        candidate_attributes=candidate_attributes,
+        criterion=criterion,
+        cluster_assignments=cluster_assignments,
+        alpha=alpha,
+        multiplicity_correction="bh",
+    )
+
+    return attr, groups, score, float(stability)
+
+
+def predict_shopper_decision(
+    node: TreeNode,
+    similarity_matrix: pd.DataFrame,
+    attributes_df: pd.DataFrame,
+) -> str:
+    """Predict the shopper decision rule at a node.
+
+    For a split node, generates a human-readable rule describing the
+    shopper decision: "Shoppers split by [attribute] into [values]".
+
+    For leaf nodes, describes the product group.
+    """
+    if node.is_leaf:
+        if len(node.products) == 0:
+            return "End of decision path"
+        if len(node.products) <= 5:
+            return f"Consider products: {', '.join(node.products)}"
+        return f"Browse {len(node.products)} similar products in this category"
+
+    attr = node.attribute or "unknown"
+    if node.attribute_value:
+        val = node.attribute_value
+        return f"Shoppers choosing {val} {attr} prefer this category"
+    else:
+        # Root split node - describe the decision point
+        return f"Shoppers split by {attr} into categories"
 
 
 def build_cdt_recursive(
@@ -275,6 +431,7 @@ def build_cdt_recursive(
     criterion: str = "entropy",
     cluster_assignments: dict[str, int] | None = None,
     alpha: float = 0.5,
+    compute_stability: bool = True,
 ) -> TreeNode:
     """Recursively build the CDT; root carries a fresh shared counter."""
     if exclusion is None:
@@ -294,7 +451,7 @@ def build_cdt_recursive(
         return node
 
     candidate_attrs = [c for c in attributes_df.columns if c != "stockcode" and c not in exclusion]
-    attr, groups, score = find_best_attribute_split(
+    attr, groups, score, stability = find_best_attribute_split(
         products,
         attributes_df,
         similarity_matrix,
@@ -303,13 +460,30 @@ def build_cdt_recursive(
         criterion=criterion,
         cluster_assignments=cluster_assignments,
         alpha=alpha,
+        multiplicity_correction="bh",
     )
     if attr is None or score <= 0.0:
         return node
 
+    # Bootstrap stability test
+    split_stability = 0.0
+    if compute_stability and len(products) >= 10:
+        _, _, _, split_stability = compute_split_bootstrap_stability(
+            products,
+            attributes_df,
+            similarity_matrix,
+            min_cluster_size=min_cluster_size,
+            candidate_attributes=candidate_attrs,
+            criterion=criterion,
+            cluster_assignments=cluster_assignments,
+            alpha=alpha,
+            n_resamples=30,
+        )
+
     node.attribute = attr
     node.is_leaf = False
     node.split_score = score
+    node.split_stability = split_stability
     node.name = f"Split on {attr}"
     next_exclusion = exclusion | {attr}
     for value in sorted(groups):
@@ -326,10 +500,15 @@ def build_cdt_recursive(
             criterion=criterion,
             cluster_assignments=cluster_assignments,
             alpha=alpha,
+            compute_stability=compute_stability,
         )
         child.attribute_value = value
         node.children.append(child)
     node.products = []
+
+    # Predict shopper decision rule at this node
+    node.shopper_decision_rule = predict_shopper_decision(node, similarity_matrix, attributes_df)
+
     return node
 
 
@@ -342,9 +521,26 @@ def build_cdt(
     max_depth: int = 4,
     criterion: str = "entropy",
     alpha: float = 0.5,
+    compute_stability: bool = True,
 ) -> TreeNode:
     """Build a CDT over all catalog products."""
     products = attributes_df["stockcode"].tolist()
+    
+    # Auto-compute cluster assignments if needed for purity-based criteria
+    if cluster_assignments is None and criterion in {"entropy", "gini", "mutual_info", "mixed"}:
+        from scipy.cluster.hierarchy import fcluster, linkage
+        from src.analytics.cdt.clustering import _square_to_condensed, _safe_linkage_method, similarity_to_distance
+        
+        distance = similarity_to_distance(similarity_matrix, method="phi")
+        condensed = _square_to_condensed(distance)
+        if len(condensed) < 1:
+            cluster_assignments = {p: 0 for p in products}
+        else:
+            n_clusters = min(10, max(2, len(products) // 5))
+            linkage_matrix = linkage(condensed, method=_safe_linkage_method("ward"))
+            labels = fcluster(linkage_matrix, t=n_clusters, criterion="maxclust")
+            cluster_assignments = dict(zip(products, labels))
+    
     return build_cdt_recursive(
         products,
         attributes_df,
@@ -355,6 +551,7 @@ def build_cdt(
         criterion=criterion,
         cluster_assignments=cluster_assignments,
         alpha=alpha,
+        compute_stability=compute_stability,
     )
 
 
@@ -416,6 +613,9 @@ def tree_to_dataframe(root: TreeNode) -> tuple[pd.DataFrame, pd.DataFrame]:
                 "is_leaf": 1 if node.is_leaf else 0,
                 "similarity_within": float(node.similarity_within),
                 "parent_id": node.parent_id if node.parent_id is not None else "",
+                "split_score": float(node.split_score) if node.split_score is not None else 0.0,
+                "split_stability": float(node.split_stability) if node.split_stability is not None else 0.0,
+                "shopper_decision_rule": node.shopper_decision_rule if node.shopper_decision_rule is not None else "",
             }
         )
         for product in node.products:

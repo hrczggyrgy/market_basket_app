@@ -142,14 +142,24 @@ def get_config() -> AnalyticsConfig:
 
 
 from typing import Any
+import copy
 
-...
 
 def update_config(**kwargs: Any) -> AnalyticsConfig:
-    """Create a new config with overrides."""
+    """Create a new config with overrides (immutable operation)."""
+    # Create a deep copy to avoid mutating the global singleton
+    new_config = copy.deepcopy(DEFAULT_CONFIG)
+    
     for k, v in kwargs.items():
-        if hasattr(DEFAULT_CONFIG, k):
-            setattr(DEFAULT_CONFIG, k, v)
+        if hasattr(new_config, k):
+            setattr(new_config, k, v)
         else:
             raise KeyError(f"Unknown config key: {k}")
-    return DEFAULT_CONFIG
+    
+    return new_config
+
+
+def set_global_config(config: AnalyticsConfig) -> None:
+    """Set the global default configuration (use with caution)."""
+    global DEFAULT_CONFIG
+    DEFAULT_CONFIG = config

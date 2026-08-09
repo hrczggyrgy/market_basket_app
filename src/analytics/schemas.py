@@ -1091,6 +1091,7 @@ CLV_PREDICTIONS = DataContract(
         "predicted_clv",
         "ci_lower",
         "ci_upper",
+        "ci_status",
         "p_alive",
         "clv_segment",
     ),
@@ -1102,7 +1103,9 @@ CLV_PREDICTIONS = DataContract(
         ValueValidator("predicted_purchases", lambda s: s >= 0, "predicted_purchases must be non-negative"),
         ValueValidator("expected_avg_value", lambda s: s >= 0, "expected_avg_value must be non-negative"),
         ValueValidator("predicted_clv", lambda s: s >= 0, "predicted_clv must be non-negative"),
-        ValueValidator("ci_lower", lambda s: s >= 0, "ci_lower must be non-negative"),
+        ValueValidator("ci_lower", lambda s: s.isna() | (s >= 0), "ci_lower must be non-negative or NaN"),
+        ValueValidator("ci_upper", lambda s: s.isna() | (s >= 0), "ci_upper must be non-negative or NaN"),
+        ValueValidator("ci_status", lambda s: s.isin({"valid", "insufficient_resamples", "fit_failed"}), "ci_status must be valid/insufficient_resamples/fit_failed"),
         ValueValidator("p_alive", lambda s: (s >= 0) & (s <= 1), "p_alive must be in [0, 1]"),
     ),
 )
@@ -1156,14 +1159,14 @@ DEMAND_TRANSFERENCE = DataContract(
         "to_product",
         "switch_rate",
         "revenue_share_from",
-        "demand_transference",
-        "revenue_at_risk",
+        "observed_switching_transference",
+        "observed_switching_recovery_proxy",
     ),
     validators=(
         ValueValidator("switch_rate", lambda s: (s >= 0) & (s <= 1), "switch_rate must be in [0, 1]"),
         ValueValidator("revenue_share_from", lambda s: (s >= 0) & (s <= 1), "revenue_share_from must be in [0, 1]"),
-        ValueValidator("demand_transference", lambda s: s >= 0, "demand_transference must be non-negative"),
-        ValueValidator("revenue_at_risk", lambda s: s >= 0, "revenue_at_risk must be non-negative"),
+        ValueValidator("observed_switching_transference", lambda s: s >= 0, "observed_switching_transference must be non-negative"),
+        ValueValidator("observed_switching_recovery_proxy", lambda s: s >= 0, "observed_switching_recovery_proxy must be non-negative"),
     ),
 )
 
@@ -1381,11 +1384,14 @@ CDT_COMMUNITY = DataContract(
 
 CDT_TREE_NODES = DataContract(
     name="cdt_tree_nodes",
-    columns=("node_id", "name", "attribute", "attribute_value", "size", "is_leaf", "similarity_within", "parent_id"),
+    columns=("node_id", "name", "attribute", "attribute_value", "size", "is_leaf", "similarity_within", "parent_id", "split_score", "split_stability", "shopper_decision_rule"),
     validators=(
         ValueValidator("size", lambda s: s >= 0, "size must be non-negative"),
         ValueValidator("is_leaf", lambda s: s.isin([0, 1]), "is_leaf must be boolean (0/1)"),
         ValueValidator("similarity_within", lambda s: s.isna() | ((s >= 0) & (s <= 1)), "similarity_within must be in [0, 1] or NaN"),
+        ValueValidator("split_score", lambda s: s.isna() | (s >= 0), "split_score must be non-negative or NaN"),
+        ValueValidator("split_stability", lambda s: s.isna() | ((s >= 0) & (s <= 1)), "split_stability must be in [0, 1] or NaN"),
+        ValueValidator("shopper_decision_rule", lambda s: s.notna(), "shopper_decision_rule must not be NaN"),
     ),
 )
 
@@ -1828,6 +1834,33 @@ IV_ELASTICITY = DataContract(
     ),
 )
 
+IV_ELASTICITY_EXTERNAL = DataContract(
+    name="iv_elasticity_external",
+    columns=(
+        "stockcode",
+        "iv_elasticity",
+        "iv_elasticity_se",
+        "iv_elasticity_p",
+        "iv_r_squared",
+        "first_stage_f",
+        "weak_instrument",
+        "n_obs",
+        "avg_price",
+        "avg_weekly_qty",
+        "avg_instrument",
+    ),
+    validators=(
+        ValueValidator("iv_elasticity_se", lambda s: s >= 0, "iv_elasticity_se must be non-negative"),
+        ValueValidator("iv_elasticity_p", lambda s: (s >= 0) & (s <= 1), "iv_elasticity_p must be in [0, 1]"),
+        ValueValidator("iv_r_squared", lambda s: (s >= 0) & (s <= 1), "iv_r_squared must be in [0, 1]"),
+        ValueValidator("first_stage_f", lambda s: s >= 0, "first_stage_f must be non-negative"),
+        ValueValidator("weak_instrument", lambda s: s.isin([True, False]), "weak_instrument must be boolean"),
+        ValueValidator("n_obs", lambda s: s > 0, "n_obs must be positive"),
+        ValueValidator("avg_price", lambda s: s > 0, "avg_price must be positive"),
+        ValueValidator("avg_weekly_qty", lambda s: s >= 0, "avg_weekly_qty must be non-negative"),
+    ),
+)
+
 RDD_ELASTICITY = DataContract(
     name="rdd_elasticity",
     columns=(
@@ -1845,8 +1878,34 @@ RDD_ELASTICITY = DataContract(
     ),
 )
 
+LOCAL_PRICE_RESPONSE = DataContract(
+    name="local_price_response",
+    columns=(
+        "product_a",
+        "product_b",
+        "threshold_price",
+        "cross_elasticity",
+        "n_obs",
+        "bandwidth",
+    ),
+    validators=(
+        ValueValidator("threshold_price", lambda s: s > 0, "threshold_price must be positive"),
+        ValueValidator("n_obs", lambda s: s > 0, "n_obs must be positive"),
+        ValueValidator("bandwidth", lambda s: s > 0, "bandwidth must be positive"),
+    ),
+)
+
 SYNTHETIC_CONTROL = DataContract(
     name="synthetic_control",
+    columns=(
+        "treatment_product",
+        "metric",
+        "value",
+    ),
+)
+
+SYNTHETIC_CONTROL_ELASTICITY = DataContract(
+    name="synthetic_control_elasticity",
     columns=(
         "treatment_product",
         "metric",
