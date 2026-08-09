@@ -6,8 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.analytics.data import derive_product_lookup
-from src.analytics.promo import detect_promotions
+from src.ui.features import get_detected_promotions, get_product_lookup
 from src.analytics.switching import (
     build_event_slices,
     compute_category_switching_matrix,
@@ -74,7 +73,7 @@ def _render_category_sankey(
     top_categories: int = 15,
 ) -> None:
     st.subheader(":material/account_tree: Category Switching Flow (Sankey)")
-    lookup = derive_product_lookup(df)
+    lookup = get_product_lookup(df)
     cat_matrix = compute_category_switching_matrix(
         df,
         window_days=window_days,
@@ -294,10 +293,10 @@ def _render_phase_switch_comparison(
 ) -> None:
     """Compare category switching across pre-event / event / post-event windows."""
     st.subheader(":material/swap_horiz: Time-Sliced Category Switching (Pre / Event / Post)")
-    lookup = derive_product_lookup(df)
+    lookup = get_product_lookup(df)
 
     # Detect promo periods as the event source (existing promo analytics)
-    events = detect_promotions(df)
+    events = get_detected_promotions(df)
     if events.empty:
         st.info("No promotional periods detected — set an event window manually below.")
         return

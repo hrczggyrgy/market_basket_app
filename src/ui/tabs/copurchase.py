@@ -14,7 +14,7 @@ from src.analytics.copurchase import (
     get_product_affinity_profile,
     get_top_affinity_pairs,
 )
-from src.analytics.data import add_segment_columns, assign_basket_mission
+from src.ui.features import get_segment_maps
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
 
@@ -205,9 +205,12 @@ def _render_pair_trends(
 def render(df: pd.DataFrame) -> None:
     st.subheader(":material/link: Co-purchase Affinity")
 
-    # Add segment/mission columns
-    df = add_segment_columns(df)
-    df = assign_basket_mission(df)
+    # Add segment/mission columns (cached - RFM clustering + mission are expensive)
+    customer_segments, baskets = get_segment_maps(df)
+    if not customer_segments.empty:
+        df = df.merge(customer_segments, on="customer_id", how="left")
+    if not baskets.empty:
+        df = df.merge(baskets, on="transaction_id", how="left")
 
     # Detect available filters
     available_segments = _get_available_segments(df)

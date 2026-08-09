@@ -7,17 +7,16 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.analytics.data import derive_product_lookup
 from src.analytics.rules import (
     aggregate_rules_to_categories,
     bootstrap_lift_ci,
-    create_basket_matrix,
     filter_rules,
     flag_redundant_rules,
     generate_rules,
     rules_to_table,
     run_fpgrowth,
 )
+from src.ui.features import get_product_lookup, get_basket_matrix
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
 
@@ -140,7 +139,7 @@ def _render_anchor_drilldown(df: pd.DataFrame, rules: pd.DataFrame, table: pd.Da
         st.info("No rules available for drill-down.")
         return
 
-    lookup = derive_product_lookup(df)
+    lookup = get_product_lookup(df)
     display_options = {
         str(lookup.loc[lookup["stockcode"] == p, "product"].iloc[0]) if (lookup["stockcode"] == p).any() else p: p
         for p in products
@@ -182,7 +181,7 @@ def _render_rule_network(df: pd.DataFrame, rules: pd.DataFrame, top_n: int) -> N
         return
 
     top = rules.nlargest(top_n, "lift")
-    basket = create_basket_matrix(df)
+    basket = get_basket_matrix(df)
     product_support = basket.mean(axis=0)
 
     graph = nx.DiGraph()
@@ -254,7 +253,7 @@ def render(df: pd.DataFrame) -> None:
         min_threshold = c3.number_input("Min Confidence", 0.01, 1.0, 0.05, 0.01)
         n_bootstrap = c4.number_input("Bootstrap Resamples", 5, 100, 25, 5)
 
-    basket = create_basket_matrix(df)
+    basket = get_basket_matrix(df)
     st.caption(f"Basket matrix: {basket.shape[0]} transactions × {basket.shape[1]} products")
 
     freq = run_fpgrowth(basket, min_support=min_support, max_len=max_len)
@@ -278,7 +277,7 @@ def render(df: pd.DataFrame) -> None:
         filtered = flag_redundant_rules(filtered)
         filtered = bootstrap_lift_ci(df, filtered, n_resamples=n_bootstrap)
 
-        lookup = derive_product_lookup(df)
+        lookup = get_product_lookup(df)
         table = rules_to_table(filtered, lookup)
         table["is_redundant"] = filtered["is_redundant"].values
         table["lift_ci_lower"] = filtered["lift_ci_lower"].values

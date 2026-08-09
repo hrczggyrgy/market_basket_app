@@ -10,13 +10,13 @@ import streamlit as st
 from src.analytics.category import compute_category_roles
 from src.analytics.performance import (
     abc_analysis,
-    compute_product_metrics,
     compute_repeat_rate,
     compute_sku_rationalization_df,
     compute_velocity,
     product_lifecycle_stage,
     xyz_analysis,
 )
+from src.ui.features import get_product_metrics
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
 
@@ -112,16 +112,15 @@ def _render_lifecycle_scatter(perf: pd.DataFrame) -> None:
     st.caption("Products in growth quadrant (top-right) are expanding; decline (bottom-left) need attention.")
 
 
-def _render_velocity_repeat(perf: pd.DataFrame) -> None:
+def _render_velocity_repeat(full: pd.DataFrame) -> None:
     st.subheader(":material/speed: Velocity vs Repeat Rate")
-    velocity = compute_velocity(perf)
-    repeat = compute_repeat_rate(perf)
+    velocity = full[["stockcode", "velocity"]].dropna()
+    repeat = full[["stockcode", "repeat_rate"]].dropna()
     if velocity.empty or repeat.empty:
         show(empty_state("No velocity/repeat data"))
         return
 
-    merged = velocity.merge(repeat[["stockcode", "repeat_rate"]], on="stockcode", how="inner")
-    merged = merged.merge(compute_product_metrics(perf)[["stockcode", "revenue"]], on="stockcode", how="inner")
+    merged = velocity.merge(repeat, on="stockcode", how="inner")
 
     fig = px.scatter(
         merged,
@@ -239,7 +238,7 @@ def render(df: pd.DataFrame) -> None:
         xyz_filter = c2.multiselect("XYZ Class", ["X", "Y", "Z"], default=["X", "Y", "Z"])
         stage_filter = c3.multiselect("Lifecycle", ["growth", "mature", "decline"], default=["growth", "mature", "decline"])
 
-    perf = compute_product_metrics(df)
+    perf = get_product_metrics(df)
     abc = abc_analysis(df)
     xyz = xyz_analysis(df)
     lifecycle = product_lifecycle_stage(df)
@@ -271,7 +270,7 @@ def render(df: pd.DataFrame) -> None:
     _render_lifecycle_scatter(df)
 
     st.divider()
-    _render_velocity_repeat(df)
+    _render_velocity_repeat(full)
 
     st.divider()
     _render_category_roles(df)

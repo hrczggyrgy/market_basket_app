@@ -15,11 +15,8 @@ from src.analytics.category import (
     compute_category_trend,
     enrich_with_categories,
 )
-from src.analytics.promo import (
-    compute_category_cannibalization,
-    compute_category_promo_timeline,
-    detect_promotions,
-)
+from src.analytics.promo import compute_category_cannibalization, compute_category_promo_timeline
+from src.ui.features import get_detected_promotions
 from src.analytics.pricing import compute_kvi_score
 from src.analytics.scenarios import compute_scenario_grid
 from src.ui.plots import PALETTE, empty_state, new_fig, show
@@ -382,7 +379,7 @@ def _scenario_grid(df: pd.DataFrame) -> None:
 
 def _category_cannibalization(df: pd.DataFrame) -> None:
     st.subheader(":material/local_fire_department: Category Cannibalization")
-    promos = detect_promotions(df)
+    promos = get_detected_promotions(df)
     if promos.empty:
         st.caption("No promotional periods detected with default parameters.")
         return
@@ -434,7 +431,7 @@ def _category_cannibalization(df: pd.DataFrame) -> None:
 def _promo_timeline(df: pd.DataFrame) -> None:
     st.subheader(":material/local_offer: Category Promo Timeline")
 
-    promos = detect_promotions(df)
+    promos = get_detected_promotions(df)
     if promos.empty:
         st.caption("No promotional periods detected with default parameters.")
         return
