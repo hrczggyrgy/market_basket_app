@@ -58,10 +58,10 @@ def compute_demand_transference_matrix(
     """Revenue-weighted observed switching for each ordered product pair.
 
     observed_switching_transference(A -> B) = P(switch A->B) * revenue_share(A)
-    observed_switching_recovery_proxy(A -> B) = P(switch A->B) * revenue(A)
+    observed_switching_transfer_revenue(A -> B) = P(switch A->B) * revenue(A)
 
     WHERE P(switch A->B) is the switching count normalized by all switches away
-    from A. ``observed_switching_recovery_proxy`` therefore sums across A's substitutes
+    from A. ``observed_switching_transfer_revenue`` therefore sums across A's substitutes
     to the OBSERVED revenue recovery if A is delisted.
 
     WARNING: This is an OBSERVED correlation, NOT a causal counterfactual estimate.
@@ -88,7 +88,7 @@ def compute_demand_transference_matrix(
     result["revenue_share_from"] = result["from_product"].map(revenue_share).fillna(0.0)
     result["observed_switching_transference"] = result["switch_rate"] * result["revenue_share_from"]
     result["revenue_from"] = result["from_product"].map(product_revenue).fillna(0.0)
-    result["observed_switching_recovery_proxy"] = result["switch_rate"] * result["revenue_from"]
+    result["observed_switching_transfer_revenue"] = result["switch_rate"] * result["revenue_from"]
 
     table = (
         result[
@@ -98,7 +98,7 @@ def compute_demand_transference_matrix(
                 "switch_rate",
                 "revenue_share_from",
                 "observed_switching_transference",
-                "observed_switching_recovery_proxy",
+                "observed_switching_transfer_revenue",
             ]
         ]
         .sort_values("observed_switching_transference", ascending=False)
@@ -114,7 +114,7 @@ def compute_substitutable_demand_percentage(
 ) -> pd.DataFrame:
     """Substitutable Demand Percentage per product.
 
-    SDP(A) = sum of observed switching recovery proxy away from A / total revenue.
+    SDP(A) = sum of observed switching transfer revenue away from A / revenue(A).
     High SDP (>= 0.8) marks a highly substitutable delist candidate; low SDP
     (< 0.2) marks a unique demand driver that must stay in stock.
 
@@ -122,13 +122,15 @@ def compute_substitutable_demand_percentage(
     """
     df = transactions_df.copy()
     df["revenue"] = revenue_column(df)
-    total_revenue = float(df["revenue"].sum())
+    product_revenue = df.groupby(product_col)["revenue"].sum()
+    total_revenue = float(product_revenue.sum())
 
     if total_revenue <= 0:
         return check(pd.DataFrame(columns=list(SDP_SCORES.columns)), SDP_SCORES, allow_empty=True)
 
-    sdp = demand_transference_df.groupby("from_product")["observed_switching_recovery_proxy"].sum() / total_revenue
-    table = sdp.reset_index().rename(columns={"from_product": product_col, "observed_switching_recovery_proxy": "sdp"})
+    recovery_sum = demand_transference_df.groupby("from_product")["observed_switching_transfer_revenue"].sum()
+    sdp = (recovery_sum / product_revenue).fillna(0.0).clip(upper=1.0)
+    table = sdp.reset_index().rename(columns={"from_product": product_col, 0: "sdp"})
     return check(table, SDP_SCORES)
 
 
@@ -140,7 +142,7 @@ def delist_impact_analysis(
 ) -> pd.DataFrame:
     """Per-product revenue impact of a simulated delist.
 
-    ``observed_revenue_recovered`` is the sum of ``observed_switching_recovery_proxy`` for the delisted
+    ``observed_revenue_recovered`` is the sum of ``observed_switching_transfer_revenue`` for the delisted
     product's transfers; ``net_revenue_impact`` = recovered - own revenue.
 
     WARNING: This is based on OBSERVED switching correlations, NOT causal estimates.
@@ -155,7 +157,7 @@ def delist_impact_analysis(
         transferred = float(
             demand_transference_df[
                 demand_transference_df["from_product"] == prod
-            ]["observed_switching_recovery_proxy"].sum()
+            ]["observed_switching_transfer_revenue"].sum()
         )
         rows.append(
             {
@@ -199,8 +201,8 @@ def node_delist_impact(
         node_dt = demand_transference_df[
             demand_transference_df["from_product"].isin(node_products)
         ]
-        internal = float(node_dt[node_dt["to_product"].isin(node_products)]["observed_switching_recovery_proxy"].sum())
-        external = float(node_dt[~node_dt["to_product"].isin(node_products)]["observed_switching_recovery_proxy"].sum())
+        internal = float(node_dt[node_dt["to_product"].isin(node_products)]["observed_switching_transfer_revenue"].sum())
+        external = float(node_dt[~node_dt["to_product"].isin(node_products)]["observed_switching_transfer_revenue"].sum())
         rows.append(
             {
                 "node_id": node_id,
@@ -494,10 +496,10 @@ def compute_recovery_hhi(demand_transference_df: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for delisted in demand_transference_df["from_product"].unique():
         dt = demand_transference_df[demand_transference_df["from_product"] == delisted]
-        total_risk = float(dt["observed_switching_recovery_proxy"].sum())
+        total_risk = float(dt["observed_switching_transfer_revenue"].sum())
         if total_risk <= 0:
             continue
-        shares = dt.groupby("to_product")["observed_switching_recovery_proxy"].sum() / total_risk
+        shares = dt.groupby("to_product")["observed_switching_transfer_revenue"].sum() / total_risk
         rows.append(
             {
                 "delisted_product": delisted,

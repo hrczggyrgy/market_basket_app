@@ -30,7 +30,7 @@ def test_segmentation_tab_renders_radar(app_path) -> None:
 
     body_text = _text(at)
     assert "Customer Segmentation" in body_text
-    assert "Segment Radar" in body_text
+    assert "Segment Differentiation" in body_text
     assert "Segment Migration" in body_text
-    assert "Segment Distribution" in body_text
+    assert "Share of total customer value per segment" in body_text
     assert "n_clusters" not in body_text

@@ -87,8 +87,10 @@ def test_compute_switching_matrix_basic() -> None:
     # Percentages should be between 0 and 1
     assert (matrix["pct"] >= 0).all() and (matrix["pct"] <= 1).all()
     
-    # Percentages should sum to approximately 1
-    assert abs(matrix["pct"].sum() - 1.0) < 1e-10
+    # Percentages should sum to approximately 1 per source product, so total sum equals
+    # number of source products with outgoing switches
+    # For this test data: 3 source products (A, B, C) each with outgoing switches
+    assert abs(matrix["pct"].sum() - 3.0) < 1e-10
 
 
 def test_compute_switching_matrix_empty() -> None:

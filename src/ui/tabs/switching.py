@@ -464,7 +464,11 @@ def render(df: pd.DataFrame) -> None:
         min_txns = c2.number_input("Min transactions per customer", 2, 10, 3)
         top_n = c3.number_input("Top N paths / products", 5, 50, 20)
 
-    matrix = compute_switching_matrix(df, window_days=window_days, min_transactions=min_txns)
+    @st.cache_data(show_spinner="Computing switching matrix...")
+    def get_switching_matrix(data_df: pd.DataFrame, w_days: int, min_txns: int) -> pd.DataFrame:
+        return compute_switching_matrix(data_df, window_days=w_days, min_transactions=min_txns)
+
+    matrix = get_switching_matrix(df, window_days, min_txns)
 
     if matrix.empty:
         st.warning("No switching patterns found with current parameters.")

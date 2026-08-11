@@ -309,12 +309,41 @@ def render(df: pd.DataFrame) -> None:
         xyz_filter = c2.multiselect("XYZ Class", ["X", "Y", "Z"], default=["X", "Y", "Z"])
         stage_filter = c3.multiselect("Lifecycle", ["growth", "mature", "decline"], default=["growth", "mature", "decline"])
 
-    perf = get_product_metrics(df)
-    abc = abc_analysis(df)
-    xyz = xyz_analysis(df)
-    lifecycle = product_lifecycle_stage(df)
-    velocity = compute_velocity(df)
-    repeat = compute_repeat_rate(df)
+    @st.cache_data(show_spinner="Computing product metrics...")
+    def get_cached_product_metrics(data_df: pd.DataFrame) -> pd.DataFrame:
+        return get_product_metrics(data_df)
+
+    @st.cache_data(show_spinner="Computing ABC analysis...")
+    def get_cached_abc_analysis(data_df: pd.DataFrame) -> pd.DataFrame:
+        return abc_analysis(data_df)
+
+    @st.cache_data(show_spinner="Computing XYZ analysis...")
+    def get_cached_xyz_analysis(data_df: pd.DataFrame) -> pd.DataFrame:
+        return xyz_analysis(data_df)
+
+    @st.cache_data(show_spinner="Computing lifecycle stages...")
+    def get_cached_product_lifecycle_stage(data_df: pd.DataFrame) -> pd.DataFrame:
+        return product_lifecycle_stage(data_df)
+
+    @st.cache_data(show_spinner="Computing velocity...")
+    def get_cached_compute_velocity(data_df: pd.DataFrame) -> pd.DataFrame:
+        return compute_velocity(data_df)
+
+    @st.cache_data(show_spinner="Computing repeat rate...")
+    def get_cached_compute_repeat_rate(data_df: pd.DataFrame) -> pd.DataFrame:
+        return compute_repeat_rate(data_df)
+
+    @st.cache_data(show_spinner="Computing SKU rationalization...")
+    def get_cached_compute_sku_rationalization_df(data_df: pd.DataFrame) -> pd.DataFrame:
+        return compute_sku_rationalization_df(data_df)
+
+    perf = get_cached_product_metrics(df)
+    abc = get_cached_abc_analysis(df)
+    xyz = get_cached_xyz_analysis(df)
+    lifecycle = get_cached_product_lifecycle_stage(df)
+    velocity = get_cached_compute_velocity(df)
+    repeat = get_cached_compute_repeat_rate(df)
+    rational = get_cached_compute_sku_rationalization_df(df)
 
     # Merge all
     full = (

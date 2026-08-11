@@ -21,12 +21,12 @@ def _net_switching(demand_transference_df: pd.DataFrame) -> pd.DataFrame:
     if demand_transference_df is None or demand_transference_df.empty:
         return pd.DataFrame()
     out = (
-        demand_transference_df.groupby("from_product")["observed_switching_recovery_proxy"]
+        demand_transference_df.groupby("from_product")["observed_switching_transfer_revenue"]
         .sum()
         .rename("outflow")
     )
     inflow = (
-        demand_transference_df.groupby("to_product")["observed_switching_recovery_proxy"]
+        demand_transference_df.groupby("to_product")["observed_switching_transfer_revenue"]
         .sum()
         .rename("inflow")
     )
@@ -52,6 +52,24 @@ def generate_switching_insights(
     """
     insights: list[Insight] = []
 
+    # Compute evidence metrics from demand_transference_df
+    n_transition_pairs = len(demand_transference_df)
+    n_unique_products = len(set(demand_transference_df["from_product"]) | set(demand_transference_df["to_product"]))
+    # Determine evidence level based on transition pairs and unique products
+    if n_transition_pairs >= 50 and n_unique_products >= 20:
+        evidence_level = 5
+    elif n_transition_pairs >= 30 and n_unique_products >= 15:
+        evidence_level = 4
+    elif n_transition_pairs >= 20 and n_unique_products >= 10:
+        evidence_level = 3
+    elif n_transition_pairs >= 10 and n_unique_products >= 5:
+        evidence_level = 2
+    else:
+        evidence_level = 1
+    confidence_gate = evidence_level >= 3
+    # Human-readable evidence string
+    evidence_str = f"Evidence Level {evidence_level}: {n_transition_pairs} transition pairs, {n_unique_products} unique products"
+
     net = _net_switching(demand_transference_df)
     if not net.empty:
         total_proxy = float(net["inflow"].sum())
@@ -68,7 +86,7 @@ def generate_switching_insights(
                     kind="leakage",
                     title=f"{top_loser_name} leaks the most switching revenue",
                     evidence=(
-                        f"Net switching outflow of €{loser_proxy:,.0f} (observed "
+                        f"{evidence_str}. Net switching outflow of €{loser_proxy:,.0f} (observed "
                         f"recovery-weighted). Switching is observed correlation, "
                         f"not a causal delist estimate."
                     ),
@@ -78,9 +96,12 @@ def generate_switching_insights(
                     ),
                     confidence="medium",
                     impact_value=loser_proxy,
-                    sample_size=int(len(net)),
-                )
-            )
+                    evidence_level=evidence_level,
+                    n_transition_pairs=n_transition_pairs,
+                    n_unique_products=n_unique_products,
+                    confidence_gate=confidence_gate,
+                 )
+             )
         if not winners.empty:
             top_winner = winners.iloc[-1]
             winner_proxy = float(top_winner["net"])
@@ -91,12 +112,16 @@ def generate_switching_insights(
                     kind="growth",
                     title=f"{top_winner.name} is the top switching destination",
                     evidence=(
-                        f"Net switching inflow of €{winner_proxy:,.0f}; customers "
+                        f"{evidence_str}. Net switching inflow of €{winner_proxy:,.0f}; customers "
                         f"substituting toward it should have availability protected."
                     ),
                     action="Protect stock and facings; consider promoting its substitutes to steer demand.",
                     confidence="medium",
                     impact_value=winner_proxy,
+                    evidence_level=evidence_level,
+                    n_transition_pairs=n_transition_pairs,
+                    n_unique_products=n_unique_products,
+                    confidence_gate=confidence_gate,
                 )
             )
 
@@ -113,13 +138,17 @@ def generate_switching_insights(
                     kind="risk",
                     title=f"{len(unique)} products carry non-substitutable demand",
                     evidence=(
-                        f"Products with SDP < {_SDP_UNIQUE:.0%} retain "
+                        f"{evidence_str}. Products with SDP < {_SDP_UNIQUE:.0%} retain "
                         f"~{unique_rev_pct:.0%} of switching-weighted revenue even when "
                         f"they go missing; their absence leaks demand out of the assortment."
                     ),
                     action="Never delist on volume grounds alone; they need substitute depth first.",
                     confidence="medium",
                     sample_size=int(len(unique)),
+                    evidence_level=evidence_level,
+                    n_transition_pairs=n_transition_pairs,
+                    n_unique_products=n_unique_products,
+                    confidence_gate=confidence_gate,
                 )
             )
         if not substitutable.empty:
@@ -131,14 +160,17 @@ def generate_switching_insights(
                     kind="efficiency",
                     title=f"{len(substitutable)} products have highly substitutable demand",
                     evidence=(
-                        f"SDP >= {_SDP_SUBSTITUTABLE:.0%} (~{sub_rev_pct:.0%} of switching-weighted "
-                        f"revenue): most of their demand is recoverable within the assortment."
+                        f"{evidence_str}. SDP >= {_SDP_SUBSTITUTABLE:.0%} (~{sub_rev_pct:.0%} of switching-weighted revenue): most of their demand is recoverable within the assortment."
                     ),
                     action="These are the least risky delist candidates — verify with a causal test.",
                     confidence="medium",
                     sample_size=int(len(substitutable)),
+                    evidence_level=evidence_level,
+                    n_transition_pairs=n_transition_pairs,
+                    n_unique_products=n_unique_products,
+                    confidence_gate=confidence_gate,
+                    )
                 )
-            )
 
     if delist_impact_df is not None and not delist_impact_df.empty:
         positive = delist_impact_df[delist_impact_df["net_revenue_impact"] > 0]
@@ -152,7 +184,7 @@ def generate_switching_insights(
                     kind="risk",
                     title=f"Delisting {worst['stockcode']} would lose €{-worst['net_revenue_impact']:,.0f}",
                     evidence=(
-                        f"Recovery of €{worst['estimated_revenue_recovered']:,.0f} against "
+                        f"{evidence_str}. Recovery of €{worst['estimated_revenue_recovered']:,.0f} against "
                         f"€{worst['product_revenue']:,.0f} of own revenue "
                         f"({worst['recovery_rate']:.0%} recovery)."
                     ),
@@ -160,6 +192,10 @@ def generate_switching_insights(
                     confidence="low",
                     impact_value=float(-worst["net_revenue_impact"]),
                     sample_size=int(len(negative)),
+                    evidence_level=evidence_level,
+                    n_transition_pairs=n_transition_pairs,
+                    n_unique_products=n_unique_products,
+                    confidence_gate=confidence_gate,
                 )
             )
         if not positive.empty:
@@ -171,13 +207,17 @@ def generate_switching_insights(
                     kind="opportunity",
                     title=f"Delisting {best['stockcode']} is revenue-neutral or better",
                     evidence=(
-                        f"Recovery of €{best['estimated_revenue_recovered']:,.0f} vs "
+                        f"{evidence_str}. Recovery of €{best['estimated_revenue_recovered']:,.0f} vs "
                         f"€{best['product_revenue']:,.0f} own revenue; net "
                         f"€{best['net_revenue_impact']:,.0f}."
                     ),
                     action="Validate with a causal or market test before delisting.",
                     confidence="low",
                     impact_value=float(best["net_revenue_impact"]),
+                    evidence_level=evidence_level,
+                    n_transition_pairs=n_transition_pairs,
+                    n_unique_products=n_unique_products,
+                    confidence_gate=confidence_gate,
                 )
             )
 

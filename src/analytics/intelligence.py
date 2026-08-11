@@ -30,6 +30,10 @@ class Insight:
     impact_value: float | None = None  # quantitative impact (revenue, etc.)
     sample_size: int | None = None  # n observations
     stability: float | None = None  # [0,1] stability score
+    evidence_level: int | None = None  # 1-5: exploratory, descriptive, predictive, quasi-causal, causal
+    n_transition_pairs: int | None = None  # number of switching transition pairs
+    n_unique_products: int | None = None  # number of unique products involved in switching
+    confidence_gate: bool | None = None  # whether insight meets minimum evidence threshold
 
 
 @dataclass(frozen=True)
@@ -61,7 +65,8 @@ def insights_to_dataframe(insights: list[Insight]) -> pd.DataFrame:
     if not insights:
         return pd.DataFrame(columns=[
             "domain", "entity", "kind", "title", "evidence",
-            "impact_value", "confidence", "sample_size", "stability", "action"
+            "impact_value", "confidence", "sample_size", "stability", "action",
+            "evidence_level", "n_transition_pairs", "n_unique_products", "confidence_gate"
         ])
 
     data = [
@@ -76,6 +81,10 @@ def insights_to_dataframe(insights: list[Insight]) -> pd.DataFrame:
             "sample_size": insight.sample_size,
             "stability": insight.stability,
             "action": insight.action,
+            "evidence_level": insight.evidence_level,
+            "n_transition_pairs": insight.n_transition_pairs,
+            "n_unique_products": insight.n_unique_products,
+            "confidence_gate": insight.confidence_gate,
         }
         for insight in insights
     ]

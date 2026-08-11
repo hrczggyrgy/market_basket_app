@@ -23,6 +23,79 @@ KIND_META: dict[str, dict[str, str]] = {
 }
 
 
+def render_evidence_badge(evidence_level: int | None = None) -> None:
+    """Render an evidence level badge (1-5) with appropriate color and tooltip.
+    
+    Evidence levels:
+    1: Exploratory
+    2: Descriptive  
+    3: Predictive
+    4: Quasi-causal
+    5: Causal
+    """
+    if evidence_level is None:
+        level_label = "No evidence"
+        color = "#888888"  # Gray
+    elif evidence_level == 1:
+        level_label = "Exploratory"
+        color = "#FF6B6B"  # Red
+    elif evidence_level == 2:
+        level_label = "Descriptive"
+        color = "#FFD93D"  # Yellow
+    elif evidence_level == 3:
+        level_label = "Predictive"
+        color = "#6BCB77"  # Green
+    elif evidence_level == 4:
+        level_label = "Quasi-causal"
+        color = "#4D96FF"  # Blue
+    else:  # evidence_level == 5
+        level_label = "Causal"
+        color = "#9B5DE5"  # Purple
+    
+    st.markdown(
+        f'<span style="background-color: {color}; color: white; padding: 2px 8px; '
+        f'border-radius: 10px; font-size: 0.8em; font-weight: 500;">{level_label}</span>',
+        unsafe_allow_html=True
+    )
+
+
+def render_delta_badge(delta_value: float | None = None, 
+                      is_percent: bool = False,
+                      positive_good: bool = True) -> None:
+    """Render a delta/change badge with appropriate coloring.
+    
+    Args:
+        delta_value: The change value (can be positive or negative)
+        is_percent: Whether the value is a percentage
+        positive_good: Whether positive values are good (True) or bad (False)
+                      For revenue: positive_good=True (more is better)
+                      For costs: positive_good=False (less is better)
+    """
+    if delta_value is None or (isinstance(delta_value, float) and pd.isna(delta_value)):
+        st.markdown(
+            '<span style="background-color: #888888; color: white; padding: 2px 8px; '
+            'border-radius: 10px; font-size: 0.8em; font-weight: 500;">—</span>',
+            unsafe_allow_html=True
+        )
+        return
+    
+    # Format the value
+    if is_percent:
+        formatted_value = f"{delta_value:+.1%}"
+    else:
+        formatted_value = f"€{delta_value:+,.0f}"
+    
+    # Determine if the delta is "good" or "bad"
+    is_good = (delta_value > 0) if positive_good else (delta_value < 0)
+    color = "#6BCB77" if is_good else "#FF6B6B"  # Green for good, Red for bad
+    
+    st.markdown(
+        f'<span style="background-color: {color}; color: white; padding: 2px 8px; '
+        f'border-radius: 10px; font-size: 0.8em; font-weight: 500;">{formatted_value}</span>',
+        unsafe_allow_html=True
+    )
+
+
 def render_metric_row(metrics: list[dict[str, Any]]) -> None:
     """Render a row of KPI metric tiles (label, value, help)."""
     if not metrics:
@@ -48,24 +121,72 @@ def render_insight_cards(insights_df: pd.DataFrame) -> None:
         evidence = str(row.get("evidence", ""))
         action = str(row.get("action", ""))
         confidence = str(row.get("confidence", "medium"))
+        evidence_level = row.get("evidence_level")
+        impact_value = row.get("impact_value")
+        sample_size = row.get("sample_size")
+        stability = row.get("stability")
+        n_transition_pairs = row.get("n_transition_pairs")
+        n_unique_products = row.get("n_unique_products")
+        confidence_gate = row.get("confidence_gate")
 
         with st.container(border=True):
-            st.markdown(f"**{meta['icon']} {title}**")
+            # Header with icon and title
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.markdown(f"**{meta['icon']} {title}**")
+            with col2:
+                # Confidence indicator
+                confidence_colors = {"high": "#2ECC71", "medium": "#F39C12", "low": "#E74C3C", "insufficient": "#95A5A6"}
+                conf_color = confidence_colors.get(confidence.lower(), "#95A5A6")
+                st.markdown(
+                    f'<span style="background-color: {conf_color}; color: white; padding: 2px 6px; '
+                    f'border-radius: 3px; font-size: 0.8em;">{confidence.upper()}</span>',
+                    unsafe_allow_html=True
+                )
+            
+            # Evidence section
             st.markdown(evidence)
+            
+            # Evidence level badge
+            render_evidence_badge(evidence_level)
+            
+            # Action section
             if action:
                 st.markdown(f"**Recommended action:** {action}")
-            parts: list[str] = []
-            impact = row.get("impact_value")
-            if impact is not None and pd.notna(impact):
-                parts.append(f"Impact: €{float(impact):,.0f}")
-            sample = row.get("sample_size")
-            if sample is not None and pd.notna(sample):
-                parts.append(f"Sample: {int(sample):,}")
-            stability = row.get("stability")
-            if stability is not None and pd.notna(stability):
-                parts.append(f"Stability: {float(stability):.0%}")
-            parts.append(f"Confidence: {confidence.capitalize()}")
-            st.caption(" · ".join(parts))
+            
+            # Metrics section in an organized layout
+            metric_cols = st.columns(4)
+            
+            with metric_cols[0]:
+                # Display impact as delta badge for visual indication of positive/negative impact
+                if impact_value is not None and pd.notna(impact_value):
+                    # For impact, positive is generally good (revenue increase, cost savings, etc.)
+                    render_delta_badge(impact_value, as_pct=False, suffix="€", positive_good=True)
+                    st.caption(f"Impact: €{impact_value:,.0f}")
+                else:
+                    st.metric("Impact", "—")
+            
+            with metric_cols[1]:
+                if sample_size is not None and pd.notna(sample_size):
+                    st.metric("Sample Size", f"{int(sample_size):,}")
+                else:
+                    st.metric("Sample Size", "—")
+            
+            with metric_cols[2]:
+                if stability is not None and pd.notna(stability):
+                    st.metric("Stability", f"{stability:.0%}")
+                else:
+                    st.metric("Stability", "—")
+            
+            with metric_cols[3]:
+                # Show switching-specific metrics if available
+                if n_transition_pairs is not None and n_unique_products is not None:
+                    st.metric("Switching Pairs", f"{n_transition_pairs}")
+                elif confidence_gate is not None:
+                    gate_status = "������✓ Pass" if confidence_gate else "������✗ Fail"
+                    st.metric("Evidence Gate", gate_status)
+                else:
+                    st.metric("Details", "—")
 
 
 def render_opportunity_table(opps_df: pd.DataFrame) -> None:

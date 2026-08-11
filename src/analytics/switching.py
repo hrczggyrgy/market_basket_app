@@ -58,10 +58,15 @@ def _customer_sequences(
         .agg(
             date=("date", "first"),
             products=("stockcode", lambda s: ",".join(sorted(set(s)))),
-            is_weekend=("is_weekend", "first") if seasonal_adjustment else ("date", lambda x: False),
         )
         .reset_index()
     )
+    # Sort by customer_id and date to ensure correct sequence order within each customer
+    seq = seq.sort_values(["customer_id", "date"]).reset_index(drop=True)
+    if seasonal_adjustment:
+        seq["is_weekend"] = seq.groupby("customer_id")["is_weekend"].transform("first")
+    else:
+        seq["is_weekend"] = False
     seq["prev_date"] = seq.groupby("customer_id")["date"].shift(1)
     seq["prev_products"] = seq.groupby("customer_id")["products"].shift(1)
     seq = seq.dropna(subset=["prev_products"])
@@ -84,6 +89,7 @@ def compute_switching_matrix(
     window_days: int = 90,
     min_transactions: int = 3,
     seasonal_adjustment: bool = False,
+    switching_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Observed transition counts between consecutive purchases: A -> B.
 
@@ -95,6 +101,9 @@ def compute_switching_matrix(
         window_days: Maximum gap between consecutive purchases to consider a switch
         min_transactions: Minimum transactions per customer to include
         seasonal_adjustment: If True, adjusts window based on day-of-week patterns
+        switching_df: Precomputed switching matrix with columns ['from_product', 'to_product', 'count'].
+                      If provided, the function will normalize this matrix and return it.
+                      If None, the switching matrix is computed from df.
 
     Returns:
         DataFrame with from_product, to_product, count, pct columns.
@@ -111,6 +120,17 @@ def compute_switching_matrix(
         >>> 'from_product' in matrix.columns
         True
     """
+    if switching_df is not None:
+        if switching_df.empty:
+            return check(pd.DataFrame(columns=list(SWITCHING_MATRIX.columns)), SWITCHING_MATRIX, allow_empty=True)
+        # Aggregate the switching matrix by from_product and to_product, summing counts
+        matrix = switching_df.groupby(["from_product", "to_product"], as_index=False)["count"].sum()
+        # Normalize the provided switching matrix
+        matrix["pct"] = matrix.groupby("from_product")["count"].transform(lambda x: x / x.sum() if x.sum() > 0 else 0)
+        # When switching_df is provided, the count column contains the normalized values
+        matrix["count"] = matrix["pct"]
+        return check(matrix, SWITCHING_MATRIX)
+
     seq = _customer_sequences(df, window_days, min_transactions, seasonal_adjustment)
     if seq.empty:
         return check(pd.DataFrame(columns=list(SWITCHING_MATRIX.columns)), SWITCHING_MATRIX, allow_empty=True)
@@ -135,11 +155,11 @@ def compute_switching_matrix(
         .size()
         .reset_index(name="count")
     )
-    matrix["pct"] = matrix["count"] / matrix["count"].sum()
+    matrix["pct"] = matrix.groupby("from_product")["count"].transform(lambda x: x / x.sum() if x.sum() > 0 else 0)
     return check(matrix, SWITCHING_MATRIX)
 
 
-def compute_transition_matrix(df: pd.DataFrame, window_days: int = 90, min_transactions: int = 3, normalize: bool = True) -> pd.DataFrame:
+def compute_transition_matrix(df: pd.DataFrame, window_days: int = 90, min_transactions: int = 3, normalize: bool = True, switching_df: pd.DataFrame | None = None) -> pd.DataFrame:
     """Square from->to observed transition probability matrix (rows sum to 1).
 
     WARNING: This is an OBSERVED correlation, NOT a causal counterfactual estimate.
@@ -149,8 +169,17 @@ def compute_transition_matrix(df: pd.DataFrame, window_days: int = 90, min_trans
     If normalize=False, returns raw counts.
 
     Adds an absorbing "no_switch" state representing customers who don't switch away.
+    Args:
+        df: Transaction data
+        window_days: Maximum gap between consecutive purchases to consider a switch
+        min_transactions: Minimum transactions per customer to include
+        normalize: If True, returns P(to | from) - probability of switching to B given A was switched from.
+                  If False, returns raw counts.
+        switching_df: Precomputed switching matrix with columns ['from_product', 'to_product', 'count'].
+                      If provided, the function will use this matrix (and normalize it if normalize=True).
+                      If None, the switching matrix is computed from df.
     """
-    matrix = compute_switching_matrix(df, window_days, min_transactions)
+    matrix = compute_switching_matrix(df, window_days, min_transactions, switching_df=switching_df)
     if matrix.empty:
         return pd.DataFrame()
     pivot = matrix.pivot(index="from_product", columns="to_product", values="count").fillna(0)
@@ -169,6 +198,8 @@ def compute_transition_matrix(df: pd.DataFrame, window_days: int = 90, min_trans
     return pivot
 
 
+# def build_event_slices(
+#     df: pd.DataFrame,
 def build_event_slices(
     df: pd.DataFrame,
     events: pd.DataFrame | list[dict],
@@ -636,7 +667,7 @@ def compute_substitution_strength(
     for _, row in demand_transference_df.iterrows():
         frm, to = row["from_product"], row["to_product"]
         switch_rate = row["switch_rate"]
-        revenue_at_risk = row["observed_switching_recovery_proxy"]
+        revenue_at_risk = row["observed_switching_transfer_revenue"]
         recovery_proxy = revenue_at_risk
 
         # Get SDP for from_product (substitutability of demand being lost)
@@ -856,7 +887,7 @@ def generate_switching_opportunity_matrix(
 
     for _, row in demand_transference_df.iterrows():
         frm, to = row["from_product"], row["to_product"]
-        revenue_at_risk = row["observed_switching_recovery_proxy"]
+        revenue_at_risk = row["observed_switching_transfer_revenue"]
         recovery_proxy = revenue_at_risk
 
         sub_row = sub_lookup.get((frm, to))

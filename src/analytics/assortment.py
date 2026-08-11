@@ -90,7 +90,7 @@ def _evaluate_solution(
             continue
         in_kept = edges["to_product"].isin(kept)
         if in_kept.any():
-            recovered += float(edges.loc[in_kept, "observed_switching_recovery_proxy"].sum())
+            recovered += float(edges.loc[in_kept, "observed_switching_transfer_revenue"].sum())
 
     unmet = lost - recovered
     expected = kept_revenue + recovered
@@ -147,10 +147,10 @@ def optimize_assortment_milp(
             transactions_df, top_n=top_n
         )
     if demand_transference_df is None or demand_transference_df.empty:
-        dt_edges = pd.DataFrame(columns=["from_product", "to_product", "observed_switching_recovery_proxy"])
+        dt_edges = pd.DataFrame(columns=["from_product", "to_product", "observed_switching_transfer_revenue"])
     else:
         dt_edges = demand_transference_df[
-            ["from_product", "to_product", "observed_switching_recovery_proxy"]
+            ["from_product", "to_product", "observed_switching_transfer_revenue"]
         ]
     dt_edges = dt_edges[dt_edges["from_product"].isin(revenue.index) & dt_edges["to_product"].isin(revenue.index)]
 
@@ -168,7 +168,7 @@ def optimize_assortment_milp(
     recovery = np.zeros(n)
     for _, e in dt_edges.iterrows():
         if e["from_product"] in idx and e["to_product"] in idx:
-            recovery[idx[e["from_product"]]] += float(e["observed_switching_recovery_proxy"])
+            recovery[idx[e["from_product"]]] += float(e["observed_switching_transfer_revenue"])
 
     # Remove recovery term from direct coefficient - handled via z_ij variables
 
@@ -179,8 +179,8 @@ def optimize_assortment_milp(
         if e["from_product"] in idx and e["to_product"] in idx:
             i = idx[e["from_product"]]
             j = idx[e["to_product"]]
-            edge_list.append((i, j))
-            edge_recovery.append(float(e["observed_switching_recovery_proxy"]))
+        edge_list.append((i, j))
+        edge_recovery.append(float(e["observed_switching_transfer_revenue"]))
 
     m = len(edge_list)
 
@@ -290,10 +290,10 @@ def optimize_assortment_heuristic(
     revenue = revenue_per_product.head(max_skus * 4)
 
     if demand_transference_df is None or demand_transference_df.empty:
-        dt_edges = pd.DataFrame(columns=["from_product", "to_product", "observed_switching_recovery_proxy"])
+        dt_edges = pd.DataFrame(columns=["from_product", "to_product", "observed_switching_transfer_revenue"])
     else:
         dt_edges = demand_transference_df[
-            ["from_product", "to_product", "observed_switching_recovery_proxy"]
+            ["from_product", "to_product", "observed_switching_transfer_revenue"]
         ]
     dt_edges = dt_edges[dt_edges["from_product"].isin(revenue.index) & dt_edges["to_product"].isin(revenue.index)]
     transfers = _transfers_by_from(dt_edges)

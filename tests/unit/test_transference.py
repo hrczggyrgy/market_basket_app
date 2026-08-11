@@ -35,8 +35,8 @@ def test_demand_transference_matrix_contract_and_math(sample_df: pd.DataFrame) -
     DEMAND_TRANSFERENCE.validate(dt)
     assert (dt["switch_rate"] >= 0).all() and (dt["switch_rate"] <= 1).all()
     assert (dt["observed_switching_transference"] >= 0).all()
-    assert (dt["observed_switching_recovery_proxy"] >= 0).all()
-    assert (dt["observed_switching_recovery_proxy"] >= 0).all()
+    assert (dt["observed_switching_transfer_revenue"] >= 0).all()
+    assert (dt["observed_switching_transfer_revenue"] >= 0).all()
     assert dt["observed_switching_transference"].max() <= 1.0
 
 
@@ -72,7 +72,7 @@ def test_delist_impact_analysis(sample_df: pd.DataFrame) -> None:
     assert (impact["estimated_revenue_recovered"] >= 0).all()
     expected = {
         "recovered": float(
-            dt[dt["from_product"].isin(top2)]["observed_switching_recovery_proxy"].sum()
+            dt[dt["from_product"].isin(top2)]["observed_switching_transfer_revenue"].sum()
         ),
         "own": float(revenue.loc[top2].sum()),
     }

@@ -1398,13 +1398,13 @@ DEMAND_TRANSFERENCE = DataContract(
         "switch_rate",
         "revenue_share_from",
         "observed_switching_transference",
-        "observed_switching_recovery_proxy",
+        "observed_switching_transfer_revenue",
     ),
     validators=(
         ValueValidator("switch_rate", lambda s: (s >= 0) & (s <= 1), "switch_rate must be in [0, 1]"),
         ValueValidator("revenue_share_from", lambda s: (s >= 0) & (s <= 1), "revenue_share_from must be in [0, 1]"),
         ValueValidator("observed_switching_transference", lambda s: s >= 0, "observed_switching_transference must be non-negative"),
-        ValueValidator("observed_switching_recovery_proxy", lambda s: s >= 0, "observed_switching_recovery_proxy must be non-negative"),
+        ValueValidator("observed_switching_transfer_revenue", lambda s: s >= 0, "observed_switching_transfer_revenue must be non-negative"),
     ),
 )
 
@@ -2163,6 +2163,10 @@ PRICING_INSIGHTS = DataContract(
         "sample_size",
         "stability",
         "action",
+        "evidence_level",
+        "n_transition_pairs",
+        "n_unique_products",
+        "confidence_gate",
     ),
     validators=(
         ValueValidator(
@@ -2174,6 +2178,26 @@ PRICING_INSIGHTS = DataContract(
             "confidence",
             lambda s: s.isin({"high", "medium", "low", "insufficient"}),
             "confidence must be high/medium/low/insufficient",
+        ),
+        ValueValidator(
+            "evidence_level",
+            lambda s: s.isin([1, 2, 3, 4, 5]),
+            "evidence_level must be 1-5",
+        ),
+        ValueValidator(
+            "n_transition_pairs",
+            lambda s: s >= 0,
+            "n_transition_pairs must be non-negative",
+        ),
+        ValueValidator(
+            "n_unique_products",
+            lambda s: s >= 0,
+            "n_unique_products must be non-negative",
+        ),
+        ValueValidator(
+            "confidence_gate",
+            lambda s: s.isin([True, False]),
+            "confidence_gate must be boolean",
         ),
         ValueValidator(
             "impact_value",
@@ -2381,5 +2405,27 @@ CAUSAL_UPLIFT = DataContract(
     validators=(
         ValueValidator("treatment", lambda s: s.isin([0, 1]), "treatment must be binary (0/1)"),
         ValueValidator("propensity", lambda s: (s >= 0) & (s <= 1), "propensity must be in [0, 1]"),
+    ),
+)
+
+
+EVIDENCE_QUALITY = DataContract(
+    name="evidence_quality",
+    columns=(
+        "evidence_level",      # 1-5: exploratory, descriptive, predictive, quasi-causal, causal
+        "sample_size_transitions",  # number of switching transitions
+        "sample_size_customers",    # number of switching customers
+        "coverage",             # fraction of population covered (0-1)
+        "method",               # method used (e.g., "OLS", "heuristic", "experimental")
+        "causal_status",        # "observed_correlation", "quasi_causal", "counterfactual_estimate", "experimental"
+        "confidence_gate",      # boolean: whether insight meets minimum evidence threshold for action
+        "financial_materiality" # minimum revenue impact to consider (optional)
+    ),
+    validators=(
+        ValueValidator("evidence_level", lambda s: s.isin([1, 2, 3, 4, 5]), "evidence_level must be 1-5"),
+        ValueValidator("sample_size_transitions", lambda s: s >= 0, "sample_size_transitions must be non-negative"),
+        ValueValidator("sample_size_customers", lambda s: s >= 0, "sample_size_customers must be non-negative"),
+        ValueValidator("coverage", lambda s: (s >= 0) & (s <= 1), "coverage must be in [0, 1]"),
+        ValueValidator("confidence_gate", lambda s: s.isin([True, False]), "confidence_gate must be boolean"),
     ),
 )
