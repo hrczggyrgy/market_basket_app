@@ -8,13 +8,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.analytics.assortment import (
-    compare_assortment_scenarios,
-    evaluate_assortment,
-    optimize_assortment_heuristic,
     build_solution_table,
+    compare_assortment_scenarios,
+    optimize_assortment_heuristic,
 )
 from src.analytics.performance import compute_product_metrics
-from src.ui.plots import PALETTE, empty_state, new_fig, show
+from src.ui.plots import PALETTE, empty_state, show
 from src.ui.registry import ModeSpec
 
 

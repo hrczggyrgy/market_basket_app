@@ -4,10 +4,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.analytics.data import safe_divide
 from src.analytics.basket_metrics import np_log
+from src.analytics.data import safe_divide
+from src.analytics.pricing.elasticity import _check_estimable, _ols_loglog
 from src.analytics.segmentation.rfm import compute_rfm_features
-from src.analytics.pricing.elasticity import _ols_loglog, _check_estimable
 
 
 class TestSafeDivide:
@@ -113,19 +113,19 @@ class TestOlsLoglog:
             _ols_loglog(log_price, log_qty)
     
     def test_extreme_values_warning(self):
-        """Test that extreme log values generate warnings."""
+        """Test that extreme log values are rejected as degenerate."""
         import warnings
-        log_price = pd.Series([1.0, 2.0, 15.0, 4.0, 5.0], name="price")  # 15.0 is extreme
+        # Create log_price with extreme values (> 10 in log space)
+        log_price = pd.Series([1.0, 2.0, 20.0, 4.0, 5.0], name="price")  # 20.0 > 10 is extreme
         log_qty = pd.Series([3.0, 4.0, 5.0, 6.0, 7.0], name="quantity")
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             try:
                 _ols_loglog(log_price, log_qty)
-            except (ValueError, KeyError):
-                pass  # May fail for other reasons
-            # Check for extreme value warnings
-            extreme_warnings = [warning for warning in w if "extreme" in str(warning.message).lower()]
-            assert len(extreme_warnings) > 0
+                assert False, "Expected ValueError for extreme values"
+            except ValueError as e:
+                assert "extreme_values" in str(e)
+            # Also check that a warning was emitted (or at least the error is correct)
 
 
 class TestRFMFeatures:

@@ -14,7 +14,7 @@ from src.analytics.data import (
     revenue_column,
     safe_divide,
 )
-from src.analytics.schemas import TRANSACTIONS, RFM_FEATURES
+from src.analytics.schemas import RFM_FEATURES, TRANSACTIONS
 
 
 def _csv_bytes(df: pd.DataFrame) -> io.BytesIO:

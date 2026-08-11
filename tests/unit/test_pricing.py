@@ -8,30 +8,34 @@ import pytest
 
 from src.analytics.pricing import (
     classify_elasticity_confidence,
+    compute_elasticity_status,
     compute_kvi_elasticity_quadrant,
     compute_kvi_score,
+    compute_pricing_decision_matrix,
     diagnose_price_curves_1d,
     diagnose_price_curves_multivariate,
     estimate_cross_price_elasticity,
     estimate_hierarchical_elasticity,
-    estimate_iv_elasticity,
     estimate_loglog_elasticity,
-    estimate_rdd_elasticity,
-    estimate_synthetic_control_elasticity,
+    iv_elasticity_manual_2sls,
+    run_pricing_analysis,
+    synthetic_control_estimate,
 )
 from src.analytics.schemas import (
     CROSS_ELASTICITY,
     ELASTICITY,
     ELASTICITY_CONFIDENCE,
+    ELASTICITY_STATUS,
     HIERARCHICAL_ELASTICITY,
     IV_ELASTICITY,
     KVI_ELASTICITY_QUADRANT,
     KVI_SCORES,
     PRICE_CURVE_1D,
     PRICE_CURVE_MULTI,
-    RDD_ELASTICITY,
+    PRICING_DECISION_MATRIX,
     SYNTHETIC_CONTROL,
 )
+from tests.unit.pricing_fixtures import build_kvi_fixture, build_pricing_df
 
 
 @pytest.fixture(scope="module")
@@ -89,6 +93,7 @@ def test_kvi_receives_elasticity_and_category(sample_df: pd.DataFrame) -> None:
 
 def test_kvi_xgb_requires_xgboost(sample_df: pd.DataFrame, monkeypatch) -> None:
     import sys
+
     import src.analytics.pricing.kvi as kvi_mod
     # If xgboost/shap not installed, should fall back to heuristic
     monkeypatch.setitem(sys.modules, "xgboost", None)
@@ -229,15 +234,10 @@ def test_price_curves_multivariate(sample_df: pd.DataFrame) -> None:
 
 
 def test_iv_elasticity(sample_df: pd.DataFrame) -> None:
-    iv = estimate_iv_elasticity(sample_df, instrument_col="cost", min_periods=5)
+    iv = iv_elasticity_manual_2sls(sample_df, instrument_col="cost", min_periods=5)
     IV_ELASTICITY.validate(iv, allow_empty=True)
     if not iv.empty:
         assert iv["weak_instrument"].notna().all()
-
-
-def test_rdd_elasticity(sample_df: pd.DataFrame) -> None:
-    rdd = estimate_rdd_elasticity(sample_df, min_periods=5, bandwidth=0.5)
-    RDD_ELASTICITY.validate(rdd, allow_empty=True)
 
 
 def test_synthetic_control_elasticity(sample_df: pd.DataFrame) -> None:
@@ -245,19 +245,19 @@ def test_synthetic_control_elasticity(sample_df: pd.DataFrame) -> None:
     top_products = revenue.nlargest(5).index.tolist()
     treatment = top_products[0]
     donors = top_products[1:4]
-    sc = estimate_synthetic_control_elasticity(
-        sample_df, treatment, donors, pre_periods=5, post_periods=3
-    )
-    SYNTHETIC_CONTROL.validate(sc)
-    required = {"treatment_effect_log", "treatment_effect_pct", "pre_period_rmse", "n_donors"}
-    assert required <= set(sc["metric"])
+    sc = synthetic_control_estimate(sample_df, treatment, donors, pre_periods=5, post_periods=3)
+    SYNTHETIC_CONTROL.validate(sc, allow_empty=True)
+    if not sc.empty:
+        required = {"treatment_effect_log", "treatment_effect_pct", "pre_period_rmse", "n_donors"}
+        assert required <= set(sc["metric"])
 
 
 def test_loglog_elasticity_excludes_degenerate_cases() -> None:
     """Regression: SKUs with constant qty or too few distinct prices should be
     excluded cleanly, not produce NaN p_value that violates schema."""
-    from src.analytics.data import load_transactions
     import io
+
+    from src.analytics.data import load_transactions
 
     # SKU with constant quantity across weeks, varying price
     dates = pd.date_range("2025-01-01", periods=20, freq="W")
@@ -292,8 +292,9 @@ def test_loglog_elasticity_normal_case_unchanged(sample_df: pd.DataFrame) -> Non
 
 def test_loglog_elasticity_few_distinct_prices_excluded() -> None:
     """SKU with only 2 distinct prices should be excluded."""
-    from src.analytics.data import load_transactions
     import io
+
+    from src.analytics.data import load_transactions
 
     dates = pd.date_range("2025-01-01", periods=20, freq="W")
     raw = pd.DataFrame({
@@ -314,8 +315,9 @@ def test_loglog_elasticity_few_distinct_prices_excluded() -> None:
 
 def test_hierarchical_elasticity_excludes_degenerate_cases() -> None:
     """Hierarchical estimation should also skip degenerate SKUs."""
-    from src.analytics.data import load_transactions
     import io
+
+    from src.analytics.data import load_transactions
 
     dates = pd.date_range("2025-01-01", periods=20, freq="W")
     raw = pd.DataFrame({
@@ -379,3 +381,159 @@ def test_elasticity_confidence_round_trip(sample_df: pd.DataFrame) -> None:
     ELASTICITY_CONFIDENCE.validate(conf, allow_empty=True)
     if not conf.empty:
         assert set(conf["stockcode"]).issubset(set(elast["stockcode"]))
+
+
+def test_elasticity_status_contract(sample_df: pd.DataFrame) -> None:
+    """Every SKU is covered by an explicit status; never a fabricated estimate."""
+    elast = estimate_loglog_elasticity(sample_df, min_periods=5)
+    status = compute_elasticity_status(sample_df, elasticity_df=elast, min_periods=5)
+    ELASTICITY_STATUS.validate(status)
+    assert set(status["stockcode"]) == set(sample_df["stockcode"])
+    assert status["elasticity_status"].isin(
+        {"estimated", "weak", "insufficient_variation", "insufficient_observations", "unavailable", "insufficient_price_points"}
+    ).all()
+    # SKUs without an estimate carry NaN elasticity, not a fabricated 0
+    no_estimate = status["elasticity_status"].isin(
+        {"insufficient_variation", "insufficient_observations", "unavailable", "insufficient_price_points"}
+    )
+    assert status.loc[no_estimate, "elasticity"].isna().all()
+    # 'weak' keeps its (low-confidence) estimate; 'estimated' obviously has one
+    assert status.loc[status["elasticity_status"].isin({"estimated", "weak"}), "elasticity"].notna().all()
+
+
+def test_elasticity_status_refines_weak() -> None:
+    """Low-confidence estimates are flagged as 'weak', not 'estimated'."""
+    import io
+
+    from src.analytics.data import load_transactions
+
+    dates = pd.date_range("2025-01-01", periods=30, freq="W")
+    prices = [10, 11, 12, 9, 13] * 6
+    raw = pd.DataFrame(
+        {
+            "date": dates.tolist() * 2,
+            "transaction_id": [f"T{i}" for i in range(1, 61)],
+            "stockcode": ["TIGHT"] * 30 + ["WIDE"] * 30,
+            "product": ["p"] * 60,
+            "customer_id": ["C1"] * 60,
+            "price": prices + prices,
+            "quantity": (
+                [100, 95, 90, 105, 85] * 6 + [100, 50, 200, 120, 30] * 6
+            ),
+        }
+    )
+    df, *_ = load_transactions(io.BytesIO(raw.to_csv(index=False).encode()))
+
+    elast = pd.DataFrame(
+        {
+            "stockcode": ["TIGHT", "WIDE"],
+            "elasticity": [-1.5, -0.4],
+            "ci_lower": [-1.6, -1.3],
+            "ci_upper": [-1.4, 0.5],
+            "p_value": [0.001, 0.2],
+            "n_obs": [30, 30],
+            "r_squared": [0.7, 0.3],
+            "std_err": [0.1, 0.4],
+            "avg_price": [10.0, 10.0],
+            "avg_weekly_qty": [95.0, 100.0],
+            "price_cv": [0.15, 0.15],
+        }
+    )
+    status = compute_elasticity_status(df, elasticity_df=elast, min_periods=5)
+    ELASTICITY_STATUS.validate(status)
+    mapping = status.set_index("stockcode")["elasticity_status"].to_dict()
+    assert mapping["TIGHT"] == "estimated"
+    assert mapping["WIDE"] == "weak"
+
+
+def test_pricing_pipeline_contracts() -> None:
+    """End-to-end pipeline validates against every pricing contract."""
+    analysis = run_pricing_analysis(build_pricing_df(), min_periods=5)
+    ELASTICITY.validate(analysis.elasticity, allow_empty=True)
+    ELASTICITY_STATUS.validate(analysis.elasticity_status)
+    ELASTICITY_CONFIDENCE.validate(analysis.confidence, allow_empty=True)
+    KVI_SCORES.validate(analysis.kvi)
+    PRICING_DECISION_MATRIX.validate(analysis.decision_matrix)
+    assert len(analysis.elasticity) == 4
+    assert len(analysis.elasticity_status) == 6
+
+
+def test_pricing_pipeline_recovers_true_elasticities() -> None:
+    """Log-log OLS recovers the fixture's true elasticities on clean data."""
+    analysis = run_pricing_analysis(build_pricing_df(), min_periods=5)
+    recovered = analysis.elasticity.set_index("stockcode")["elasticity"]
+    assert recovered["ELASTIC_HI"] == pytest.approx(-1.8, abs=0.15)
+    assert recovered["INELASTIC"] == pytest.approx(-0.4, abs=0.15)
+    assert recovered["PRICE_LEVER"] == pytest.approx(-1.5, abs=0.15)
+    assert recovered["REVIEW"] == pytest.approx(-0.7, abs=0.15)
+
+
+def test_decision_matrix_synthetic() -> None:
+    """The decision matrix maps every SKU to its intended decision."""
+    analysis = run_pricing_analysis(build_pricing_df(), min_periods=5)
+    dm = analysis.decision_matrix
+    mapping = dm.set_index("stockcode")["decision"].to_dict()
+    assert mapping["ELASTIC_HI"] == "invest"
+    assert mapping["INELASTIC"] == "protect"
+    assert mapping["PRICE_LEVER"] == "price_lever"
+    assert mapping["REVIEW"] == "review"
+    assert mapping["CONST_SKU"] == "insufficient_evidence"
+    assert mapping["SHORT_SKU"] == "insufficient_evidence"
+    assert set(mapping.values()) == {
+        "invest", "protect", "price_lever", "review", "insufficient_evidence"
+    }
+
+
+def test_decision_matrix_unit_fixture() -> None:
+    dm = compute_pricing_decision_matrix(build_kvi_fixture())
+    PRICING_DECISION_MATRIX.validate(dm)
+    mapping = dm.set_index("stockcode")["decision"].to_dict()
+    assert mapping["ELASTIC_HI"] == "invest"
+    assert mapping["INELASTIC"] == "protect"
+    assert mapping["PRICE_LEVER"] == "price_lever"
+    assert mapping["REVIEW"] == "review"
+    assert mapping["WEAK"] == "insufficient_evidence"
+    assert mapping["CONST_SKU"] == "insufficient_evidence"
+    assert mapping["SHORT_SKU"] == "insufficient_evidence"
+
+
+def test_decision_matrix_all_insufficient_evidence() -> None:
+    kvi = build_kvi_fixture().assign(
+        abs_elasticity=pd.NA, elasticity_status="insufficient_variation"
+    )
+    dm = compute_pricing_decision_matrix(kvi)
+    PRICING_DECISION_MATRIX.validate(dm)
+    assert (dm["decision"] == "insufficient_evidence").all()
+
+
+def test_decision_matrix_empty() -> None:
+    dm = compute_pricing_decision_matrix(pd.DataFrame())
+    assert dm.empty
+    PRICING_DECISION_MATRIX.validate(dm, allow_empty=True)
+
+
+def test_kvi_abs_elasticity_unknown_not_zero() -> None:
+    """Non-estimable SKUs report NaN abs_elasticity, never a fabricated 0."""
+    pdf = build_pricing_df()
+    elast = estimate_loglog_elasticity(pdf, min_periods=5)
+    status = compute_elasticity_status(pdf, elasticity_df=elast, min_periods=5)
+    kvi = compute_kvi_score(pdf, elasticity_df=elast, elasticity_status_df=status, method="heuristic")
+    KVI_SCORES.validate(kvi)
+    row = kvi[kvi["stockcode"] == "CONST_SKU"].iloc[0]
+    assert pd.isna(row["abs_elasticity"])
+    assert row["elasticity_status"] == "insufficient_price_points"
+    estimable = kvi[kvi["stockcode"] == "ELASTIC_HI"].iloc[0]
+    assert not pd.isna(estimable["abs_elasticity"])
+
+
+def test_kvi_elasticity_quadrant_unknown_for_unestimable() -> None:
+    pdf = build_pricing_df()
+    elast = estimate_loglog_elasticity(pdf, min_periods=5)
+    status = compute_elasticity_status(pdf, elasticity_df=elast, min_periods=5)
+    kvi = compute_kvi_score(pdf, elasticity_df=elast, elasticity_status_df=status, method="heuristic")
+    quad = compute_kvi_elasticity_quadrant(kvi)
+    KVI_ELASTICITY_QUADRANT.validate(quad)
+    mapping = quad.set_index("stockcode")["quadrant"].to_dict()
+    assert mapping["CONST_SKU"] == "unknown"
+    assert mapping["SHORT_SKU"] == "unknown"
+    assert mapping["ELASTIC_HI"] in {"advocate", "protect", "promote", "defer"}

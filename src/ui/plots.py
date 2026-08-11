@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -248,7 +249,7 @@ def render_line_with_ci(
                 line={"color": line_color, "width": 2},
                 marker={"size": 4},
                 name=y_col,
-                hovertemplate=f"%{{x}}: %{{y:.2f}}<extra></extra>",
+                hovertemplate="%{{x}}: %{{y:.2f}}<extra></extra>",
             )
         )
 

@@ -29,7 +29,7 @@ class TreeNode:
     products: list[str] = field(default_factory=list)
     attribute: str | None = None
     attribute_value: str | None = None
-    children: list["TreeNode"] = field(default_factory=list)
+    children: list["TreeNode"] = field(default_factory=list)  # noqa: UP037
     similarity_within: float = 0.0
     size: int = 0
     is_leaf: bool = True
@@ -171,7 +171,7 @@ def compute_within_group_similarity(
     similarity_matrix: pd.DataFrame,
 ) -> float:
     """Mean pairwise similarity within a group (1.0 for singletons).
-    
+
     Clipped to [0, 1] to satisfy schema constraints.
     """
     valid = [p for p in products if p in similarity_matrix.index]
@@ -215,7 +215,6 @@ def compute_attribute_split_quality(
         assert cluster_assignments is not None
 
     parent_sim = compute_within_group_similarity(products, similarity_matrix)
-    n = len(products)
     sim_gain = float(np.mean([parent_sim - compute_within_group_similarity(v, similarity_matrix) for v in groups.values()]))
 
     if criterion == "similarity":
@@ -525,12 +524,17 @@ def build_cdt(
 ) -> TreeNode:
     """Build a CDT over all catalog products."""
     products = attributes_df["stockcode"].tolist()
-    
+
     # Auto-compute cluster assignments if needed for purity-based criteria
     if cluster_assignments is None and criterion in {"entropy", "gini", "mutual_info", "mixed"}:
         from scipy.cluster.hierarchy import fcluster, linkage
-        from src.analytics.cdt.clustering import _square_to_condensed, _safe_linkage_method, similarity_to_distance
-        
+
+        from src.analytics.cdt.clustering import (
+            _safe_linkage_method,
+            _square_to_condensed,
+            similarity_to_distance,
+        )
+
         distance = similarity_to_distance(similarity_matrix, method="phi")
         condensed = _square_to_condensed(distance)
         if len(condensed) < 1:
@@ -539,8 +543,8 @@ def build_cdt(
             n_clusters = min(10, max(2, len(products) // 5))
             linkage_matrix = linkage(condensed, method=_safe_linkage_method("ward"))
             labels = fcluster(linkage_matrix, t=n_clusters, criterion="maxclust")
-            cluster_assignments = dict(zip(products, labels))
-    
+            cluster_assignments = dict(zip(products, labels, strict=True))
+
     return build_cdt_recursive(
         products,
         attributes_df,

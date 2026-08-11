@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -15,10 +14,10 @@ from src.analytics.category import (
     compute_category_trend,
     enrich_with_categories,
 )
-from src.analytics.promo import compute_category_cannibalization, compute_category_promo_timeline
-from src.ui.features import get_detected_promotions
 from src.analytics.pricing import compute_kvi_score
+from src.analytics.promo import compute_category_cannibalization, compute_category_promo_timeline
 from src.analytics.scenarios import compute_scenario_grid
+from src.ui.features import get_detected_promotions
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
 

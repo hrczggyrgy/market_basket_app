@@ -178,7 +178,7 @@ def compute_role_retention(
     if roles.empty or "role" not in roles.columns:
         return check(pd.DataFrame(columns=list(ROLE_RETENTION.columns)), ROLE_RETENTION, allow_empty=True)
 
-    cat_to_role = dict(zip(roles["category"], roles["role"]))
+    cat_to_role = dict(zip(roles["category"], roles["role"], strict=True))
 
     df = df.copy()
     df["cohort"] = _cohort_period(df, cohort_period)

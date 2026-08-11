@@ -170,7 +170,7 @@ def optimize_assortment_milp(
         if e["from_product"] in idx and e["to_product"] in idx:
             recovery[idx[e["from_product"]]] += float(e["observed_switching_recovery_proxy"])
 
-    coeff = direct  # Remove recovery term from direct coefficient - handled via z_ij variables
+    # Remove recovery term from direct coefficient - handled via z_ij variables
 
     # Build z_ij variables for each transference edge
     edge_list = []
@@ -181,13 +181,13 @@ def optimize_assortment_milp(
             j = idx[e["to_product"]]
             edge_list.append((i, j))
             edge_recovery.append(float(e["observed_switching_recovery_proxy"]))
-    
+
     m = len(edge_list)
-    
+
     # New variable structure: x_1...x_n, z_1...z_m
     # Total variables: n + m
     total_vars = n + m
-    
+
     # Objective: maximize direct*x + recovery_margin * sum(edge_recovery * z)
     # c is negative because milp minimizes
     c = np.zeros(total_vars)
@@ -203,12 +203,12 @@ def optimize_assortment_milp(
     rows_skus = np.zeros((1, total_vars))
     rows_skus[0, :n] = 1.0
     constraints.append(LinearConstraint(rows_skus, -np.inf, max_skus))
-    
+
     # Coverage: sum revenue_i * x_i >= min_coverage * total_revenue
     rows_cov = np.zeros((1, total_vars))
     rows_cov[0, :n] = revenue.values.astype(float)
     constraints.append(LinearConstraint(rows_cov, min_coverage * float(revenue.sum()), np.inf))
-    
+
     # Category: at least one SKU per category
     category_of = _category_of(transactions_df)
     for cat in dict.fromkeys(category_of.get(p) for p in products if category_of.get(p)):
@@ -217,7 +217,7 @@ def optimize_assortment_milp(
             row = np.zeros((1, total_vars))
             row[0, cat_skus] = 1.0
             constraints.append(LinearConstraint(row, 1, np.inf))
-    
+
     # z_ij constraints: z_ij <= x_j and z_ij <= 1 - x_i
     for k, (i, j) in enumerate(edge_list):
         # z_ij <= x_j  =>  z_ij - x_j <= 0
@@ -290,10 +290,10 @@ def optimize_assortment_heuristic(
     revenue = revenue_per_product.head(max_skus * 4)
 
     if demand_transference_df is None or demand_transference_df.empty:
-        dt_edges = pd.DataFrame(columns=["from_product", "to_product", "revenue_at_risk"])
+        dt_edges = pd.DataFrame(columns=["from_product", "to_product", "observed_switching_recovery_proxy"])
     else:
         dt_edges = demand_transference_df[
-            ["from_product", "to_product", "revenue_at_risk"]
+            ["from_product", "to_product", "observed_switching_recovery_proxy"]
         ]
     dt_edges = dt_edges[dt_edges["from_product"].isin(revenue.index) & dt_edges["to_product"].isin(revenue.index)]
     transfers = _transfers_by_from(dt_edges)

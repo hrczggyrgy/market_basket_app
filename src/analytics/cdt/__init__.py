@@ -51,8 +51,8 @@ from src.analytics.cdt.similarity import (
     build_similarity_matrix_ensemble,
     compute_cosine_tfidf_matrix,
     compute_jaccard_matrix,
-    compute_pmi_matrix,
     compute_phi_matrix,
+    compute_pmi_matrix,
 )
 from src.analytics.cdt.tree import (
     TreeNode,

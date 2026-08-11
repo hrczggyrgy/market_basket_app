@@ -7,12 +7,14 @@ import pandas as pd
 import pytest
 
 from src.analytics.cdt import (
+    TreeNode,
+    bootstrap_similarity_ci,
+    build_cdt,
     build_product_graph,
     build_similarity_matrix,
     build_transaction_derived_attributes,
-    bootstrap_similarity_ci,
-    compute_cophenetic_correlation,
     compute_cluster_quality,
+    compute_cophenetic_correlation,
     compute_entropy_gain,
     compute_mutual_information,
     compute_within_group_similarity,
@@ -28,9 +30,7 @@ from src.analytics.cdt import (
     run_cdt_validation,
     score_tree,
     similarity_to_distance,
-    build_cdt,
     tree_to_dataframe,
-    TreeNode,
 )
 from src.analytics.schemas import (
     CDT_ASSIGNMENTS,
@@ -222,7 +222,7 @@ def test_find_best_split(sample_df: pd.DataFrame) -> None:
     attrs = build_transaction_derived_attributes(sample_df)
     sim = build_similarity_matrix(sample_df, method="phi", min_product_support=2)
     products = attrs["stockcode"].tolist()
-    attr, groups, score = find_best_attribute_split(
+    attr, groups, score, stability = find_best_attribute_split(
         products,
         attrs,
         sim,
@@ -234,6 +234,7 @@ def test_find_best_split(sample_df: pd.DataFrame) -> None:
     assert attr is None or isinstance(attr, str)
     assert isinstance(groups, dict)
     assert isinstance(score, float)
+    assert isinstance(stability, float)
 
 
 def test_tree_build_and_score(sample_df: pd.DataFrame) -> None:

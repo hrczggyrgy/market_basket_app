@@ -27,7 +27,13 @@ from src.analytics.data import (
     get_data_summary,
     load_transactions,
 )
-from src.analytics.rules import create_basket_matrix, filter_rules, generate_rules, rules_to_table, run_fpgrowth
+from src.analytics.rules import (
+    create_basket_matrix,
+    filter_rules,
+    generate_rules,
+    rules_to_table,
+    run_fpgrowth,
+)
 from src.analytics.schemas import (
     AFFINITY_PAIRS,
     BASKET_PENETRATION,

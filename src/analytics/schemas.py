@@ -391,13 +391,158 @@ CATEGORY_SWITCHING = DataContract(
         "from_category",
         "to_category",
         "count",
-        "pct",
         "product_pairs",
+        "pct",
+    ),
+    validators=(
+        ValueValidator("count", lambda s: s >= 0, "count must be non-negative"),
+        ValueValidator("product_pairs", lambda s: s >= 0, "product_pairs must be non-negative"),
+        ValueValidator("pct", lambda s: (s >= 0) & (s <= 1), "pct must be in [0, 1]"),
+    ),
+)
+
+# Switching estimability status
+SWITCHING_STATUS = DataContract(
+    name="switching_status",
+    columns=(
+        "stockcode",
+        "switching_status",
+        "n_switchers",
+        "n_transitions",
+        "n_observations",
+        "n_customers",
+    ),
+    validators=(
+        ValueValidator(
+            "switching_status",
+            lambda s: s.isin(
+                {
+                    "estimated",
+                    "insufficient_customers",
+                    "insufficient_transitions",
+                    "insufficient_observations",
+                    "no_switching_observed",
+                    "unavailable",
+                }
+            ),
+            "switching_status must be a valid estimability status",
+        ),
+        ValueValidator("n_switchers", lambda s: s >= 0, "n_switchers must be non-negative"),
+        ValueValidator("n_transitions", lambda s: s >= 0, "n_transitions must be non-negative"),
+        ValueValidator("n_observations", lambda s: s >= 0, "n_observations must be non-negative"),
+        ValueValidator("n_customers", lambda s: s >= 0, "n_customers must be non-negative"),
+    ),
+)
+
+# Switching matrix with bootstrap confidence intervals
+SWITCHING_MATRIX_CI = DataContract(
+    name="switching_matrix_ci",
+    columns=(
+        "from_product",
+        "to_product",
+        "count",
+        "pct",
+        "ci_lower",
+        "ci_upper",
+        "std_error",
+        "n_resamples",
     ),
     validators=(
         ValueValidator("count", lambda s: s >= 0, "count must be non-negative"),
         ValueValidator("pct", lambda s: (s >= 0) & (s <= 1), "pct must be in [0, 1]"),
-        ValueValidator("product_pairs", lambda s: s >= 1, "product_pairs must be >= 1"),
+        ValueValidator("ci_lower", lambda s: (s >= 0) & (s <= 1), "ci_lower must be in [0, 1]"),
+        ValueValidator("ci_upper", lambda s: (s >= 0) & (s <= 1), "ci_upper must be in [0, 1]"),
+        ValueValidator("std_error", lambda s: s >= 0, "std_error must be non-negative"),
+        ValueValidator("n_resamples", lambda s: s > 0, "n_resamples must be positive"),
+    ),
+)
+
+# Substitution strength classification (movement vs true substitution)
+SWITCHING_SUBSTITUTION = DataContract(
+    name="switching_substitution",
+    columns=(
+        "from_product",
+        "to_product",
+        "switch_rate",
+        "switch_rate_ci_lower",
+        "switch_rate_ci_upper",
+        "revenue_at_risk",
+        "recovery_proxy",
+        "substitution_strength",
+        "classification",
+        "confidence",
+    ),
+    validators=(
+        ValueValidator("switch_rate", lambda s: (s >= 0) & (s <= 1), "switch_rate must be in [0, 1]"),
+        ValueValidator("switch_rate_ci_lower", lambda s: (s >= 0) & (s <= 1), "ci_lower must be in [0, 1]"),
+        ValueValidator("switch_rate_ci_upper", lambda s: (s >= 0) & (s <= 1), "ci_upper must be in [0, 1]"),
+        ValueValidator("revenue_at_risk", lambda s: s >= 0, "revenue_at_risk must be non-negative"),
+        ValueValidator("recovery_proxy", lambda s: s >= 0, "recovery_proxy must be non-negative"),
+        ValueValidator(
+            "substitution_strength",
+            lambda s: s.isin({"weak", "moderate", "strong", "dominant"}),
+            "substitution_strength must be weak/moderate/strong/dominant",
+        ),
+        ValueValidator(
+            "classification",
+            lambda s: s.isin({"movement", "substitution", "loyalty", "insufficient_evidence"}),
+            "classification must be movement/substitution/loyalty/insufficient_evidence",
+        ),
+        ValueValidator(
+            "confidence",
+            lambda s: s.isin({"high", "medium", "low", "insufficient"}),
+            "confidence must be high/medium/low/insufficient",
+        ),
+    ),
+)
+
+# High-value customer switching analysis
+HIGH_VALUE_SWITCHING = DataContract(
+    name="high_value_switching",
+    columns=(
+        "from_product",
+        "to_product",
+        "high_value_customers_switched",
+        "high_value_revenue_at_risk",
+        "high_value_switch_rate",
+        "segment",
+        "avg_clv_of_switchers",
+    ),
+    validators=(
+        ValueValidator("high_value_customers_switched", lambda s: s >= 0, "must be non-negative"),
+        ValueValidator("high_value_revenue_at_risk", lambda s: s >= 0, "must be non-negative"),
+        ValueValidator("high_value_switch_rate", lambda s: (s >= 0) & (s <= 1), "must be in [0, 1]"),
+        ValueValidator("avg_clv_of_switchers", lambda s: s >= 0, "must be non-negative"),
+    ),
+)
+
+# Switching opportunity matrix
+SWITCHING_OPPORTUNITY = DataContract(
+    name="switching_opportunity",
+    columns=(
+        "from_product",
+        "to_product",
+        "opportunity_type",
+        "revenue_at_risk",
+        "recoverable_revenue",
+        "net_impact",
+        "action",
+        "confidence",
+        "rationale",
+    ),
+    validators=(
+        ValueValidator("revenue_at_risk", lambda s: s >= 0, "must be non-negative"),
+        ValueValidator("recoverable_revenue", lambda s: s >= 0, "must be non-negative"),
+        ValueValidator(
+            "opportunity_type",
+            lambda s: s.isin({"protect", "win_back", "steal_share", "consolidate", "delist_candidate"}),
+            "opportunity_type must be protect/win_back/steal_share/consolidate/delist_candidate",
+        ),
+        ValueValidator(
+            "confidence",
+            lambda s: s.isin({"high", "medium", "low", "insufficient"}),
+            "confidence must be high/medium/low/insufficient",
+        ),
     ),
 )
 
@@ -663,6 +808,9 @@ CATEGORY_ROLES = DataContract(
         "trip_generation_rate",
         "demand_cv",
         "seasonality_amplitude",
+        "seasonal_strength",
+        "seasonality_significant",
+        "seasonality_n_cycles",
         "attachment_rate",
         "destination_categories",
         "category_source",
@@ -671,6 +819,8 @@ CATEGORY_ROLES = DataContract(
         ValueValidator("trip_generation_rate", lambda s: (s >= 0) & (s <= 1), "trip_generation_rate must be in [0, 1]"),
         ValueValidator("demand_cv", lambda s: s >= 0, "demand_cv must be non-negative"),
         ValueValidator("seasonality_amplitude", lambda s: s >= 0, "seasonality_amplitude must be non-negative"),
+        ValueValidator("seasonal_strength", lambda s: (s >= 0) & (s <= 1), "seasonal_strength must be in [0, 1]"),
+        ValueValidator("seasonality_n_cycles", lambda s: s >= 0, "seasonality_n_cycles must be non-negative"),
         ValueValidator("attachment_rate", lambda s: (s >= 0) & (s <= 1), "attachment_rate must be in [0, 1]"),
     ),
 )
@@ -718,10 +868,24 @@ ABC_CLASSES = DataContract(
 
 XYZ_CLASSES = DataContract(
     name="xyz_classes",
-    columns=("stockcode", "revenue", "cv", "xyz_class"),
+    columns=(
+        "stockcode",
+        "revenue",
+        "units",
+        "cv",
+        "n_periods",
+        "nonzero_periods",
+        "zero_demand_rate",
+        "demand_profile",
+        "xyz_class",
+    ),
     validators=(
         ValueValidator("revenue", lambda s: s >= 0, "revenue must be non-negative"),
+        ValueValidator("units", lambda s: s >= 0, "units must be non-negative"),
         ValueValidator("cv", lambda s: s >= 0, "cv must be non-negative"),
+        ValueValidator("n_periods", lambda s: s > 0, "n_periods must be positive"),
+        ValueValidator("nonzero_periods", lambda s: s >= 0, "nonzero_periods must be non-negative"),
+        ValueValidator("zero_demand_rate", lambda s: (s >= 0) & (s <= 1), "zero_demand_rate must be in [0, 1]"),
     ),
 )
 
@@ -877,8 +1041,11 @@ PROMO_BASELINE = DataContract(
         "is_promo",
         "baseline_units",
         "baseline_revenue",
+        "baseline_price",
         "incremental_units",
         "incremental_revenue",
+        "incremental_revenue_qty",
+        "incremental_revenue_price",
         "incrementality_pct",
     ),
     validators=(
@@ -887,6 +1054,7 @@ PROMO_BASELINE = DataContract(
         ValueValidator("avg_price", lambda s: s > 0, "avg_price must be positive"),
         ValueValidator("baseline_units", lambda s: s >= 0, "baseline_units must be non-negative"),
         ValueValidator("baseline_revenue", lambda s: s >= 0, "baseline_revenue must be non-negative"),
+        ValueValidator("baseline_price", lambda s: s > 0, "baseline_price must be positive"),
     ),
 )
 
@@ -925,8 +1093,10 @@ PROMO_WATERFALL = DataContract(
         "stockcode",
         "baseline_revenue",
         "incremental_revenue",
-        "acceleration_revenue",
-        "switching_revenue",
+        "incremental_revenue_qty",
+        "incremental_revenue_price",
+        "halo_revenue",
+        "cannibalization_revenue",
         "stockpiling_revenue",
         "net_incremental_revenue",
         "roi",
@@ -1029,11 +1199,76 @@ CATEGORY_CANNIBALIZATION = DataContract(
     validators=(
         ValueValidator("n_promos", lambda s: s > 0, "n_promos must be positive"),
         ValueValidator("promo_revenue", lambda s: s >= 0, "promo_revenue must be non-negative"),
-        ValueValidator("base_revenue", lambda s: s > 0, "base_revenue must be positive"),
+ValueValidator("base_revenue", lambda s: s > 0, "base_revenue must be positive"),
         ValueValidator("cannibalized_revenue", lambda s: s >= 0, "cannibalized_revenue must be non-negative"),
         ValueValidator("cannibalization_index", lambda s: (s >= 0) & (s <= 1), "cannibalization_index must be in [0, 1]"),
     ),
 )
+
+PROMO_CAUSAL_PANEL = DataContract(
+    name="promo_causal_panel",
+    columns=(
+        "stockcode", "week", "units", "revenue", "avg_price",
+        "n_customers", "n_orders", "promo", "log_units", "log_price",
+        "log_revenue", "week_num", "month", "year", "log_units_lag1",
+    ),
+    validators=(
+        ValueValidator("units", lambda s: s >= 0, "units must be non-negative"),
+        ValueValidator("promo", lambda s: s.isin([0, 1]), "promo must be 0/1"),
+    ),
+)
+
+PROMO_TWFE_RESULT = DataContract(
+    name="promo_twfe_result",
+    columns=(
+        "outcome", "promo_coefficient", "promo_se", "promo_p_value",
+        "marginal_effect", "marginal_se", "r_squared", "r_squared_within",
+        "r_squared_between", "n_obs", "n_entities", "n_periods", "price_control",
+    ),
+    validators=(
+        ValueValidator("promo_p_value", lambda s: s.isna() | ((s >= 0) & (s <= 1)), "promo_p_value must be in [0, 1] or NaN"),
+    ),
+)
+
+PROMO_EVENT_STUDY = DataContract(
+    name="promo_event_study",
+    columns=(
+        "outcome", "leads", "lags", "pretrend_p_value", "coefficients",
+    ),
+)
+
+PROMO_CAUSAL_WATERFALL = DataContract(
+    name="promo_causal_waterfall",
+    columns=(
+        "stockcode", "baseline_revenue", "direct_effect_revenue",
+        "incremental_revenue_qty", "incremental_revenue_price",
+        "halo_revenue", "cannibalization_revenue", "stockpiling_revenue",
+        "net_incremental_revenue", "roi",
+    ),
+    validators=(
+        ValueValidator("baseline_revenue", lambda s: s >= 0, "baseline_revenue must be non-negative"),
+        ValueValidator("cannibalization_revenue", lambda s: s >= 0, "cannibalization_revenue must be non-negative"),
+    ),
+)
+
+PROMO_CROSS_EFFECTS = DataContract(
+    name="promo_cross_effects",
+    columns=(
+        "promo_product", "peer_product", "effect", "se", "p_value", "effect_type",
+    ),
+    validators=(
+        ValueValidator("effect_type", lambda s: s.isin(["halo", "cannibalization", "none"]), "effect_type must be halo/cannibalization/none"),
+    ),
+)
+
+PROMO_PARALLEL_TRENDS = DataContract(
+    name="promo_parallel_trends",
+    columns=("pretrend_p_value", "method", "n_skus"),
+    validators=(
+        ValueValidator("pretrend_p_value", lambda s: s.isna() | ((s >= 0) & (s <= 1)), "pretrend_p_value must be in [0, 1] or NaN"),
+    ),
+)
+
 
 UPLIFT_PROPENSITY = DataContract(
     name="uplift_propensity",
@@ -1113,6 +1348,9 @@ CLV_PREDICTIONS = DataContract(
 CLV_DIAGNOSTICS = DataContract(
     name="clv_diagnostics",
     columns=("metric", "value"),
+    validators=(
+        ValueValidator("value", lambda s: s.apply(lambda v: isinstance(v, (int, float))), "value must be numeric"),
+    ),
 )
 
 CLV_CUSTOMER = DataContract(
@@ -1664,6 +1902,54 @@ ELASTICITY_CONFIDENCE = DataContract(
     ),
 )
 
+ELASTICITY_STATUS = DataContract(
+    name="elasticity_status",
+    columns=(
+        "stockcode",
+        "elasticity_status",
+        "elasticity",
+        "confidence",
+        "n_obs",
+        "price_cv",
+        "r_squared",
+    ),
+    validators=(
+        ValueValidator(
+            "elasticity_status",
+            lambda s: s.isin(
+                {
+                    "estimated",
+                    "weak",
+                    "insufficient_variation",
+                    "insufficient_observations",
+                    "insufficient_price_points",
+                    "near_constant_price",
+                    "near_constant_quantity",
+                    "near_perfect_collinearity",
+                    "extreme_values",
+                    "correlation_failed",
+                    "model_failed",
+                    "not_significant",
+                    "unavailable",
+                }
+            ),
+            "elasticity_status must be a valid estimability status",
+        ),
+        ValueValidator(
+            "confidence",
+            lambda s: s.isna() | s.isin({"high", "medium", "low"}),
+            "confidence must be high/medium/low or NaN",
+        ),
+        ValueValidator("n_obs", lambda s: s.isna() | (s > 0), "n_obs must be positive or NaN"),
+        ValueValidator("price_cv", lambda s: s.isna() | (s >= 0), "price_cv must be non-negative or NaN"),
+        ValueValidator(
+            "r_squared",
+            lambda s: s.isna() | ((s >= 0) & (s <= 1)),
+            "r_squared must be in [0, 1] or NaN",
+        ),
+    ),
+)
+
 HIERARCHICAL_ELASTICITY = DataContract(
     name="hierarchical_elasticity",
     columns=(
@@ -1725,13 +2011,39 @@ KVI_SCORES = DataContract(
         "basket_penetration",
         "trip_incidence",
         "abs_elasticity",
+        "elasticity_status",
     ),
     validators=(
         ValueValidator("kvi_score", lambda s: s >= 0, "kvi_score must be non-negative"),
         ValueValidator("total_revenue", lambda s: s >= 0, "total_revenue must be non-negative"),
         ValueValidator("basket_penetration", lambda s: (s >= 0) & (s <= 1), "basket_penetration must be in [0, 1]"),
         ValueValidator("trip_incidence", lambda s: (s >= 0) & (s <= 1), "trip_incidence must be in [0, 1]"),
-        ValueValidator("abs_elasticity", lambda s: s >= 0, "abs_elasticity must be non-negative"),
+        ValueValidator(
+            "abs_elasticity",
+            lambda s: s.isna() | (s >= 0),
+            "abs_elasticity must be non-negative or NaN (not estimable)",
+        ),
+        ValueValidator(
+            "elasticity_status",
+            lambda s: s.isin(
+                {
+                    "estimated",
+                    "weak",
+                    "insufficient_variation",
+                    "insufficient_observations",
+                    "insufficient_price_points",
+                    "near_constant_price",
+                    "near_constant_quantity",
+                    "near_perfect_collinearity",
+                    "extreme_values",
+                    "correlation_failed",
+                    "model_failed",
+                    "not_significant",
+                    "unavailable",
+                }
+            ),
+            "elasticity_status must be a valid estimability status",
+        ),
     ),
 )
 
@@ -1743,16 +2055,161 @@ KVI_ELASTICITY_QUADRANT = DataContract(
         "kvi_score",
         "abs_elasticity",
         "total_revenue",
+        "elasticity_status",
         "quadrant",
     ),
     validators=(
         ValueValidator("kvi_score", lambda s: s >= 0, "kvi_score must be non-negative"),
-        ValueValidator("abs_elasticity", lambda s: s >= 0, "abs_elasticity must be non-negative"),
+        ValueValidator(
+            "abs_elasticity",
+            lambda s: s.isna() | (s >= 0),
+            "abs_elasticity must be non-negative or NaN (not estimable)",
+        ),
         ValueValidator("total_revenue", lambda s: s >= 0, "total_revenue must be non-negative"),
         ValueValidator(
+            "elasticity_status",
+            lambda s: s.isin(
+                {
+                    "estimated",
+                    "weak",
+                    "insufficient_variation",
+                    "insufficient_observations",
+                    "insufficient_price_points",
+                    "near_constant_price",
+                    "near_constant_quantity",
+                    "near_perfect_collinearity",
+                    "extreme_values",
+                    "correlation_failed",
+                    "model_failed",
+                    "not_significant",
+                    "unavailable",
+                }
+            ),
+            "elasticity_status must be a valid estimability status",
+        ),
+        ValueValidator(
             "quadrant",
-            lambda s: s.isin({"advocate", "protect", "promote", "defer"}),
-            "quadrant must be advocate/protect/promote/defer",
+            lambda s: s.isin({"advocate", "protect", "promote", "defer", "unknown"}),
+            "quadrant must be advocate/protect/promote/defer/unknown",
+        ),
+    ),
+)
+
+PRICING_DECISION_MATRIX = DataContract(
+    name="pricing_decision_matrix",
+    columns=(
+        "stockcode",
+        "category",
+        "kvi_score",
+        "abs_elasticity",
+        "elasticity_status",
+        "elasticity_confidence",
+        "decision",
+        "rationale",
+        "total_revenue",
+    ),
+    validators=(
+        ValueValidator("kvi_score", lambda s: s >= 0, "kvi_score must be non-negative"),
+        ValueValidator(
+            "abs_elasticity",
+            lambda s: s.isna() | (s >= 0),
+            "abs_elasticity must be non-negative or NaN (not estimable)",
+        ),
+        ValueValidator(
+            "elasticity_status",
+            lambda s: s.isin(
+                {
+                    "estimated",
+                    "weak",
+                    "insufficient_variation",
+                    "insufficient_observations",
+                    "insufficient_price_points",
+                    "near_constant_price",
+                    "near_constant_quantity",
+                    "near_perfect_collinearity",
+                    "extreme_values",
+                    "correlation_failed",
+                    "model_failed",
+                    "not_significant",
+                    "unavailable",
+                }
+            ),
+            "elasticity_status must be a valid estimability status",
+        ),
+        ValueValidator(
+            "elasticity_confidence",
+            lambda s: s.isna() | s.isin({"high", "medium", "low"}),
+            "elasticity_confidence must be high/medium/low or NaN",
+        ),
+        ValueValidator(
+            "decision",
+            lambda s: s.isin({"invest", "protect", "price_lever", "review", "insufficient_evidence"}),
+            "decision must be invest/protect/price_lever/review/insufficient_evidence",
+        ),
+        ValueValidator("total_revenue", lambda s: s >= 0, "total_revenue must be non-negative"),
+    ),
+)
+
+PRICING_INSIGHTS = DataContract(
+    name="pricing_insights",
+    columns=(
+        "domain",
+        "entity",
+        "kind",
+        "title",
+        "evidence",
+        "impact_value",
+        "confidence",
+        "sample_size",
+        "stability",
+        "action",
+    ),
+    validators=(
+        ValueValidator(
+            "kind",
+            lambda s: s.isin({"opportunity", "risk", "growth", "leakage", "anomaly", "efficiency", "watch"}),
+            "kind must be a valid insight category",
+        ),
+        ValueValidator(
+            "confidence",
+            lambda s: s.isin({"high", "medium", "low", "insufficient"}),
+            "confidence must be high/medium/low/insufficient",
+        ),
+        ValueValidator(
+            "impact_value",
+            lambda s: s.isna() | np.isfinite(s),
+            "impact_value must be finite or NaN",
+        ),
+        ValueValidator(
+            "stability",
+            lambda s: s.isna() | ((s >= 0) & (s <= 1)),
+            "stability must be in [0, 1] or NaN",
+        ),
+    ),
+)
+
+OPPORTUNITY_LIST = DataContract(
+    name="opportunity_list",
+    columns=(
+        "domain",
+        "entity",
+        "title",
+        "value",
+        "confidence",
+        "action",
+        "source",
+        "rationale",
+    ),
+    validators=(
+        ValueValidator(
+            "confidence",
+            lambda s: s.isin({"high", "medium", "low", "insufficient"}),
+            "confidence must be high/medium/low/insufficient",
+        ),
+        ValueValidator(
+            "value",
+            lambda s: s.isna() | np.isfinite(s),
+            "value must be finite or NaN",
         ),
     ),
 )

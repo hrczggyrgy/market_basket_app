@@ -6,8 +6,8 @@ communities with Louvain or label propagation (both shipped in networkx).
 
 from __future__ import annotations
 
-import numpy as np
 import networkx as nx
+import numpy as np
 import pandas as pd
 
 from src.analytics.copurchase import compute_affinity_matrix
@@ -39,7 +39,7 @@ def build_product_graph(
     dst = np.asarray(iu[1])[valid].tolist()
     edges = [
         (products[s], products[d], {"weight": float(w)})
-        for s, d, w in zip(src, dst, weights[valid].tolist())
+        for s, d, w in zip(src, dst, weights[valid].tolist(), strict=True)
     ]
     graph.add_edges_from(edges)
     return graph
@@ -59,8 +59,7 @@ def detect_communities_louvain(
 
 def detect_communities_label_propagation(graph: nx.Graph) -> dict[str, int]:
     """Label propagation communities (fast, deterministic order)."""
-    from networkx.algorithms.community import asyn_lpa_communities
-    from networkx.algorithms.community import label_propagation_communities
+    from networkx.algorithms.community import asyn_lpa_communities, label_propagation_communities
 
     communities = list(asyn_lpa_communities(graph, weight="weight"))
     if not communities:

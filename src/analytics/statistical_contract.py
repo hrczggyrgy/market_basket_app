@@ -8,10 +8,9 @@ of analytical outputs beyond basic DataContracts. Ensures every result carries:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional, Dict, List, Literal
 from enum import Enum
+from typing import Any, Callable, Dict, List, Literal, Optional
 
-import numpy as np
 import pandas as pd
 
 
@@ -44,55 +43,55 @@ class StatisticalAssumption:
 @dataclass
 class StatisticalContract:
     """Complete statistical contract for an analytical output.
-    
+
     Every analytical function should declare its contract and validate
     its output against it before returning.
     """
     # Core identification
     function_name: str
     claim_type: StatisticalClaimType
-    
+
     # Estimate specification
     estimate_name: str
     estimate_type: Literal["point", "interval", "distribution"]
     estimate_unit: str  # e.g., "elasticity", "revenue", "probability"
-    
+
     # Statistical properties (what the output MUST contain)
     required_columns: List[str]
     column_descriptions: Dict[str, str]
-    
+
     # Validity conditions
     assumptions: List[StatisticalAssumption] = field(default_factory=list)
-    
+
     # Limitations and scope
     limitations: List[str] = field(default_factory=list)
     scope_conditions: List[str] = field(default_factory=list)  # e.g., "requires n > 100"
-    
+
     # Actionability
     recommended_action: Optional[str] = None
     action_conditions: Dict[str, Any] = field(default_factory=dict)
-    
+
     # Reliability
     reliability_requirements: Dict[str, Any] = field(default_factory=dict)
-    
+
     def validate_output(self, output: pd.DataFrame) -> tuple[pd.DataFrame, List[str]]:
         """Validate output against this contract.
-        
+
         Returns:
             (validated_df, warnings_list)
         """
         warnings = []
-        
+
         # Check required columns
         missing = [c for c in self.required_columns if c not in output.columns]
         if missing:
             raise ValueError(f"{self.function_name}: Missing required columns: {missing}")
-        
+
         # Check column types and ranges
         for col in self.required_columns:
             if col not in output.columns:
                 continue
-            
+
             # Basic validation based on column name patterns
             if col.endswith("_ci_lower") or col.endswith("_ci_upper"):
                 # CI should be numeric and non-negative (for positive quantities)
@@ -112,7 +111,7 @@ class StatisticalContract:
                 invalid = output[col][(output[col] < 0) | (output[col] > 1)].notna().any()
                 if invalid:
                     warnings.append(f"{col}: R-squared outside [0,1]")
-        
+
         # Check assumptions
         for assumption in self.assumptions:
             if assumption.check_fn is not None:
@@ -125,14 +124,14 @@ class StatisticalContract:
                         warnings.append(f"Assumption violated ({assumption.severity}): {assumption.name} - {assumption.description}")
                 except Exception as e:
                     warnings.append(f"Assumption check failed ({assumption.name}): {e}")
-        
+
         # Check scope conditions (informational, not warnings)
         scope_info = []
         for condition in self.scope_conditions:
             scope_info.append(f"Scope condition: {condition}")
-        
+
         return output, warnings, scope_info
-    
+
     def to_summary(self) -> Dict[str, Any]:
         """Generate a human-readable summary of this contract."""
         return {
@@ -307,7 +306,6 @@ def attach_contract(
         "statistical_contract": contract.function_name,
         "claim_type": contract.claim_type.value,
         "estimate": contract.estimate_name,
-        "claim_type": contract.claim_type.value,
         "limitations": contract.limitations,
         "scope_conditions": contract.scope_conditions,
         "recommended_action": contract.recommended_action,
@@ -317,25 +315,12 @@ def attach_contract(
     return result
 
 
-def get_contract(output: pd.DataFrame) -> Optional[Dict[str, Any]]:
-    """Extract contract metadata from output DataFrame."""
-    if "_statistical_contract" not in output.columns or len(output) == 0:
-        return None
-    try:
-        import json
-        return json.loads(output["_statistical_contract"].iloc[0])
-    except Exception:
-        return None
-
-
 # Registry of all contracts
 CONTRACT_REGISTRY: Dict[str, StatisticalContract] = {
     "estimate_loglog_elasticity": ELASTICITY_CONTRACT,
     "predict_clv_bg_nbd": CLV_CONTRACT,
     "optimize_assortment_milp": ASSORTMENT_CONTRACT,
 }
-
-
 def get_contract(name: str) -> Optional[StatisticalContract]:
     """Get a contract by name."""
     return CONTRACT_REGISTRY.get(name)
@@ -351,7 +336,7 @@ def validate_against_contract(
     contract_name: str,
 ) -> tuple[pd.DataFrame, List[str], List[str]]:
     """Validate output against a registered contract.
-    
+
     Returns:
         (validated_df, warnings, scope_info)
     """

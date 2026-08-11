@@ -9,12 +9,12 @@ import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
-from src.analytics.segmentation.core import _label_rfm_clusters
 from src.analytics.schemas import RFM_FEATURES, RFM_SEGMENTS, check
+from src.analytics.segmentation.core import _label_rfm_clusters
 
 
 def compute_rfm_features(
-    transactions_df: pd.DataFrame, 
+    transactions_df: pd.DataFrame,
     snapshot_date: Optional[pd.Timestamp] = None,
     as_of_date: Optional[pd.Timestamp] = None,
 ) -> pd.DataFrame:
@@ -70,14 +70,14 @@ def compute_rfm_features(
         rfm["customer_lifetime_days"],
     )
     rfm["items_per_order"] = rfm["n_items"] / rfm["frequency"]
-    
+
     # Safe division with validation
     rfm["revenue_per_item"] = np.where(
         rfm["n_items"] > 0,
         rfm["monetary"] / rfm["n_items"],
         0.0
     )
-    
+
     # Safe coefficient of variation calculation
     rfm["order_value_cv"] = np.where(
         rfm["avg_order_value"].abs() > 1e-10,
@@ -108,7 +108,7 @@ def compute_rfm_features(
             labels=["Recent", "Active", "Lapsing", "Churned"],
             include_lowest=True
         )
-    
+
     try:
         rfm["frequency_segment"] = pd.qcut(
             rfm["frequency"].rank(method="first"),
@@ -130,7 +130,7 @@ def compute_rfm_features(
             labels=["Low", "Medium", "High", "Very High"],
             include_lowest=True
         )
-    
+
     try:
         rfm["monetary_segment"] = pd.qcut(
             rfm["monetary"].rank(method="first"),
@@ -239,7 +239,7 @@ def rfm_segmentation(
     elif method == "kmeans":
         # K-means clustering on RFM with enhanced validation
         features = ["recency_days", "frequency", "monetary"]
-        
+
         if len(df) < n_segments:
             import warnings as _warnings
             _warnings.warn(

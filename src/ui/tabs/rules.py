@@ -16,7 +16,7 @@ from src.analytics.rules import (
     rules_to_table,
     run_fpgrowth,
 )
-from src.ui.features import get_product_lookup, get_basket_matrix
+from src.ui.features import get_basket_matrix, get_product_lookup
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
 

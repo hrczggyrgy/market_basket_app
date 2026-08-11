@@ -6,7 +6,7 @@ Centralizes all tunable parameters with sensible defaults.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 
 @dataclass
@@ -62,6 +62,9 @@ class AnalyticsConfig:
     category_growth_threshold: float = 10.0  # % for scorecard RAG
     abc_thresholds: List[float] = field(default_factory=lambda: [0.7, 0.9])
     xyz_cv_thresholds: List[float] = field(default_factory=lambda: [0.1, 0.25])
+    xyz_use_quantile_method: bool = False
+    xyz_quantiles: List[float] = field(default_factory=lambda: [0.25, 0.75])
+    xyz_min_periods: int = 8
     lifecycle_growth_threshold: float = 25.0  # % for growth/decline
 
     # Promotional
@@ -141,21 +144,21 @@ def get_config() -> AnalyticsConfig:
     return DEFAULT_CONFIG
 
 
-from typing import Any
 import copy
+from typing import Any
 
 
 def update_config(**kwargs: Any) -> AnalyticsConfig:
     """Create a new config with overrides (immutable operation)."""
     # Create a deep copy to avoid mutating the global singleton
     new_config = copy.deepcopy(DEFAULT_CONFIG)
-    
+
     for k, v in kwargs.items():
         if hasattr(new_config, k):
             setattr(new_config, k, v)
         else:
             raise KeyError(f"Unknown config key: {k}")
-    
+
     return new_config
 
 

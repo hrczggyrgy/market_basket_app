@@ -121,7 +121,7 @@ def _discount_factor(horizon_days: int, annual_rate_pct: float) -> float:
     Monthly compounding: factor = (1 - (1+r)^-n) / (r*n) is the per-dollar
     discount applied to a uniform stream of purchases over the horizon.
     A rate of 0 (or a horizon <= 0) yields 1.0 (no discounting).
-    
+
     Improved with:
     - More precise month calculation (30.437 days)
     - Better handling of edge cases
@@ -129,7 +129,7 @@ def _discount_factor(horizon_days: int, annual_rate_pct: float) -> float:
     """
     if annual_rate_pct <= 0 or horizon_days <= 0:
         return 1.0
-    
+
     # Validate input ranges
     if annual_rate_pct > 100:
         import warnings as _warnings
@@ -139,17 +139,17 @@ def _discount_factor(horizon_days: int, annual_rate_pct: float) -> float:
             stacklevel=2
         )
         annual_rate_pct = 100.0
-    
+
     r_m = (annual_rate_pct / 100.0) / 12.0
     n_months = max(1.0, horizon_days / 30.437)  # More precise average days per month
-    
+
     if r_m == 0:
         return 1.0
-    
+
     # Handle numerical stability for very small rates
     if abs(r_m) < 1e-10:
         return 1.0
-    
+
     try:
         factor = (1 - (1 + r_m) ** -n_months) / (r_m * n_months)
         # Ensure factor is reasonable (should be between 0 and 1 for positive rates)
@@ -169,9 +169,9 @@ def _bootstrap_clv_ci(
     calibration: pd.DataFrame,
     prediction_horizon_days: int,
     freq: str,
-    n_resamples: int = 100,
+    n_resamples: int = 60,
     random_seed: int = 42,
-    time_budget_s: float = 60.0,
+    time_budget_s: float = 45.0,
 ) -> tuple[pd.Series, pd.Series, pd.Series]:
     """Percentile bootstrap CI on predicted CLV, resampling customers.
 
@@ -182,7 +182,7 @@ def _bootstrap_clv_ci(
     Minimum 15 successful resamples per customer required for valid CI.
     """
     import warnings as _warnings
-    
+
     rng = np.random.default_rng(random_seed)
     t = prediction_horizon_days if freq == "D" else prediction_horizon_days / 7
     n_customers = len(calibration)
@@ -213,7 +213,7 @@ def _bootstrap_clv_ci(
                 sample["frequency"], sample["monetary_value"]
             )
             clv = pred_purchases * pred_value
-            for c, v in zip(sample.index, clv):
+            for c, v in zip(sample.index, clv, strict=True):
                 replicates[c].append(float(v))
             successful_resamples += 1
         except ValueError:
@@ -293,7 +293,6 @@ def _build_diagnostics(
     discount_rate_pct: float = 0.0,
 ) -> pd.DataFrame:
     rows = [
-        ("model", "BG/NBD + Gamma-Gamma"),
         ("bgf_r", float(bgf.params_["r"])),
         ("bgf_alpha", float(bgf.params_["alpha"])),
         ("bgf_a", float(bgf.params_["a"])),
@@ -386,19 +385,25 @@ def compute_clv_customer_df(
     prediction_horizon_days: int = 90,
     freq: str = "D",
     discount_rate_pct: float = 0.0,
+    predictions: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Customer CLV view: BG/NBD predictions joined with behavior metrics."""
+    """Customer CLV view: BG/NBD predictions joined with behavior metrics.
+
+    ``predictions`` may be supplied to reuse an already-computed
+    ``predict_clv_bg_nbd`` result (avoids a second expensive model fit).
+    """
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
     df = df[df["revenue"] > 0]
 
-    predictions, _ = predict_clv_bg_nbd(
-        df,
-        prediction_horizon_days=prediction_horizon_days,
-        freq=freq,
-        discount_rate_pct=discount_rate_pct,
-    )
+    if predictions is None:
+        predictions, _ = predict_clv_bg_nbd(
+            df,
+            prediction_horizon_days=prediction_horizon_days,
+            freq=freq,
+            discount_rate_pct=discount_rate_pct,
+        )
 
     metrics = (
         df.groupby("customer_id")

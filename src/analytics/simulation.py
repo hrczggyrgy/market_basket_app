@@ -239,12 +239,12 @@ def _promo_windows(catalog: pd.DataFrame, config: SimulationConfig, seed: int) -
 
 def _seasonal_demand(day_of_year: int, category: str, strength: float = 1.0, year: int = 2024) -> float:
     """Return seasonal multiplier for category on given day (1-366 for leap years).
-    
+
     Enhanced with leap year support and holiday effects.
     """
     # Handle leap years
     days_in_year = 366 if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0) else 365
-    
+
     t = 2 * np.pi * day_of_year / days_in_year
     seasonal = {
         "Coffee": 1.0 + 0.15 * np.cos(t - np.pi / 2),
@@ -257,14 +257,14 @@ def _seasonal_demand(day_of_year: int, category: str, strength: float = 1.0, yea
         "Pet": 1.0,
     }
     base = seasonal.get(category, 1.0)
-    
+
     # Add holiday effects
     holiday_boost = 1.0
     if (day_of_year >= 359 and day_of_year <= days_in_year) or (day_of_year <= 2):
         holiday_boost = 1.2  # Christmas/New Year
     elif 332 <= day_of_year <= 333:
         holiday_boost = 1.3  # Black Friday
-    
+
     return 1.0 + strength * (base * holiday_boost - 1.0)
 
 

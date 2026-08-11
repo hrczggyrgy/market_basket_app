@@ -18,18 +18,20 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src.analytics.sample_data import generate_transactions
-from src.analytics.feature_store import build_feature_store
+from src.analytics.cdt.community import build_product_graph
 from src.analytics.cdt.embedding import build_product_embeddings, build_topk_neighbors
 from src.analytics.cdt.similarity import build_similarity_matrix
-from src.analytics.cdt.community import build_product_graph
+from src.analytics.clv import _fit_bg_nbd as fit_bg_nbd
+from src.analytics.clv import _fit_gamma_gamma as fit_gamma_gamma
+from src.analytics.clv import predict_clv_bg_nbd as predict_clv
+from src.analytics.feature_store import build_feature_store
 from src.analytics.performance import compute_product_metrics
 from src.analytics.pricing.elasticity import estimate_loglog_elasticity
 from src.analytics.pricing.kvi import compute_kvi_score
 from src.analytics.promo import detect_promotions
-from src.analytics.rules import create_basket_matrix, run_fpgrowth, generate_rules
+from src.analytics.rules import create_basket_matrix, generate_rules, run_fpgrowth
+from src.analytics.sample_data import generate_transactions
 from src.analytics.segmentation import behavioral_segmentation
-from src.analytics.clv import _fit_bg_nbd as fit_bg_nbd, _fit_gamma_gamma as fit_gamma_gamma, predict_clv_bg_nbd as predict_clv
 
 
 def _timeit(fn, *args, **kwargs):

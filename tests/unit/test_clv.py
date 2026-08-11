@@ -22,7 +22,7 @@ def test_predict_clv_diagnostics_content(sample_df: pd.DataFrame) -> None:
     _, diagnostics = predict_clv_bg_nbd(sample_df)
     metrics = set(diagnostics["metric"])
     assert {"bgf_r", "bgf_alpha", "bgf_a", "bgf_b", "ggf_p", "ggf_q", "ggf_v"} <= metrics
-    numeric = pd.to_numeric(diagnostics[diagnostics["metric"] != "model"]["value"], errors="coerce")
+    numeric = pd.to_numeric(diagnostics["value"], errors="coerce")
     assert numeric.notna().all()
     assert np.isfinite(numeric).all()
 

@@ -13,8 +13,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from src.analytics.data_quality import DataQualityReport, assess_data_quality
 from src.analytics.schemas import TRANSACTIONS
-from src.analytics.data_quality import DataQualityReport, assess_data_quality, DataQualityError
 
 REQUIRED_COLUMNS = list(TRANSACTIONS.columns)
 
@@ -43,7 +43,7 @@ def detect_column_mapping(columns: list[str]) -> dict[str, str]:
 
 def _clean_id(value: str | float | None) -> str | pd.NA:
     """Render IDs from numeric sources without a trailing '.0' (85123.0 -> 85123).
-    
+
     Returns pd.NA for missing/NaN values instead of the string "nan".
     """
     if value is None or (isinstance(value, float) and np.isnan(value)):
@@ -73,14 +73,14 @@ def load_transactions(
 
     Returns (df, warning_message, dropped_rows, quality_report). The returned df satisfies the
     TRANSACTIONS contract. Missing optional columns are simply absent.
-    
+
     Enhanced with consistent data quality validation and error handling.
     """
     from src.analytics.config import get_config
     from src.analytics.data_quality import DataQualityError
-    
+
     config = get_config()
-    
+
     if isinstance(source, (str, Path)):
         raw = pd.read_csv(source, low_memory=False)
     else:
@@ -117,8 +117,8 @@ def load_transactions(
         & df["stockcode"].ne("")
     )
     # Customer-level validity (required for customer analytics)
-    customer_valid = df["customer_id"].notna() & df["customer_id"].ne("")
-    
+    df["customer_id"].notna() & df["customer_id"].ne("")
+
     # For general transaction analyses, only transaction_valid is required
     # Customer analytics will use the intersection
     df = df.loc[transaction_valid].copy()
@@ -160,7 +160,7 @@ def load_transactions(
         quality_report = assess_data_quality(df)
         if quality_report.volume_warning:
             warning = (warning + "; " if warning else "") + quality_report.volume_warning
-        
+
         # Consistent quality gate enforcement
         if getattr(config, "fail_on_quality_issues", False) and quality_report.has_issues():
             raise DataQualityError(quality_report)
@@ -223,14 +223,14 @@ def safe_divide(
     numerator: float | np.ndarray, denominator: float | np.ndarray
 ) -> float | np.ndarray:
     """Division that yields 0.0 where the denominator is zero.
-    
+
     Enhanced with numerical stability checks and warnings for edge cases.
     """
     import warnings as _warnings
-    
+
     denominator = np.asarray(denominator, dtype=float)
     numerator = np.asarray(numerator, dtype=float)
-    
+
     # Check for near-zero denominators
     near_zero_mask = np.abs(denominator) < 1e-10
     if np.any(near_zero_mask):
@@ -240,7 +240,7 @@ def safe_divide(
             UserWarning,
             stacklevel=2
         )
-    
+
     with np.errstate(divide="ignore", invalid="ignore"):
         result = np.divide(numerator, denominator, out=np.zeros_like(denominator), where=denominator != 0)
     return result
@@ -252,20 +252,20 @@ def assign_basket_mission(
     labels: tuple[str, ...] = ("Top-Up", "Regular", "Stock-Up"),
 ) -> pd.DataFrame:
     """Assign basket-size mission (Top-Up/Regular/Stock-Up) to each transaction.
-    
+
     Based on the mean basket depth of each product. Products that tend to appear
     in small baskets are "Top-Up", large baskets are "Stock-Up".
-    
+
     Args:
         df: Transaction dataframe
         product_col: Column with product codes
         labels: Labels for the three tiers
-        
+
     Returns:
         DataFrame with added 'basket_mission' column per transaction
     """
     from src.analytics.cdt.attributes import derive_basket_size_affinity
-    
+
     product_mission = derive_basket_size_affinity(df, product_col=product_col, labels=labels)
     # For each transaction, assign the mission of its products
     # If multiple products, use the mode (most common)
@@ -280,24 +280,24 @@ def assign_basket_mission(
 
 def add_segment_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Add customer segment columns from available segmentations.
-    
+
     Tries RFM segment first (cheap quantile-based), then behavioral segment.
-    
+
     Args:
         df: Transaction dataframe with customer_id
-        
+
     Returns:
         DataFrame with added segment columns if available
     """
     import logging
     logger = logging.getLogger(__name__)
-    
+
     df = df.copy()
     segments_added = []
-    
+
     # Try RFM segment (cheap quantile-based)
     try:
-        from src.analytics.segmentation import rfm_segmentation, compute_rfm_features
+        from src.analytics.segmentation import compute_rfm_features, rfm_segmentation
         rfm_features = compute_rfm_features(df)
         rfm_seg = rfm_segmentation(rfm_features)
         if "segment" in rfm_seg.columns:
@@ -306,7 +306,7 @@ def add_segment_columns(df: pd.DataFrame) -> pd.DataFrame:
             segments_added.append("rfm_segment")
     except Exception as e:
         logger.warning(f"RFM segmentation failed: {e}")
-    
+
     # Try behavioral segment
     try:
         from src.analytics.segmentation import behavioral_segmentation
@@ -317,8 +317,8 @@ def add_segment_columns(df: pd.DataFrame) -> pd.DataFrame:
             segments_added.append("behavioral_segment")
     except Exception as e:
         logger.warning(f"Behavioral segmentation failed: {e}")
-    
+
     if not segments_added:
         logger.info("No segment columns could be added")
-    
+
     return df

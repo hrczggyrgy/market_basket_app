@@ -14,16 +14,26 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+from src.analytics.data import load_transactions
+from src.analytics.simulation import SCENARIOS, config_for, generate_sample_transactions
 from src.ui import registry
 from src.ui.registry import ModeSpec
 from src.ui.tabs import (
-    overview, rules, copurchase, switching, cohorts,
-    performance, category_page, cdt_page, segmentation, pricing_page,
-    promo_page, assortment_page, clv_page
+    assortment_page,
+    category_page,
+    cdt_page,
+    clv_page,
+    cohorts,
+    copurchase,
+    decision_center,
+    overview,
+    performance,
+    pricing_page,
+    promo_page,
+    rules,
+    segmentation,
+    switching,
 )
-from src.analytics.data import load_transactions
-from src.analytics.simulation import SCENARIOS, config_for, generate_sample_transactions
-
 
 # Page config
 st.set_page_config(
@@ -37,6 +47,7 @@ st.set_page_config(
 # Register all modes
 def _register_modes() -> None:
     modes: tuple[ModeSpec, ...] = (
+        decision_center.MODE_SPEC,
         overview.MODE_SPEC,
         rules.MODE_SPEC,
         copurchase.MODE_SPEC,

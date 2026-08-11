@@ -7,12 +7,9 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.analytics.cohort import (
-    compute_cohort_decay_rate,
     compute_cohort_ltv_curve,
-    compute_cohort_sizes,
     compute_cohorts,
     compute_role_retention,
-    period_over_period_comparison,
     year_over_year_comparison,
 )
 from src.ui.plots import PALETTE, empty_state, new_fig, show
@@ -68,10 +65,10 @@ def _render_revenue_heatmap(df: pd.DataFrame, cohort_period: str) -> None:
             colorscale="Blues",
             zmin=0,
             colorbar={"title": "Cumulative $"},
-            text=[[f"${v:.0f}" if pd.notna(v) else "" for v in row] for row in pivot.to_numpy()],
+            text=[[f"${v:.0f}" if pd.notna(v) else "" for v in r] for r in pivot.to_numpy()],
             texttemplate="%{text}",
             textfont={"size": 10},
-        )
+        ),
     )
     fig.update_layout(
         xaxis={"title": "Period index", "tickangle": 0},
@@ -83,14 +80,13 @@ def _render_revenue_heatmap(df: pd.DataFrame, cohort_period: str) -> None:
 
 
 def _render_aov_curves(df: pd.DataFrame, cohort_period: str) -> None:
-    st.subheader(":material/show_chart: AOV by Period Index (per Cohort)")
+    st.subheader(":material/show_chart: Cumulative Revenue per Retained Customer")
     ltv = compute_cohort_ltv_curve(df, cohort_period=cohort_period)
     if ltv.empty:
-        show(empty_state("No AOV data"))
+        show(empty_state("No LTV data"))
         return
 
-    # AOV = cumulative_revenue / retained_customers at each period
-    # We need to recompute from cohort_table + ltv
+    # cumulative_revenue / retained_customers at each period
     from src.analytics.cohort import compute_cohorts
     cohort_table = compute_cohorts(df, cohort_period=cohort_period)
     if cohort_table.empty:
@@ -103,7 +99,7 @@ def _render_aov_curves(df: pd.DataFrame, cohort_period: str) -> None:
         on=["cohort", "period_index"],
         how="left",
     )
-    merged["aov"] = merged["cumulative_revenue"] / merged["retained"].replace(0, pd.NA)
+    merged["rev_per_retained"] = merged["cumulative_revenue"] / merged["retained"].replace(0, pd.NA)
 
     fig = new_fig()
     cohorts = sorted(merged["cohort"].unique())
@@ -112,7 +108,7 @@ def _render_aov_curves(df: pd.DataFrame, cohort_period: str) -> None:
         fig.add_trace(
             go.Scatter(
                 x=sub["period_index"],
-                y=sub["aov"],
+                y=sub["rev_per_retained"],
                 mode="lines+markers",
                 name=str(cohort),
                 line={"width": 1.5, "color": PALETTE[i % len(PALETTE)]},
@@ -121,11 +117,15 @@ def _render_aov_curves(df: pd.DataFrame, cohort_period: str) -> None:
         )
     fig.update_layout(
         xaxis={"title": "Period index"},
-        yaxis={"title": "Average Order Value ($)"},
+        yaxis={"title": "Cumulative revenue per retained customer ($)"},
         hovermode="x unified",
     )
     show(fig)
-    st.caption("AOV evolution per cohort. Rising = upsell/cross-sell success; falling = discounting or mix shift.")
+    st.caption(
+        "Cumulative revenue per retained customer, per cohort. Rising = the customers "
+        "who keep buying spend more over time; falling = discounting or mix shift. "
+        "This is not average order value — it is a lifetime-value-to-date view."
+    )
 
 
 def _render_role_retention_curves(df: pd.DataFrame, cohort_period: str, min_role_customers: int) -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -71,7 +71,7 @@ def iv_elasticity_manual_2sls(
     - Standard errors are HC3 (heteroskedasticity-robust) but NOT proper 2SLS SEs
     - First-stage F-statistic is reported; weak instruments (F < 10) are flagged
     - Results should be interpreted as descriptive, NOT causal inference
-    
+
     Stage 1: log(price) ~ log(instrument)
     Stage 2: log(qty) ~ log(price_hat)
     """
@@ -113,7 +113,7 @@ def iv_elasticity_manual_2sls(
         # Validate data before log transformation
         if (weekly[["avg_price", "total_qty", "avg_instrument"]] == 0).any().any():
             continue  # Skip products with zero values
-        
+
         log_price = np.log(weekly["avg_price"])
         log_qty = np.log(weekly["total_qty"])
         log_instr = np.log(weekly["avg_instrument"])
@@ -183,11 +183,11 @@ def local_price_response(
     THIS IS NOT A REGRESSION DISCONTINUITY DESIGN (RDD). It is a local weighted regression
     around psychological price points with the following limitations:
     - No treatment assignment rule changes discontinuously at the threshold
-    - No local randomization assumption  
+    - No local randomization assumption
     - Just a descriptive local price elasticity near round prices
     - Standard errors are NOT valid RDD inference
     - No placebo tests, no bandwidth sensitivity analysis
-    
+
     USE FOR EXPLORATORY ANALYSIS ONLY.
     """
     import warnings
@@ -224,7 +224,7 @@ def local_price_response(
         # Validate data before log transformation
         if (weekly[["avg_price", "total_qty"]] == 0).any().any():
             continue  # Skip products with zero values
-        
+
         log_price = np.log(weekly["avg_price"])
         log_qty = np.log(weekly["total_qty"])
 
@@ -298,7 +298,7 @@ def synthetic_control_estimate(
     - NO permutation inference
     - Standard errors are NOT provided
     - Weights are chosen to minimize pre-period RMSE without regularization
-    
+
     USE FOR EXPLORATORY ANALYSIS ONLY. NOT FOR CAUSAL INFERENCE.
     """
     import warnings
@@ -428,7 +428,7 @@ def causal_uplift_t_s(
     if len(X) != len(treatment) or len(X) != len(outcome):
         raise ValueError("X, treatment, outcome must have same length")
 
-    from sklearn.ensemble import RandomForestRegressor, HistGradientBoostingRegressor
+    from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor
     from sklearn.model_selection import train_test_split
 
     # Propensity score
@@ -437,7 +437,6 @@ def causal_uplift_t_s(
     if not overlap_diag["overlap"]:
         raise ValueError(f"Propensity overlap insufficient: {overlap_diag['warnings']}")
 
-    feature_cols = X.columns.tolist()
     X_train, X_test, T_train, T_test, y_train, y_test = train_test_split(
         X, treatment, outcome, test_size=0.3, random_state=random_seed, stratify=treatment
     )

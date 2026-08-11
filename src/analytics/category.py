@@ -29,7 +29,6 @@ def compute_category_kpis(df: pd.DataFrame, n_periods: int = 8) -> pd.DataFrame:
     revenue = df["price"] * df["quantity"]
     n_baskets = df["transaction_id"].nunique()
     df["_period"] = df["date"].dt.to_period("W").astype(str)
-    current = df["_period"].max()
     prior_periods = sorted(df["_period"].unique())[-n_periods - 1 : -1]
     prior = df["_period"].isin(prior_periods)
     table = pd.DataFrame(
@@ -83,12 +82,84 @@ def infer_categories_nlp(
     return check(lookup.rename(columns={product_col: "product"}), INFERRED_CATEGORIES)
 
 
+def _seasonality_diagnostics(monthly_series: pd.Series, min_cycles: int = 2) -> dict:
+    """Robust seasonality diagnostics on MONTHLY UNIT demand.
+
+    The series is reindexed onto the full calendar span between the first and
+    last observed month (off-season months count as zero demand), so a
+    summer-only category is correctly contrasted against its zero-demand
+    winter. Returns amplitude, seasonal strength (eta-squared of the
+    month-of-year factor after detrending), significance (Kruskal-Wallis),
+    and the number of annual cycles spanned. A category is only "Seasonal"
+    when all of these clear their thresholds — simple amplitude range alone
+    is rejected because it conflates trend, noise and sparsity with
+    real seasonality.
+    """
+    idx = pd.PeriodIndex(monthly_series.index, freq="M")
+    if len(idx) == 0:
+        return {"amplitude": 0.0, "strength": 0.0, "significant": False, "n_cycles": 0}
+    n_cycles = int(idx.max().year - idx.min().year + 1)
+    n_observed = len(idx)
+    # Need >= 2 annual cycles AND enough observed months to be meaningful.
+    if n_cycles < min_cycles or n_observed < 8:
+        return {"amplitude": 0.0, "strength": 0.0, "significant": False, "n_cycles": n_cycles if n_cycles >= 2 else 0}
+
+    # Reindex to the full calendar span (off-season months -> 0 demand).
+    series_idx = pd.PeriodIndex(monthly_series.index, freq="M")
+    series_values = pd.Series(monthly_series.to_numpy(dtype=float), index=series_idx)
+    full = series_values.reindex(pd.period_range(idx.min(), idx.max(), freq="M")).fillna(0.0)
+    values = full.to_numpy(dtype=float)
+    n = len(values)
+    # --- Detrend via least-squares line (removes growth/decline) ---
+    x = np.arange(n, dtype=float)
+    slope, intercept = np.polyfit(x, values, 1)
+    detrended = values - (slope * x + intercept)
+    detrended = detrended - detrended.mean()  # center
+
+    month_idx = pd.Series(pd.DatetimeIndex(full.index.astype(str)).month).to_numpy()
+    # --- Month-of-year factor ---
+    groups = {m: detrended[month_idx == m] for m in range(1, 13)}
+    groups = {m: g for m, g in groups.items() if len(g) > 0}
+    grand_mean = detrended.mean()
+    total_ss = float(np.sum((detrended - grand_mean) ** 2))
+    between_ss = 0.0
+    for _, g in groups.items():
+        between_ss += len(g) * (g.mean() - grand_mean) ** 2
+    strength = between_ss / total_ss if total_ss > 0 else 0.0
+
+    # --- Significance: Kruskal-Wallis across month-of-year groups ---
+    significant = False
+    if len(groups) >= 3:
+        try:
+            from scipy.stats import kruskal
+
+            stat, p = kruskal(*groups.values())
+            # KW is underpowered with only 2 observations per month group
+            # (two years of data): a very high seasonal strength compensates.
+            significant = bool(p < 0.05) or (n_cycles <= 2 and strength >= 0.75)
+        except Exception:
+            significant = False
+
+    # --- Amplitude of the (detrended) month factor, indexed to raw mean ---
+    group_means = np.array([g.mean() for g in groups.values()])
+    base = max(abs(float(np.mean(values))), 1e-9)
+    amplitude = float((group_means.max() - group_means.min()) / base) if len(group_means) else 0.0
+
+    return {
+        "amplitude": amplitude,
+        "strength": float(strength),
+        "significant": significant,
+        "n_cycles": n_cycles,
+    }
+
+
 def compute_category_roles(
     df: pd.DataFrame,
     *,
     trip_gen_threshold: float = 0.15,
     demand_cv_threshold: float = 0.25,
     seasonality_amplitude_threshold: float = 0.30,
+    seasonal_strength_threshold: float = 0.35,
     attachment_threshold: float = 0.20,
     n_periods: int = 52,
     category_source: str | None = None,
@@ -98,14 +169,21 @@ def compute_category_roles(
     Signals computed per category:
     - trip_generation_rate: % of baskets where this category is the dominant
       category by revenue share within the basket.
-    - demand_cv: coefficient of variation of weekly revenue (reusing XYZ logic).
-    - seasonality_amplitude: range of monthly revenue indexed to annual average.
+    - demand_cv: coefficient of variation of weekly UNIT demand (reusing XYZ
+      unit-demand logic, NOT revenue).
+    - seasonality_amplitude: range of the detrended monthly unit-demand index.
+    - seasonal_strength: eta-squared of the month-of-year factor after
+      detrending (share of variance explained by season, Hyndman-style).
+    - seasonality_significant: Kruskal-Wallis p < 0.05 across months.
+    - seasonality_n_cycles: number of full annual cycles observed.
     - attachment_rate: % of baskets containing this category that also contain
       a Destination category (computed after Destination is identified).
 
     Classification logic:
     1. Destination: high trip_generation_rate AND low demand_cv
-    2. Seasonal: high seasonality_amplitude
+    2. Seasonal: requires detrended amplitude AND strength above thresholds,
+       significant seasonality AND at least 2 full annual cycles. A single
+       spike year or a trending category is NOT seasonal.
     3. Convenience: low trip_generation_rate AND high attachment_rate to Destination
     4. Routine: everything else (stable, frequent, not strongly seasonal or destination)
 
@@ -114,7 +192,8 @@ def compute_category_roles(
             category, customer_id, price, quantity.
         trip_gen_threshold: Minimum trip_generation_rate for Destination.
         demand_cv_threshold: Maximum demand_cv for Destination.
-        seasonality_amplitude_threshold: Minimum amplitude for Seasonal.
+        seasonality_amplitude_threshold: Minimum detrended amplitude for Seasonal.
+        seasonal_strength_threshold: Minimum eta-squared seasonal strength for Seasonal.
         attachment_threshold: Minimum attachment_rate for Convenience.
         n_periods: Number of periods for seasonal analysis (weeks).
         category_source: Source of the category column. One of:
@@ -162,24 +241,28 @@ def compute_category_roles(
     all_categories = df["category"].unique()
     trip_generation_rate = trip_generation_rate.reindex(all_categories, fill_value=0.0)
 
-    # --- 2. demand_cv (reuse XYZ logic at category level) ---
+    # --- 2. demand_cv (weekly UNIT demand, not revenue) ---
     df["_period"] = df["date"].dt.to_period("W").astype(str)
-    cat_weekly = df.groupby(["category", "_period"])["revenue"].sum().unstack(fill_value=0)
+    cat_weekly = df.groupby(["category", "_period"])["quantity"].sum().unstack(fill_value=0)
     demand_cv = cat_weekly.apply(lambda row: variation(row.replace(0, np.nan)), axis=1).fillna(0.0)
     demand_cv = demand_cv.reindex(all_categories, fill_value=0.0)
 
-    # --- 3. seasonality_amplitude ---
-    # Monthly revenue indexed to category's own annual average
+    # --- 3. seasonality (detrended monthly UNIT demand) ---
     df["_month"] = df["date"].dt.to_period("M").astype(str)
-    cat_monthly = df.groupby(["category", "_month"])["revenue"].sum().unstack(fill_value=0)
-    # Only compute amplitude if we have at least 3 months of data
-    valid_months = (cat_monthly > 0).sum(axis=1) >= 3
-    cat_avg = cat_monthly.mean(axis=1).replace(0, np.nan)
-    monthly_index = cat_monthly.div(cat_avg, axis=0)
-    seasonality_amplitude = (monthly_index.max(axis=1) - monthly_index.min(axis=1)).fillna(0.0)
-    # Only use seasonality for categories with enough data points
-    seasonality_amplitude = seasonality_amplitude.where(valid_months, 0.0)
-    seasonality_amplitude = seasonality_amplitude.reindex(all_categories, fill_value=0.0)
+    cat_monthly = df.groupby(["category", "_month"])["quantity"].sum().unstack(fill_value=0)
+    seasonality_amplitude = pd.Series(0.0, index=all_categories, dtype=float)
+    seasonal_strength = pd.Series(0.0, index=all_categories, dtype=float)
+    seasonality_significant = pd.Series(False, index=all_categories, dtype=bool)
+    seasonality_n_cycles = pd.Series(0, index=all_categories, dtype=int)
+    for cat in all_categories:
+        if cat not in cat_monthly.index:
+            continue
+        series = cat_monthly.loc[cat]
+        diag = _seasonality_diagnostics(series)
+        seasonality_amplitude[cat] = diag["amplitude"]
+        seasonal_strength[cat] = diag["strength"]
+        seasonality_significant[cat] = diag["significant"]
+        seasonality_n_cycles[cat] = diag["n_cycles"]
 
     # --- 4. attachment_rate ---
     # First, identify Destination categories based on trip_generation and demand_cv
@@ -218,7 +301,12 @@ def compute_category_roles(
         if is_dest:
             return "Destination"
 
-        if row["seasonality_amplitude"] >= seasonality_amplitude_threshold:
+        if (
+            row["seasonality_amplitude"] >= seasonality_amplitude_threshold
+            and row["seasonal_strength"] >= seasonal_strength_threshold
+            and row["seasonality_significant"]
+            and row["seasonality_n_cycles"] >= 2
+        ):
             return "Seasonal"
 
         if (
@@ -234,6 +322,9 @@ def compute_category_roles(
         "trip_generation_rate": trip_generation_rate.values,
         "demand_cv": demand_cv.values,
         "seasonality_amplitude": seasonality_amplitude.values,
+        "seasonal_strength": seasonal_strength.values,
+        "seasonality_significant": seasonality_significant.values,
+        "seasonality_n_cycles": seasonality_n_cycles.values,
         "attachment_rate": attachment_rate.values,
         "category_source": category_source,
     }).fillna(0.0)
@@ -424,7 +515,7 @@ def enrich_with_categories(
     inferred = infer_categories_nlp(df, n_categories=n_categories, product_col=product_col)
     if inferred.empty:
         return df, False
-    mapping = dict(zip(inferred["stockcode"], inferred["inferred_category"]))
+    mapping = dict(zip(inferred["stockcode"], inferred["inferred_category"], strict=True))
     out = df.copy()
     out["category"] = out["stockcode"].map(mapping).fillna("Unknown")
     return out, True
@@ -463,7 +554,7 @@ def compute_category_manager_scorecard(
 
     kpis = compute_category_kpis(df, n_periods=8)
     roles = compute_category_roles(df)
-    role_map = dict(zip(roles["category"], roles["role"]))
+    role_map = dict(zip(roles["category"], roles["role"], strict=True))
 
     total_baskets = max(int(df["transaction_id"].nunique()), 1)
     total_skus = max(int(df["stockcode"].nunique()), 1)

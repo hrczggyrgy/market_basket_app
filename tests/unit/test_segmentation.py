@@ -6,19 +6,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.analytics.segmentation import (
-    behavioral_segmentation,
-    compute_rfm_features,
-    compute_segment_migration,
-    compute_segment_radar,
-    compute_cluster_quality_metrics,
-    compute_cluster_stability,
-    format_quality_metrics,
-    format_stability_metrics,
-    rfm_segmentation,
-    survival_analysis,
-    value_based_segmentation,
-)
 from src.analytics.schemas import (
     BEHAVIORAL_FEATURES,
     BEHAVIORAL_SEGMENTS,
@@ -31,6 +18,19 @@ from src.analytics.schemas import (
     SURVIVAL_DIAGNOSTICS,
     SURVIVAL_PREDICTIONS,
     VALUE_BASED_SEGMENTS,
+)
+from src.analytics.segmentation import (
+    behavioral_segmentation,
+    compute_cluster_quality_metrics,
+    compute_cluster_stability,
+    compute_rfm_features,
+    compute_segment_migration,
+    compute_segment_radar,
+    format_quality_metrics,
+    format_stability_metrics,
+    rfm_segmentation,
+    survival_analysis,
+    value_based_segmentation,
 )
 
 

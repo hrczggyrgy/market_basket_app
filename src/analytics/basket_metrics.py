@@ -77,10 +77,10 @@ def compute_customer_entropy(df: pd.DataFrame) -> pd.DataFrame:
     entropies = probs.apply(lambda row: entropy(row), axis=1)
     n_distinct = (counts > 0).sum(axis=1)
     max_entropy = np_log(n_distinct)
-    
+
     # n_purchases should be transaction count (not line count)
     n_transactions = df.groupby("customer_id")["transaction_id"].nunique()
-    
+
     table = pd.DataFrame(
         {
             "customer_id": counts.index,
@@ -140,7 +140,7 @@ def spc_revenue_trend(
     if len(values) == 0:
         return check(pd.DataFrame(columns=list(REVENUE_SPC.columns)), REVENUE_SPC, allow_empty=True)
 
-    series = pd.Series(values.to_numpy(dtype=float), 
+    series = pd.Series(values.to_numpy(dtype=float),
                         index=pd.RangeIndex(len(values)) if index is None else pd.Index(index))
     center = series.rolling(window, min_periods=min_periods).mean()
     std = series.rolling(window, min_periods=min_periods).std(ddof=1)
@@ -157,7 +157,7 @@ def spc_revenue_trend(
 
     anomaly = out_limits | in_run
     rule_label = []
-    for i, (is_lim, is_run) in enumerate(zip(out_limits.tolist(), in_run.tolist())):
+    for _, (is_lim, is_run) in enumerate(zip(out_limits.tolist(), in_run.tolist(), strict=True)):
         if is_lim:
             rule_label.append("limit")
         elif is_run:
@@ -181,8 +181,9 @@ def spc_revenue_trend(
 
 def np_log(series: pd.Series) -> pd.Series:
     """Natural log with zeros mapped to 0 (avoid -inf) with warning."""
-    import numpy as np
     import warnings as _warnings
+
+    import numpy as np
 
     zero_count = (series == 0).sum()
     if zero_count > 0:
@@ -213,25 +214,25 @@ def compute_basket_metrics(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
     df["revenue"] = df["price"] * df["quantity"]
-    
+
     agg = df.groupby("transaction_id").agg(
         basket_units=("quantity", "sum"),
         basket_lines=("stockcode", "nunique"),
         basket_distinct_skus=("stockcode", "nunique"),
         basket_revenue=("revenue", "sum"),
     ).reset_index()
-    
+
     return agg
 
 
 def compute_basket_summary(df: pd.DataFrame) -> pd.DataFrame:
     """Summary statistics of canonical basket metrics across all transactions."""
     basket_metrics = compute_basket_metrics(df)
-    
+
     summary = pd.DataFrame({
         "metric": [
             "basket_units",
-            "basket_lines", 
+            "basket_lines",
             "basket_distinct_skus",
             "basket_revenue",
         ],

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 
@@ -9,7 +11,7 @@ from src.analytics.schemas import VALUE_BASED_SEGMENTS, check
 
 
 def value_based_segmentation(
-    transactions_df: pd.DataFrame, 
+    transactions_df: pd.DataFrame,
     prediction_horizon_days: int = 90,
     as_of_date: Optional[pd.Timestamp] = None,
 ) -> pd.DataFrame:

@@ -7,7 +7,7 @@ data, with actionable reports for users to review before analysis.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Set
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -22,7 +22,7 @@ class DataQualityError(Exception):
     hard-fail mode (e.g. a CI regression run).
     """
 
-    def __init__(self, report: "DataQualityReport") -> None:
+    def __init__(self, report: DataQualityReport) -> None:
         self.report = report
         super().__init__(generate_quality_summary(report))
 
@@ -30,32 +30,32 @@ class DataQualityError(Exception):
 @dataclass
 class DataQualityReport:
     """Report of data quality issues found in transaction data."""
-    
+
     # Products with fewer than min_transactions threshold
     low_freq_products: List[str] = field(default_factory=list)
     low_freq_counts: Dict[str, int] = field(default_factory=dict)
-    
+
     # Basket size outliers (above percentile threshold)
     basket_outlier_txn_ids: List[str] = field(default_factory=list)
     basket_size_percentile: float = 0.99
     basket_outlier_threshold: int = 0
-    
+
     # Incomplete rows (missing required fields)
     incomplete_rows: int = 0
     incomplete_row_details: Dict[str, int] = field(default_factory=dict)
-    
+
     # Duplicate transactions (exact duplicate rows)
     duplicate_count: int = 0
-    
+
     # Volume warning
     volume_warning: Optional[str] = None
     n_transactions: int = 0
     n_products: int = 0
-    
+
     # User-selected exclusions (set via UI)
     excluded_products: List[str] = field(default_factory=list)
     excluded_txn_ids: List[str] = field(default_factory=list)
-    
+
     def has_issues(self) -> bool:
         """Return True if any quality issues were found."""
         return any([
@@ -64,7 +64,7 @@ class DataQualityReport:
             self.incomplete_rows > 0,
             self.volume_warning is not None,
         ])
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
@@ -82,9 +82,9 @@ class DataQualityReport:
             "excluded_products": self.excluded_products,
             "excluded_txn_ids": self.excluded_txn_ids,
         }
-    
+
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "DataQualityReport":
+    def from_dict(cls, d: dict[str, Any]) -> DataQualityReport:
         """Create from dictionary."""
         return cls(
             low_freq_products=d.get("low_freq_products", []),
@@ -110,20 +110,20 @@ def assess_data_quality(
     min_viable_transactions: Optional[Dict[int, int]] = None,
 ) -> DataQualityReport:
     """Assess data quality of transaction DataFrame.
-    
+
     Args:
-        df: Transaction DataFrame with columns: transaction_id, stockcode, 
+        df: Transaction DataFrame with columns: transaction_id, stockcode,
             customer_id, date, price, quantity
         min_product_transactions: Minimum transactions per product to not be flagged
         basket_outlier_percentile: Percentile threshold for basket size outliers
         min_viable_transactions: Dict mapping n_products thresholds to min transactions
             e.g., {200: 2000, 1000: 5000, float('inf'): 10000}
-    
+
     Returns:
         DataQualityReport with all findings
     """
     config = get_config()
-    
+
     # Use config defaults if not provided
     if min_product_transactions is None:
         min_product_transactions = getattr(config, "min_product_transactions", 50)
@@ -135,11 +135,11 @@ def assess_data_quality(
             1000: 5000,
             float('inf'): 10000,
         })
-    
+
     report = DataQualityReport()
     report.n_transactions = df["transaction_id"].nunique()
     report.n_products = df["stockcode"].nunique()
-    
+
     # 1. Check for low-frequency products
     product_txn_counts = df.groupby("stockcode")["transaction_id"].nunique()
     low_freq_mask = product_txn_counts < min_product_transactions
@@ -147,7 +147,7 @@ def assess_data_quality(
         low_freq_products = product_txn_counts[low_freq_mask]
         report.low_freq_products = low_freq_products.index.tolist()
         report.low_freq_counts = low_freq_products.to_dict()
-    
+
     # 2. Check for basket size outliers
     basket_sizes = df.groupby("transaction_id")["stockcode"].nunique()
     if len(basket_sizes) > 0:
@@ -156,7 +156,7 @@ def assess_data_quality(
         report.basket_outlier_threshold = int(np.ceil(threshold))
         outliers = basket_sizes[basket_sizes > threshold]
         report.basket_outlier_txn_ids = outliers.index.tolist()
-    
+
     # 3. Check for incomplete rows (missing required fields)
     required_cols = ["transaction_id", "stockcode", "customer_id", "date", "price", "quantity"]
     available_required = [c for c in required_cols if c in df.columns]
@@ -166,10 +166,10 @@ def assess_data_quality(
         # Count rows with ANY missing required field
         incomplete_mask = df[available_required].isna().any(axis=1)
         report.incomplete_rows = int(incomplete_mask.sum())
-    
+
     # 4. Check for duplicate transactions (exact duplicate rows)
     report.duplicate_count = int(df.duplicated().sum())
-    
+
     # 5. Volume warning based on catalog size
     n_skus = report.n_products
     min_txns = None
@@ -195,80 +195,80 @@ def filter_data_by_quality(
     report: DataQualityReport,
 ) -> tuple[pd.DataFrame, DataQualityReport]:
     """Filter DataFrame based on quality report exclusions.
-    
+
     Args:
         df: Original transaction DataFrame
         report: DataQualityReport with excluded_products and excluded_txn_ids set
-        
+
     Returns:
         Tuple of (filtered_df, updated_report)
     """
     filtered = df.copy()
-    
+
     # Exclude low-frequency products if user selected
     if report.excluded_products:
         filtered = filtered[~filtered["stockcode"].isin(report.excluded_products)]
-    
+
     # Exclude basket outliers if user selected
     if report.excluded_txn_ids:
         filtered = filtered[~filtered["transaction_id"].isin(report.excluded_txn_ids)]
-    
+
     # Update report with filtered stats
     report.n_transactions = filtered["transaction_id"].nunique()
     report.n_products = filtered["stockcode"].nunique()
-    
+
     return filtered, report
 
 
 def generate_quality_summary(report: DataQualityReport) -> str:
     """Generate human-readable summary of data quality issues."""
     lines = []
-    
+
     if report.low_freq_products:
         lines.append(
             f"⚠️ **Low-frequency products**: {len(report.low_freq_products)} products "
             f"appear in fewer than 50 transactions (configurable). "
             f"Consider excluding from mining."
         )
-    
+
     if report.basket_outlier_txn_ids:
         lines.append(
             f"⚠️ **Basket size outliers**: {len(report.basket_outlier_txn_ids)} transactions "
             f"exceed the {report.basket_size_percentile:.0%} percentile "
             f"(threshold: {report.basket_outlier_threshold} items/basket)."
         )
-    
+
     if report.incomplete_rows > 0:
         details = ", ".join(f"{col}: {cnt}" for col, cnt in report.incomplete_row_details.items())
         lines.append(
             f"⚠️ **Incomplete rows**: {report.incomplete_rows} rows with missing required fields "
             f"({details}). These were dropped during loading."
         )
-    
+
     if report.volume_warning:
         lines.append(f"⚠️ **Volume warning**: {report.volume_warning}")
-    
+
     if not lines:
         lines.append("✅ No data quality issues detected.")
-    
+
     return "\n\n".join(lines)
 
 
 def compute_quality_score(report: DataQualityReport) -> float:
     """Compute a 0-1 quality score from a DataQualityReport.
-    
+
     Score components:
     - Volume adequacy: 30% weight
-    - Low-frequency products: 25% weight  
+    - Low-frequency products: 25% weight
     - Basket outliers: 15% weight
     - Incomplete rows: 20% weight
     - Coverage: 10% weight
-    
+
     Returns:
         Float in [0, 1] where 1 = perfect quality
     """
     score = 1.0
-    
+
     # Volume adequacy (30%)
     if report.volume_warning:
         # Extract actual vs recommended
@@ -282,37 +282,37 @@ def compute_quality_score(report: DataQualityReport) -> float:
             score -= 0.30 * (1.0 - volume_ratio)
         except (ValueError, IndexError, AttributeError):
             score -= 0.15  # Default penalty if parsing fails
-    
+
     # Low-frequency products (25%)
     n_low_freq = len(report.low_freq_products)
     n_total = max(1, report.n_products)
     low_freq_ratio = n_low_freq / n_total
     score -= 0.25 * min(1.0, low_freq_ratio * 2)  # Cap at 2x penalty
-    
+
     # Basket outliers (15%)
     n_outliers = len(report.basket_outlier_txn_ids)
     n_transactions = max(1, report.n_transactions)
     outlier_ratio = n_outliers / n_transactions
     score -= 0.15 * min(1.0, outlier_ratio * 10)  # Cap penalty
-    
+
     # Incomplete rows (20%)
     incomplete_ratio = report.incomplete_rows / max(1, report.n_transactions)
     score -= 0.20 * min(1.0, incomplete_ratio * 100)
-    
+
     # Coverage bonus (10% - if we have category/brand/etc)
     coverage_bonus = 0.0
     # This would be set by the caller if they have optional columns
-    
+
     return max(0.0, min(1.0, score + coverage_bonus))
 
 
 def attach_quality_metadata(
-    df: pd.DataFrame, 
+    df: pd.DataFrame,
     quality_score: float,
     quality_report: Optional[DataQualityReport] = None
 ) -> pd.DataFrame:
     """Attach quality metadata to a DataFrame output.
-    
+
     Adds a '_quality' column with JSON-serialized quality info.
     """
     import json

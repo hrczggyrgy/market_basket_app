@@ -13,30 +13,52 @@ from src.analytics.schemas import (
     CROSS_ELASTICITY,
     ELASTICITY,
     ELASTICITY_CONFIDENCE,
+    ELASTICITY_STATUS,
     HIERARCHICAL_ELASTICITY,
     check,
 )
-
 
 _EPS = 1e-10
 _MIN_DISTINCT_PRICES = 3
 
 
 def _check_estimable(log_price: pd.Series, log_qty: pd.Series) -> Optional[str]:
-    """Return error reason if regression is numerically degenerate, else None."""
+    """Return error reason if regression is numerically degenerate, else None.
+
+    Returns specific error codes for better user understanding:
+    - insufficient_price_points: fewer than 3 distinct price points
+    - near_constant_price: price variation below threshold
+    - near_constant_quantity: quantity variation below threshold
+    - near_perfect_collinearity: price and quantity are perfectly correlated
+    - extreme_values: log values indicate data quality issues
+    - correlation_failed: correlation computation error
+
+    Example:
+        >>> import pandas as pd
+        >>> import numpy as np
+        >>> prices = pd.Series([1.0, 1.0, 1.0])  # Constant price
+        >>> qtys = pd.Series([10, 12, 8])
+        >>> _check_estimable(np.log(prices), np.log(qtys))
+        'near_constant_price'
+    """
     if len(log_price) < _MIN_DISTINCT_PRICES:
-        return "insufficient distinct price points"
+        return "insufficient_price_points"
     if log_price.std() < _EPS:
-        return "near-constant price"
+        return "near_constant_price"
     if log_qty.std() < _EPS:
-        return "near-constant quantity"
+        return "near_constant_quantity"
+
+    # Check for extreme log values (data quality issue)
+    if np.any(np.abs(log_price) > 10) or np.any(np.abs(log_qty) > 10):
+        return "extreme_values"
+
     # Check near-perfect collinearity via correlation
     try:
         r = log_price.corr(log_qty)
         if pd.notna(r) and abs(r) >= 1.0 - _EPS:
-            return "near-perfect collinearity"
+            return "near_perfect_collinearity"
     except Exception:
-        return "correlation computation failed"
+        return "correlation_failed"
     return None
 
 
@@ -47,12 +69,12 @@ def _ols_loglog(
     time_dummies: Optional[pd.DataFrame] = None,
 ) -> Tuple[float, float, float, float, float, float, float]:
     """Single SKU log-log OLS: returns elasticity, std_err, p_value, r2, ci_low, ci_high, n_obs.
-    
+
     Enhanced with numerical stability checks and robust error handling.
     Optional time_dummies can be included as fixed effects.
     """
     import warnings as _warnings
-    
+
     if len(log_price) < 3:
         raise ValueError("insufficient observations")
 
@@ -80,7 +102,7 @@ def _ols_loglog(
             UserWarning,
             stacklevel=2
         )
-    
+
     if np.any(np.abs(log_qty) > 10):  # Check for extreme log values
         _warnings.warn(
             f"Extreme log quantity values detected (max: {log_qty.max():.2f}). "
@@ -120,7 +142,7 @@ def _ols_loglog(
             raise ValueError(f"p_value out of range: {p_value}")
         if not np.isfinite(elasticity) or not np.isfinite(std_err) or not np.isfinite(r2):
             raise ValueError("non-finite regression output")
-        
+
         # Check for economically implausible elasticities
         if abs(elasticity) > 10:
             _warnings.warn(
@@ -131,7 +153,7 @@ def _ols_loglog(
             )
 
         return elasticity, std_err, p_value, r2, ci_low, ci_high, len(log_price)
-    
+
     except Exception as e:
         _warnings.warn(
             f"OLS regression failed: {e}. "
@@ -161,8 +183,20 @@ def estimate_loglog_elasticity(
     - No instrument for price; OLS is biased if demand/supply shocks correlate
     - Results are descriptive: "how quantity co-varies with price historically"
     - For causal inference, use IV, RDD, or experimental methods (with valid instruments)
-    
+
     Returns DataFrame with one row per SKU meeting minimum data requirements.
+
+    Example:
+        >>> import pandas as pd
+        >>> df = pd.DataFrame({
+        ...     'date': pd.date_range('2024-01-01', periods=20, freq='W'),
+        ...     'stockcode': ['A'] * 20,
+        ...     'price': [10.0, 10.5, 11.0, 10.8, 10.2] * 4,
+        ...     'quantity': [100, 95, 90, 92, 98] * 4,
+        ... })
+        >>> result = estimate_loglog_elasticity(df, min_periods=5)
+        >>> 'elasticity' in result.columns
+        True
     """
     import warnings
     warnings.warn(
@@ -197,10 +231,10 @@ def estimate_loglog_elasticity(
         # Validate data before log transformation
         zero_prices = (weekly["avg_price"] == 0).sum()
         zero_qty = (weekly["total_qty"] == 0).sum()
-        
+
         if zero_prices > 0 or zero_qty > 0:
             continue  # Skip products with zero prices/quantities
-        
+
         log_price = np.log(weekly["avg_price"])
         log_qty = np.log(weekly["total_qty"])
 
@@ -226,16 +260,21 @@ def estimate_loglog_elasticity(
                     week_values = weekly.index.isocalendar().week
                 else:
                     week_values = weekly.index.week
+                # get_dummies yields bool columns regardless of the source dtype,
+                # which breaks sm.OLS, and month values lose the datetime index;
+                # cast to float64 and restore the index before combining.
                 week_dummies = pd.get_dummies(week_values, prefix='week', drop_first=True)
+                week_dummies.index = weekly.index
                 month_dummies = pd.get_dummies(weekly.index.month, prefix='month', drop_first=True)
-                time_dummies = pd.concat([week_dummies, month_dummies], axis=1)
+                month_dummies.index = weekly.index
+                time_dummies = pd.concat([week_dummies, month_dummies], axis=1).astype(float)
                 # Align with log_price index
                 time_dummies = time_dummies.loc[log_price.index]
 
             elast, se, pval, r2, ci_low, ci_high, n_obs = _ols_loglog(
                 log_price, log_qty, use_robust_se, time_dummies=time_dummies
             )
-        except (ValueError, np.linalg.LinAlgError, RuntimeError) as e:
+        except (ValueError, np.linalg.LinAlgError, RuntimeError):
             # Skip products where regression fails
             continue
 
@@ -260,6 +299,132 @@ def estimate_loglog_elasticity(
 
     table = pd.DataFrame(results, columns=list(ELASTICITY.columns))
     return check(table, ELASTICITY)
+
+
+def compute_elasticity_status(
+    transactions_df: pd.DataFrame,
+    elasticity_df: Optional[pd.DataFrame] = None,
+    product_col: str = "stockcode",
+    price_col: str = "price",
+    qty_col: str = "quantity",
+    date_col: str = "date",
+    freq: str = "W",
+    min_periods: int = 10,
+    min_price_variation: float = 0.05,
+) -> pd.DataFrame:
+    """Per-SKU elasticity estimability status for every SKU (coverage view).
+
+    Unlike ``estimate_loglog_elasticity`` (which returns only SKUs with a
+    usable estimate), this returns one row per SKU with an explicit
+    ``elasticity_status`` so callers can answer "why is this SKU missing?"
+    instead of silently dropping it or misreading it as perfectly inelastic.
+
+    Status values:
+    - estimated:                 usable estimate available.
+    - weak:                      estimate available but low confidence (wide CI
+                                 or not significant).
+    - insufficient_observations: fewer than ``min_periods`` weekly periods.
+    - insufficient_variation:    price CV < ``min_price_variation``.
+    - insufficient_price_points: fewer than 3 distinct price points.
+    - near_constant_price:       price variation below numerical threshold.
+    - near_constant_quantity:    quantity variation below numerical threshold.
+    - near_perfect_collinearity: price and quantity are perfectly correlated.
+    - extreme_values:            log values indicate data quality issues.
+    - correlation_failed:        correlation computation error.
+    - model_failed:              regression convergence failure.
+    - not_significant:           p-value >= 0.05 (used when confidence is low).
+    - unavailable:               no estimate (zero prices/quantities, or no
+                                 ``elasticity_df`` supplied).
+
+    Args:
+        transactions_df: Transaction data with date, price, quantity, stockcode.
+        elasticity_df: Optional output of ``estimate_loglog_elasticity`` used to
+            refine candidate statuses (estimated vs weak) and carry the point
+            estimate, r-squared and confidence tier.
+        freq: Resampling frequency for weekly aggregates.
+        min_periods: Minimum weekly periods for an estimate.
+        min_price_variation: Minimum price CV for an estimate.
+
+    Returns:
+        DataFrame validated against ELASTICITY_STATUS (one row per SKU).
+
+    Example:
+        >>> import pandas as pd
+        >>> df = pd.DataFrame({
+        ...     'date': pd.date_range('2024-01-01', periods=20, freq='W'),
+        ...     'stockcode': ['A'] * 20,
+        ...     'price': [10.0, 10.5, 11.0, 10.8, 10.2] * 4,
+        ...     'quantity': [100, 95, 90, 92, 98] * 4,
+        ... })
+        >>> status = compute_elasticity_status(df, min_periods=5)
+        >>> 'elasticity_status' in status.columns
+        True
+        >>> status['elasticity_status'].iloc[0]
+        'estimated'
+    """
+    df = transactions_df.copy()
+    df[date_col] = pd.to_datetime(df[date_col])
+
+    rows: list[dict[str, object]] = []
+    for product_id in df[product_col].unique():
+        prod_df = df[df[product_col] == product_id]
+        weekly = (
+            prod_df.set_index(date_col)
+            .groupby(pd.Grouper(freq=freq))
+            .agg(avg_price=(price_col, "mean"), total_qty=(qty_col, "sum"))
+            .dropna()
+        )
+        n_obs = int(len(weekly))
+        if n_obs == 0:
+            status = "unavailable"
+            price_cv: Optional[float] = None
+        else:
+            price_cv = float(weekly["avg_price"].std() / weekly["avg_price"].mean())
+            if n_obs < min_periods:
+                status = "insufficient_observations"
+            elif (weekly["avg_price"] == 0).any() or (weekly["total_qty"] == 0).any():
+                status = "unavailable"
+            elif weekly["avg_price"].nunique() < _MIN_DISTINCT_PRICES:
+                status = "insufficient_price_points"
+            elif price_cv < min_price_variation:
+                status = "insufficient_variation"
+            else:
+                status = "estimated" if elasticity_df is not None and not elasticity_df.empty else "unavailable"
+        rows.append(
+            {
+                "stockcode": product_id,
+                "elasticity_status": status,
+                "n_obs": n_obs,
+                "price_cv": price_cv,
+            }
+        )
+
+    status_df = pd.DataFrame(rows)
+    status_df["elasticity"] = np.nan
+    status_df["confidence"] = np.nan
+    status_df["r_squared"] = np.nan
+
+    if elasticity_df is not None and not elasticity_df.empty:
+        est = elasticity_df[["stockcode", "elasticity", "r_squared"]].copy()
+        status_df = status_df.merge(est, on="stockcode", how="left", suffixes=("", "_est"))
+        status_df["elasticity"] = status_df["elasticity"].combine_first(status_df["elasticity_est"])
+        status_df["r_squared"] = status_df["r_squared"].combine_first(status_df["r_squared_est"])
+        status_df = status_df.drop(columns=["elasticity_est", "r_squared_est"])
+
+        conf = classify_elasticity_confidence(elasticity_df)[["stockcode", "confidence"]]
+        status_df = status_df.merge(conf, on="stockcode", how="left", suffixes=("", "_conf"))
+        status_df["confidence"] = status_df["confidence"].combine_first(status_df["confidence_conf"])
+        status_df = status_df.drop(columns=["confidence_conf"])
+
+        has_estimate = status_df["elasticity"].notna()
+        refine = status_df["elasticity_status"].eq("estimated")
+        status_df.loc[refine & has_estimate, "elasticity_status"] = "estimated"
+        status_df.loc[refine & has_estimate & status_df["confidence"].eq("low"), "elasticity_status"] = "weak"
+        status_df.loc[refine & ~has_estimate, "elasticity_status"] = "unavailable"
+        status_df.loc[~has_estimate, "confidence"] = np.nan
+
+    table = status_df[list(ELASTICITY_STATUS.columns)]
+    return check(table, ELASTICITY_STATUS)
 
 
 def estimate_hierarchical_elasticity(
@@ -314,10 +479,10 @@ def estimate_hierarchical_elasticity(
         # Validate data before log transformation
         zero_prices = (weekly["avg_price"] == 0).sum()
         zero_qty = (weekly["total_qty"] == 0).sum()
-        
+
         if zero_prices > 0 or zero_qty > 0:
             continue  # Skip products with zero prices/quantities
-        
+
         log_price = np.log(weekly["avg_price"])
         log_qty = np.log(weekly["total_qty"])
 
@@ -509,7 +674,7 @@ def estimate_cross_price_elasticity(
         # Validate data before log transformation
         if (weekly[["avg_price_a", "avg_price_b", "total_qty_a"]] == 0).any().any():
             continue  # Skip products with zero prices/quantities
-        
+
         log_price_a = np.log(weekly["avg_price_a"])
         log_price_b = np.log(weekly["avg_price_b"])
         log_qty_a = np.log(weekly["total_qty_a"])
@@ -539,9 +704,14 @@ def estimate_cross_price_elasticity(
                 week_values = weekly.index.isocalendar().week
             else:
                 week_values = weekly.index.week
+            # get_dummies yields bool columns regardless of the source dtype,
+            # which breaks sm.OLS, and month values lose the datetime index;
+            # cast to float64 and restore the index before combining.
             week_dummies = pd.get_dummies(week_values, prefix='week', drop_first=True)
+            week_dummies.index = weekly.index
             month_dummies = pd.get_dummies(weekly.index.month, prefix='month', drop_first=True)
-            time_dummies = pd.concat([week_dummies, month_dummies], axis=1)
+            month_dummies.index = weekly.index
+            time_dummies = pd.concat([week_dummies, month_dummies], axis=1).astype(float)
             time_dummies = time_dummies.loc[log_price_a.index]
 
         X = np.column_stack([log_price_a.values, log_price_b.values])

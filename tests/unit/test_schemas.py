@@ -4,9 +4,9 @@ import pandas as pd
 import pytest
 
 from src.analytics.schemas import (
-    DataContract,
     RULES,
     TRANSACTIONS,
+    DataContract,
     SchemaError,
     check,
     contract,

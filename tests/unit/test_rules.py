@@ -173,6 +173,7 @@ def test_bootstrap_lift_ci(sample_df: pd.DataFrame) -> None:
 def test_strength_stability_anchor_apply_on_frozensets() -> None:
     """Regression: Series.apply over a frozenset column must not subscript rows."""
     import pandas as pd
+
     from src.analytics.rules import aggregate_rules_to_categories
 
     rules = pd.DataFrame({

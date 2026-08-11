@@ -357,8 +357,8 @@ def test_event_slices_empty_when_no_events() -> None:
 
 def test_phase_switching_on_sample(sample_df: pd.DataFrame) -> None:
     """Phase switching must produce contract-validated frames and survive promo-less data."""
-    from src.analytics.schemas import CATEGORY_SWITCHING
     from src.analytics.promo import detect_promotions
+    from src.analytics.schemas import CATEGORY_SWITCHING
     from src.analytics.switching import compute_category_switching_by_phase
 
     events = detect_promotions(sample_df)

@@ -1,6 +1,7 @@
 """Behavioral Segmentation based on purchase patterns."""
-
 from __future__ import annotations
+
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -8,17 +9,17 @@ from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 
-from src.analytics.segmentation.core import (
-    MIN_CLUSTER_SIZE,
-    _label_behavioral_clusters,
-    compute_cluster_quality_metrics,
-)
 from src.analytics.schemas import (
     BEHAVIORAL_FEATURES,
     BEHAVIORAL_SEGMENTS,
     SEGMENT_MIGRATION,
     SEGMENT_RADAR,
     check,
+)
+from src.analytics.segmentation.core import (
+    MIN_CLUSTER_SIZE,
+    _label_behavioral_clusters,
+    compute_cluster_quality_metrics,
 )
 
 

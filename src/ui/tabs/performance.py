@@ -1,4 +1,8 @@
-"""Product Performance tab."""
+"""Product Performance tab.
+
+Follows the app-wide page pattern: ABC/XYZ/lifecycle views -> Product Decision
+Matrix (ABC x XYZ x Lifecycle -> action) -> top insights -> actions.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +12,8 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.analytics.category import compute_category_roles
+from src.analytics.config import get_config
+from src.analytics.insights import generate_product_insights
 from src.analytics.performance import (
     abc_analysis,
     compute_repeat_rate,
@@ -16,9 +22,91 @@ from src.analytics.performance import (
     product_lifecycle_stage,
     xyz_analysis,
 )
+from src.ui.components import render_insight_cards
 from src.ui.features import get_product_metrics
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
+
+_ACTION_MATRIX: dict[tuple[str, str], str] = {
+    ("A", "X"): "Protect & grow",
+    ("A", "Y"): "Manage demand",
+    ("A", "Z"): "Hedge volatility",
+    ("B", "X"): "Grow",
+    ("B", "Y"): "Manage",
+    ("B", "Z"): "Review",
+    ("C", "X"): "Selective grow",
+    ("C", "Y"): "Review",
+    ("C", "Z"): "Delist candidate",
+}
+
+
+def _matrix_cell_action(abc_class: str, xyz_class: str) -> str:
+    return _ACTION_MATRIX.get((abc_class, xyz_class), "Review")
+
+
+def _render_product_decision_matrix(full: pd.DataFrame, rational: pd.DataFrame) -> None:
+    st.subheader(":material/table_chart: Product Decision Matrix (ABC × XYZ)")
+    if full.empty:
+        show(empty_state("No performance data"))
+        return
+
+    grid = full.copy()
+    grid["action"] = [
+        _matrix_cell_action(a, z) if pd.notna(a) and pd.notna(z) else "Review"
+        for a, z in zip(grid["abc_class"], grid["xyz_class"], strict=False)
+    ]
+
+    pivot_count = grid.pivot_table(index="abc_class", columns="xyz_class", values="stockcode", aggfunc="count", fill_value=0)
+    pivot_rev = grid.pivot_table(index="abc_class", columns="xyz_class", values="revenue", aggfunc="sum", fill_value=0)
+    for cls in ("A", "B", "C"):
+        if cls not in pivot_count.index:
+            pivot_count.loc[cls] = 0
+            pivot_rev.loc[cls] = 0.0
+    for cls in ("X", "Y", "Z"):
+        if cls not in pivot_count.columns:
+            pivot_count[cls] = 0
+            pivot_rev[cls] = 0.0
+    pivot_count = pivot_count.loc[["A", "B", "C"], ["X", "Y", "Z"]]
+    pivot_rev = pivot_rev.loc[["A", "B", "C"], ["X", "Y", "Z"]]
+
+    cell_text = [
+        [
+            f"{_matrix_cell_action(a, z)}<br>{int(pivot_count.loc[a, z])} SKUs<br>€{pivot_rev.loc[a, z]:,.0f}"
+            for z in ("X", "Y", "Z")
+        ]
+        for a in ("A", "B", "C")
+    ]
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=[[_matrix_cell_action(a, z) for z in ("X", "Y", "Z")] for a in ("A", "B", "C")],
+            x=["X — stable", "Y — moderate", "Z — erratic"],
+            y=["A — top 70%", "B — 70-90%", "C — long tail"],
+            text=cell_text,
+            texttemplate="%{text}",
+            textfont={"size": 11},
+            colorscale=[
+                [0.0, "#E15759"],
+                [0.35, "#F28E2B"],
+                [0.7, "#4E79A7"],
+                [1.0, "#59A14F"],
+            ],
+            zmid=0,
+            colorbar={"title": "Action"},
+            showscale=False,
+        )
+    )
+    fig.update_layout(height=260)
+    show(fig)
+    st.caption(
+        "Each cell's action follows the ABC × XYZ playbook: A+X = protect the cash "
+        "engine; C+Z = delist candidates; volatile high-revenue (A+Z) needs "
+        "demand-hedging, not delisting."
+    )
+
+    action_counts = rational["action"].value_counts()
+    counts_line = ", ".join(f"{k}: {v}" for k, v in action_counts.items()) if not action_counts.empty else "no actions"
+    st.caption(f"Rationalization actions across all SKUs: {counts_line}.")
 
 
 def _render_abc_pareto(perf: pd.DataFrame) -> None:
@@ -73,20 +161,36 @@ def _render_xyz_volatility(perf: pd.DataFrame) -> None:
         show(empty_state("No XYZ data"))
         return
 
+    cfg = get_config()
+    t1, t2 = sorted(cfg.xyz_cv_thresholds)
+
     fig = px.scatter(
         xyz.sort_values("revenue", ascending=False).head(50),
         x="revenue",
         y="cv",
-        color="xyz_class",
-        color_discrete_map={"X": PALETTE[0], "Y": PALETTE[2], "Z": PALETTE[4]},
-        hover_data=["stockcode"],
+        color="demand_profile",
+        color_discrete_map={
+            "Regular": PALETTE[0],
+            "Seasonal": PALETTE[2],
+            "Intermittent": PALETTE[4],
+            "Lumpy": PALETTE[1],
+            "Insufficient History": "#7F7F7F",
+        },
+        hover_data=["stockcode", "xyz_class", "zero_demand_rate", "n_periods"],
         log_x=True,
     )
-    fig.add_hline(y=0.10, line_dash="dash", line_color="gray", annotation_text="X boundary (10% CV)")
-    fig.add_hline(y=0.25, line_dash="dash", line_color="gray", annotation_text="Y boundary (25% CV)")
-    fig.update_layout(xaxis={"title": "Total Revenue (log)"}, yaxis={"title": "Coefficient of Variation"})
+    fig.add_hline(y=t1, line_dash="dash", line_color="gray", annotation_text=f"X boundary (CV {t1:.0%})")
+    fig.add_hline(y=t2, line_dash="dash", line_color="gray", annotation_text=f"Y boundary (CV {t2:.0%})")
+    fig.update_layout(xaxis={"title": "Total Revenue (log)"}, yaxis={"title": "Unit-demand CV"})
     show(fig)
-    st.caption("X = stable demand (CV ≤ 10%), Y = moderate (10-25%), Z = erratic (>25%). Circle size = revenue.")
+    st.caption(
+        "CV of weekly UNIT demand (not revenue). X = stable, Y = moderate, Z = erratic. "
+        "Color = demand profile (Regular/Seasonal/Intermittent/Lumpy); gray = insufficient history."
+    )
+
+    counts = xyz["demand_profile"].value_counts()
+    if not counts.empty:
+        st.caption("Demand profile mix: " + ", ".join(f"{k} {v}" for k, v in counts.items()))
 
 
 def _render_lifecycle_scatter(perf: pd.DataFrame) -> None:
@@ -207,8 +311,6 @@ def _render_category_roles(df: pd.DataFrame) -> None:
         "Seasonal": PALETTE[3],
         "Convenience": PALETTE[4],
     }
-    colors = roles_with_rev["role"].map(role_colors)
-
     fig = px.treemap(
         roles_with_rev,
         path=["category"],
@@ -263,6 +365,11 @@ def render(df: pd.DataFrame) -> None:
         & full["stage"].isin(stage_filter)
     ]
 
+    rational = compute_sku_rationalization_df(df)
+
+    st.divider()
+    _render_product_decision_matrix(full, rational)
+
     st.divider()
     _render_abc_pareto(df)
 
@@ -291,6 +398,11 @@ def render(df: pd.DataFrame) -> None:
         use_container_width=True,
         hide_index=True,
     )
+
+    st.divider()
+    st.subheader(":material/radar: Top Insights")
+    insights = generate_product_insights(rational, xyz, lifecycle)
+    render_insight_cards(insights)
 
 
 MODE_SPEC: ModeSpec = ModeSpec(

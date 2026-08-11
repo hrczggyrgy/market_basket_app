@@ -87,8 +87,11 @@ def run_cdt_validation(
     Builds similarity, clusters, then compares recovered clusters to the
     supplied ``true_labels``. Returns a small metrics table.
     """
+    from src.analytics.cdt.clustering import (
+        find_optimal_clusters_sklearn,
+        perform_hierarchical_clustering,
+    )
     from src.analytics.cdt.similarity import build_similarity_matrix
-    from src.analytics.cdt.clustering import perform_hierarchical_clustering, find_optimal_clusters_sklearn
 
     if n_clusters is None:
         opt = find_optimal_clusters_sklearn(

@@ -5,7 +5,6 @@ Usage:
     os.environ["ENGAGE_PROFILE"] = "1"  # or set in shell before running streamlit
 
     from src.analytics.profiling import timed
-    
     @timed("my_function")
     def my_function(...):
         ...
@@ -19,7 +18,7 @@ from __future__ import annotations
 import functools
 import os
 import time
-from typing import Callable, Any
+from typing import Any, Callable
 
 try:
     import streamlit as st
@@ -43,18 +42,18 @@ def _log(msg: str) -> None:
 
 def timed(name: str | None = None):
     """Decorator to time a function. Outputs to terminal and optionally Streamlit sidebar.
-    
+
     Args:
         name: Optional custom label. Defaults to function's qualified name.
-    
+
     Only active when ENGAGE_PROFILE=1 environment variable is set.
     """
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
         label = name or fn.__qualname__
-        
+
         if not ENGAGE_PROFILE:
             return fn
-        
+
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
             start = time.perf_counter()
@@ -70,7 +69,7 @@ def timed(name: str | None = None):
 
 def time_block(label: str):
     """Context manager for timing a code block.
-    
+
     Usage:
         with time_block("my_operation"):
             do_something()
@@ -79,17 +78,17 @@ def time_block(label: str):
         def __enter__(self):
             self.start = time.perf_counter()
             return self
-        
+
         def __exit__(self, *args):
             elapsed = time.perf_counter() - self.start
             _log(f"[PERF] {label}: {elapsed:.3f}s")
-    
+
     if not ENGAGE_PROFILE:
         class NoOp:
             def __enter__(self): return self
             def __exit__(self, *args): pass
         return NoOp()
-    
+
     return Timer()
 
 

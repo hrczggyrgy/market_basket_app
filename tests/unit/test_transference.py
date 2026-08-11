@@ -6,6 +6,15 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.analytics.schemas import (
+    CROSS_ELASTICITY,
+    DELIST_IMPACT,
+    DEMAND_TRANSFERENCE,
+    NODE_DELIST_IMPACT,
+    RECOVERY_HHI,
+    SDP_SCORES,
+    TRANSFERENCE_CI,
+)
 from src.analytics.transference import (
     bootstrap_demand_transference_ci,
     build_similarity_matrix,
@@ -19,25 +28,16 @@ from src.analytics.transference import (
     node_delist_impact,
     simulate_assortment_change,
 )
-from src.analytics.schemas import (
-    CROSS_ELASTICITY,
-    DELIST_IMPACT,
-    DEMAND_TRANSFERENCE,
-    NODE_DELIST_IMPACT,
-    RECOVERY_HHI,
-    SDP_SCORES,
-    TRANSFERENCE_CI,
-)
 
 
 def test_demand_transference_matrix_contract_and_math(sample_df: pd.DataFrame) -> None:
     dt = compute_demand_transference_matrix(sample_df)
     DEMAND_TRANSFERENCE.validate(dt)
     assert (dt["switch_rate"] >= 0).all() and (dt["switch_rate"] <= 1).all()
-    assert (dt["demand_transference"] >= 0).all()
-    assert (dt["revenue_at_risk"] >= 0).all()
-    assert (dt["revenue_at_risk"] <= dt["revenue_share_from"] * 0 + dt["revenue_at_risk"].max() * 1.01).all()
-    assert dt["demand_transference"].max() <= 1.0
+    assert (dt["observed_switching_transference"] >= 0).all()
+    assert (dt["observed_switching_recovery_proxy"] >= 0).all()
+    assert (dt["observed_switching_recovery_proxy"] >= 0).all()
+    assert dt["observed_switching_transference"].max() <= 1.0
 
 
 def test_demand_transference_switch_rates_row_normalized(sample_df: pd.DataFrame) -> None:
@@ -72,7 +72,7 @@ def test_delist_impact_analysis(sample_df: pd.DataFrame) -> None:
     assert (impact["estimated_revenue_recovered"] >= 0).all()
     expected = {
         "recovered": float(
-            dt[dt["from_product"].isin(top2)]["revenue_at_risk"].sum()
+            dt[dt["from_product"].isin(top2)]["observed_switching_recovery_proxy"].sum()
         ),
         "own": float(revenue.loc[top2].sum()),
     }

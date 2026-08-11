@@ -1,4 +1,9 @@
-"""Product Switching tab."""
+"""Product Switching tab.
+
+Follows the app-wide page pattern: switching flows -> revenue at risk ->
+delist safety -> top insights -> actions. Money-framed so "switches" become
+"€ at risk" and "€ recoverable".
+"""
 
 from __future__ import annotations
 
@@ -6,18 +11,118 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.ui.features import get_detected_promotions, get_product_lookup
+from src.analytics.insights import generate_switching_insights
+from src.analytics.opportunities import generate_switching_opportunities
 from src.analytics.switching import (
     build_event_slices,
-    compute_category_switching_matrix,
     compute_category_switching_by_phase,
+    compute_category_switching_matrix,
     compute_switching_matrix,
     compute_transition_matrix,
     get_customer_loyalty_metrics,
     get_top_switching_paths,
 )
+from src.analytics.transference import (
+    compute_demand_transference_matrix,
+    compute_recovery_hhi,
+    compute_substitutable_demand_percentage,
+    delist_impact_analysis,
+)
+from src.ui.components import render_insight_cards, render_metric_row, render_opportunity_table
+from src.ui.features import get_detected_promotions, get_product_lookup
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
+
+
+def _revenue_by_product(df: pd.DataFrame) -> pd.Series:
+    return (df["price"] * df["quantity"]).groupby(df["stockcode"]).sum()
+
+
+def _render_revenue_at_risk(df: pd.DataFrame, demand_transference_df: pd.DataFrame, top_n: int = 12) -> None:
+    st.subheader(":material/water_drop: Revenue at Risk (Net Switching)")
+    if demand_transference_df is None or demand_transference_df.empty:
+        show(empty_state("No switching data"))
+        return
+
+    out = (
+        demand_transference_df.groupby("from_product")["observed_switching_recovery_proxy"]
+        .sum()
+        .rename("outflow")
+    )
+    inflow = (
+        demand_transference_df.groupby("to_product")["observed_switching_recovery_proxy"]
+        .sum()
+        .rename("inflow")
+    )
+    net = pd.concat([out, inflow], axis=1).fillna(0.0)
+    net["net"] = net["inflow"] - net["outflow"]
+    net["revenue"] = net.index.map(_revenue_by_product(df)).fillna(0.0)
+    top = net.reindex(net["net"].abs().sort_values(ascending=False).index).head(top_n)
+
+    fig = new_fig()
+    fig.add_trace(
+        go.Bar(
+            x=top.index.astype(str),
+            y=top["net"],
+            marker={"color": ["#59A14F" if v >= 0 else "#E15759" for v in top["net"]]},
+            hovertemplate="%{x}<br>Net switching revenue: %{y:,.0f}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        yaxis={"title": "Net switching revenue (in - out)"},
+        xaxis={"title": "", "tickangle": -45},
+    )
+    show(fig)
+
+    total_out = float(out.sum())
+    total_in = float(inflow.sum())
+    total_rev = float(_revenue_by_product(df).sum())
+    render_metric_row(
+        [
+            {"label": "Switching revenue out", "value": f"€{total_out:,.0f}", "help": "Observed revenue-weighted switches away."},
+            {"label": "Switching revenue in", "value": f"€{total_in:,.0f}", "help": "Observed revenue-weighted switches toward."},
+            {"label": "Share of total revenue", "value": f"{total_out / total_rev:.1%}" if total_rev else "—", "help": "Revenue that moved between products at least once."},
+        ]
+    )
+    st.caption(
+        "Net switching revenue per product (recovery-weighted). Green = net inflow "
+        "(customers substituting toward it), red = net outflow. Observed correlation, "
+        "not a causal delist estimate."
+    )
+
+
+def _render_delist_safety(df: pd.DataFrame, sdp_df: pd.DataFrame, top_n: int = 12) -> None:
+    st.subheader(":material/verified: Delist Safety (Substitutable Demand)")
+    if sdp_df is None or sdp_df.empty:
+        show(empty_state("No SDP data"))
+        return
+
+    rev = _revenue_by_product(df)
+    work = sdp_df.copy()
+    work["revenue"] = work["stockcode"].map(rev).fillna(0.0)
+    work = work.sort_values("revenue", ascending=False).head(top_n)
+
+    fig = new_fig()
+    fig.add_trace(
+        go.Bar(
+            x=work["stockcode"].astype(str),
+            y=work["sdp"] * 100,
+            marker={"color": ["#59A14F" if v >= 80 else "#F28E2B" if v >= 20 else "#E15759" for v in work["sdp"] * 100]},
+            hovertemplate="%{x}<br>SDP: %{y:.0f}%<br>Revenue: €%{customdata:,.0f}<extra></extra>",
+            customdata=work["revenue"],
+        )
+    )
+    fig.add_hline(y=80, line_dash="dash", line_color="#59A14F", annotation_text="Highly substitutable (safe to cut)")
+    fig.add_hline(y=20, line_dash="dash", line_color="#E15759", annotation_text="Unique demand (do not cut)")
+    fig.update_layout(
+        yaxis={"title": "Substitutable demand % (SDP)", "range": [0, 105]},
+        xaxis={"title": "", "tickangle": -45},
+    )
+    show(fig)
+    st.caption(
+        "SDP = share of a product's demand that is recoverable inside the assortment "
+        "when it goes missing. Green = delisting is low-risk; red = revenue leaks away."
+    )
 
 
 def _render_sankey(df: pd.DataFrame, matrix: pd.DataFrame, top_n: int) -> None:
@@ -365,6 +470,19 @@ def render(df: pd.DataFrame) -> None:
         st.warning("No switching patterns found with current parameters.")
         return
 
+    demand_transference = compute_demand_transference_matrix(df, matrix)
+    sdp = compute_substitutable_demand_percentage(demand_transference, df)
+    delist_impact = delist_impact_analysis(
+        df, demand_transference, sdp.sort_values("sdp", ascending=False)["stockcode"].head(10).tolist()
+    )
+    recovery_hhi = compute_recovery_hhi(demand_transference)
+
+    st.divider()
+    _render_revenue_at_risk(df, demand_transference, top_n)
+
+    st.divider()
+    _render_delist_safety(df, sdp, top_n)
+
     st.divider()
     _render_sankey(df, matrix, top_n)
 
@@ -392,6 +510,18 @@ def render(df: pd.DataFrame) -> None:
     st.subheader(":material/person: Customer Loyalty Metrics")
     loyalty = get_customer_loyalty_metrics(df)
     st.dataframe(loyalty, use_container_width=True, hide_index=True)
+
+    st.divider()
+    st.subheader(":material/radar: Top Insights")
+    insights = generate_switching_insights(demand_transference, sdp, delist_impact)
+    render_insight_cards(insights)
+
+    st.divider()
+    st.subheader(":material/task_alt: Ranked Decisions")
+    opportunities = generate_switching_opportunities(
+        sdp, delist_impact, _revenue_by_product(df), top_n=10
+    )
+    render_opportunity_table(opportunities)
 
 
 MODE_SPEC: ModeSpec = ModeSpec(

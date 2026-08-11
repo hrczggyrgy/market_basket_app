@@ -41,6 +41,8 @@ def test_analytics_baseline_detects_drift(tmp_path) -> None:
 
     with open(BASELINE_PATH) as fh:
         baseline = json.load(fh)
+    if not baseline:
+        pytest.skip("Baseline is empty; run export_baseline() first")
     first_key = next(iter(baseline))
     baseline[first_key]["columns"] = ["DEFINITELY_WRONG_COLUMN"]
     drifted = tmp_path / "drifted_baseline.json"

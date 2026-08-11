@@ -18,6 +18,7 @@ from src.analytics.schemas import KVI_ELASTICITY_QUADRANT, KVI_SCORES, check
 def _create_kvi_features(
     transactions_df: pd.DataFrame,
     elasticity_df: Optional[pd.DataFrame] = None,
+    elasticity_status_df: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Assemble KVI feature table per SKU."""
     from src.analytics.basket_metrics import compute_basket_penetration
@@ -27,7 +28,7 @@ def _create_kvi_features(
     if product_metrics.empty:
         return pd.DataFrame()
 
-    # Basket penetration - drop product_metrics' 'penetration' (customer penetration) 
+    # Basket penetration - drop product_metrics' 'penetration' (customer penetration)
     # and use basket_penetration's 'penetration' (basket/trip incidence)
     basket_pen = compute_basket_penetration(transactions_df)
     pm = product_metrics.drop(columns=["penetration"], errors="ignore")
@@ -61,10 +62,22 @@ def _create_kvi_features(
             elast_cols.append("price_cv")
         kvi_features = kvi_features.merge(elasticity_df[elast_cols], on="stockcode", how="left")
 
+    # |elasticity|: leave NaN when not estimable instead of fabricating a 0.0.
+    # A missing elasticity means "not estimable", never "perfectly inelastic".
     if "abs_elasticity" not in kvi_features.columns and "elasticity" in kvi_features.columns:
         kvi_features["abs_elasticity"] = kvi_features["elasticity"].abs()
-    elif "abs_elasticity" not in kvi_features.columns:
-        kvi_features["abs_elasticity"] = 0.0
+    if "abs_elasticity" not in kvi_features.columns:
+        kvi_features["abs_elasticity"] = np.nan
+
+    # Explicit estimability status carried on every row.
+    if elasticity_status_df is not None and not elasticity_status_df.empty:
+        lookup = elasticity_status_df[["stockcode", "elasticity_status"]]
+        kvi_features = kvi_features.merge(lookup, on="stockcode", how="left")
+        kvi_features["elasticity_status"] = kvi_features["elasticity_status"].fillna("unavailable")
+    elif "elasticity" in kvi_features.columns:
+        kvi_features["elasticity_status"] = "estimated"
+    else:
+        kvi_features["elasticity_status"] = "unavailable"
 
     # Category revenue share - use stockcode as fallback category
     if "category" not in kvi_features.columns:
@@ -79,7 +92,16 @@ def _create_kvi_features(
     else:
         kvi_features["repeat_rate"] = 0.0
 
-    return kvi_features.fillna(0).replace([np.inf, -np.inf], 0)
+    # Fill numeric gaps EXCEPT abs_elasticity: NaN there means "not estimable",
+    # which is information, not a missing value to impute as 0.
+    fill_cols = [
+        c
+        for c in kvi_features.columns
+        if c not in ("abs_elasticity", "stockcode", "category", "elasticity_status")
+        and pd.api.types.is_numeric_dtype(kvi_features[c])
+    ]
+    kvi_features[fill_cols] = kvi_features[fill_cols].fillna(0).replace([np.inf, -np.inf], 0)
+    return kvi_features
 
 
 def compute_kvi_score(
@@ -88,9 +110,16 @@ def compute_kvi_score(
     cost_col: Optional[str] = None,
     margin_pct: Optional[float] = None,
     method: str = "heuristic",
+    elasticity_status_df: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
-    """KVI scoring: XGBoost + SHAP (method='xgb') or heuristic (method='heuristic')."""
-    features = _create_kvi_features(transactions_df, elasticity_df)
+    """KVI scoring: XGBoost + SHAP (method='xgb') or heuristic (method='heuristic').
+
+    ``elasticity_status_df`` (optional output of ``compute_elasticity_status``)
+    carries the per-SKU estimability state so that SKUs without a usable
+    elasticity are labelled explicitly (e.g. ``insufficient_variation``) rather
+    than silently treated as perfectly inelastic.
+    """
+    features = _create_kvi_features(transactions_df, elasticity_df, elasticity_status_df)
     if features.empty:
         return check(pd.DataFrame(columns=list(KVI_SCORES.columns)), KVI_SCORES, allow_empty=True)
 
@@ -107,18 +136,28 @@ def _kvi_heuristic(
     """Weighted heuristic KVI score."""
     # Target metric
     if cost_col and cost_col in features.columns:
-        features["margin"] = features["revenue"] * (
+        features["margin"] = features["total_revenue"] * (
             1 - features[cost_col] / features["avg_price"].replace(0, np.nan)
         ).clip(0, 1)
     elif margin_pct:
-        features["margin"] = features["revenue"] * margin_pct
+        features["margin"] = features["total_revenue"] * margin_pct
+
+    # Revenue-per-customer (customer value), derived when missing
+    if (
+        "revenue_per_customer" not in features.columns
+        and "total_revenue" in features.columns
+        and "customers" in features.columns
+    ):
+        features["revenue_per_customer"] = (
+            features["total_revenue"] / features["customers"].replace(0, np.nan)
+        )
 
     feature_cols = [
         "basket_penetration",
-        "revenue",
-        "total_customers",
-        "revenue_per_customer",
+        "total_revenue",
         "abs_elasticity",
+        "customers",
+        "revenue_per_customer",
     ]
     feature_cols = [c for c in feature_cols if c in features.columns]
 
@@ -126,12 +165,22 @@ def _kvi_heuristic(
         features["kvi_score"] = 0
         return _format_kvi_output(features)
 
-    X = features[feature_cols].fillna(0).replace([np.inf, -np.inf], 0)
+    X = features[feature_cols].replace([np.inf, -np.inf], np.nan)
+    # Missing elasticity (not estimable) is imputed to the median of estimable
+    # SKUs rather than a fabricated 0, so it neither vanishes nor reads as
+    # "perfectly inelastic" in the composite score.
+    if "abs_elasticity" in X.columns:
+        med = X["abs_elasticity"].median()
+        if pd.isna(med):
+            med = 0.5
+        X["abs_elasticity"] = X["abs_elasticity"].fillna(med)
+    X = X.fillna(0)
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # Weights: penetration (0.3), revenue (0.25), halo (0.2), elasticity (0.15), customers (0.1)
-    weights = np.array([0.3, 0.25, 0.2, 0.15, 0.1])[: len(feature_cols)]
+    # Weights: penetration (0.30), revenue (0.25), elasticity (0.15),
+    # customer reach (0.10), revenue-per-customer / customer value (0.20).
+    weights = np.array([0.30, 0.25, 0.15, 0.10, 0.20])[: len(feature_cols)]
     weights = weights / weights.sum()
 
     features["kvi_score"] = X_scaled @ weights
@@ -151,21 +200,30 @@ def _kvi_xgb(
         return _kvi_heuristic(features, cost_col, margin_pct)
 
     if cost_col and cost_col in features.columns:
-        features["margin"] = features["revenue"] * (
+        features["margin"] = features["total_revenue"] * (
             1 - features[cost_col] / features["avg_price"].replace(0, np.nan)
         ).clip(0, 1)
         y = features["margin"].fillna(0)
     elif margin_pct:
-        features["margin"] = features["revenue"] * margin_pct
+        features["margin"] = features["total_revenue"] * margin_pct
         y = features["margin"]
     else:
-        y = features["revenue"].fillna(0)
+        y = features["total_revenue"].fillna(0)
+
+    if (
+        "revenue_per_customer" not in features.columns
+        and "total_revenue" in features.columns
+        and "customers" in features.columns
+    ):
+        features["revenue_per_customer"] = (
+            features["total_revenue"] / features["customers"].replace(0, np.nan)
+        )
 
     feature_cols = [
         "basket_penetration",
         "trip_incidence",
-        "revenue",
-        "total_customers",
+        "total_revenue",
+        "customers",
         "avg_price",
         "price_cv",
         "revenue_per_customer",
@@ -175,7 +233,14 @@ def _kvi_xgb(
     ]
     feature_cols = [c for c in feature_cols if c in features.columns]
 
-    X = features[feature_cols].replace([np.inf, -np.inf], 0).fillna(0)
+    X = features[feature_cols].replace([np.inf, -np.inf], np.nan)
+    # Missing elasticity imputed to median of estimable SKUs (not a fabricated 0).
+    if "abs_elasticity" in X.columns:
+        med = X["abs_elasticity"].median()
+        if pd.isna(med):
+            med = 0.5
+        X["abs_elasticity"] = X["abs_elasticity"].fillna(med)
+    X = X.fillna(0)
 
     # Cross-validated out-of-fold predictions as KVI score
     from sklearn.model_selection import KFold, cross_val_predict
@@ -193,11 +258,11 @@ def _kvi_xgb(
         explainer = shap.TreeExplainer(model)
         shap_values = explainer.shap_values(X)
         features["kvi_shap_importance"] = str(
-            dict(zip(feature_cols, np.mean(np.abs(shap_values), axis=0)))
+            dict(zip(feature_cols, np.mean(np.abs(shap_values), axis=0), strict=True))
         )
     except Exception:
         features["kvi_feature_importance"] = str(
-            dict(zip(feature_cols, model.feature_importances_))
+            dict(zip(feature_cols, model.feature_importances_, strict=True))
         )
 
     return _format_kvi_output(features)
@@ -213,6 +278,7 @@ def _format_kvi_output(features: pd.DataFrame) -> pd.DataFrame:
         "basket_penetration",
         "trip_incidence",
         "abs_elasticity",
+        "elasticity_status",
     ]
     output_cols = [c for c in output_cols if c in features.columns]
     table = features[output_cols].copy()
@@ -244,6 +310,8 @@ def compute_kvi_elasticity_quadrant(
       safe to trade down or delist.
     - defer:      low KVI + inelastic-> slow movers with no price lever; review
       assortment depth last.
+    - unknown:    elasticity not estimable -> KVI x elasticity strategy cannot
+      be assigned. This is a separate state: it is NOT "inelastic" (0.0).
 
     Args:
         kvi_df: Output of ``compute_kvi_score`` (KVI_SCORES contract).
@@ -262,10 +330,14 @@ def compute_kvi_elasticity_quadrant(
         return check(empty, KVI_ELASTICITY_QUADRANT, allow_empty=True)
 
     df = kvi_df.copy()
-    df["abs_elasticity"] = df["abs_elasticity"].fillna(0.0).clip(lower=0.0)
+    # A missing elasticity must NOT be coerced to 0.0 (which reads as inelastic).
+    if "elasticity_status" not in df.columns:
+        df["elasticity_status"] = np.where(df["abs_elasticity"].notna(), "estimated", "unavailable")
     kvi_median = float(df["kvi_score"].median())
 
     def _quadrant(row: pd.Series) -> str:
+        if row["elasticity_status"] not in ("estimated", "weak") or pd.isna(row["abs_elasticity"]):
+            return "unknown"
         high_kvi = row["kvi_score"] >= kvi_median
         elastic = row["abs_elasticity"] >= elasticity_threshold
         if high_kvi and elastic:

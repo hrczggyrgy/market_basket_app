@@ -7,8 +7,8 @@ import pytest
 from src.analytics.category import (
     compute_assortment_efficiency,
     compute_category_growth_matrix,
-    compute_category_manager_scorecard,
     compute_category_kpis,
+    compute_category_manager_scorecard,
     compute_category_scorecard,
     compute_category_trend,
     enrich_with_categories,
@@ -167,7 +167,7 @@ def test_compute_category_roles_synthetic_fixture() -> None:
     
     rng = np.random.default_rng(42)
     n_customers = 200
-    n_days = 365  # Full year for proper seasonality
+    n_days = 730  # Two full years: seasonality requires >= 2 annual cycles
     
     categories = ["Destination_Cat", "Routine_Cat", "Seasonal_Cat", "Convenience_Cat"]
     products = []
@@ -192,6 +192,7 @@ def test_compute_category_roles_synthetic_fixture() -> None:
     # Convenience: low trip gen, high attachment to Destination - appears WITH Destination
     
     for day_idx, date in enumerate(days):
+        day_of_year = day_idx % 365  # seasonal pattern repeats across years
         for cust in range(n_customers):
             # Destination - appears in many baskets as dominant EVERY day
             if rng.random() < 0.25:
@@ -218,7 +219,7 @@ def test_compute_category_roles_synthetic_fixture() -> None:
                         ))
             
             # Seasonal - ONLY in summer (June-August), very strong seasonal pattern
-            is_summer = 150 < day_idx < 250
+            is_summer = 150 < day_of_year < 250
             seasonal_mult = 1.0 if is_summer else 0.01  # Almost zero in off-season
             if rng.random() < 0.2 * seasonal_mult:
                 txn_id += 1

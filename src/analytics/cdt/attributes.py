@@ -7,7 +7,8 @@ basket-size affinity (top-up vs. stock-up missions) and substitution tier.
 
 from __future__ import annotations
 
-import numpy as np
+from typing import Optional
+
 import pandas as pd
 
 from src.analytics.schemas import CDT_ATTRIBUTES, check
@@ -45,17 +46,13 @@ def derive_velocity_tier(
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["month"] = df["date"].dt.to_period("M")
-    
+
     total_months = df["month"].nunique()
     total_units = df.groupby(product_col)["quantity"].sum()
-    active_months = df.groupby(product_col)["month"].nunique()
-    
+
     # Velocity: total units per TOTAL observation month (including zero months)
     velocity = (total_units / total_months).rename("velocity_per_month")
-    
-    # Active rate: fraction of months with sales
-    active_rate = (active_months / total_months).rename("active_rate")
-    
+
     # Tier velocity
     effective_q = min(n_tiers, velocity.nunique())
     if velocity.nunique() <= 1:
@@ -105,10 +102,10 @@ def derive_seasonality_class(
     df["month"] = df["date"].dt.to_period("M")
     all_months = sorted(df["month"].unique())
     n_months = len(all_months)
-    
+
     # Create complete monthly grid with zeros for missing months
     monthly = df.groupby([product_col, "month"])["quantity"].sum().reset_index()
-    
+
     classes: dict[str, str] = {}
     for prod, grp in monthly.groupby(product_col):
         # Create full monthly series including zeros
@@ -119,7 +116,7 @@ def derive_seasonality_class(
             cv = float(demand.std(ddof=1) / annual_mean)
         else:
             cv = 0.0
-        
+
         n_active = (demand > 0).sum()
         if n_active / n_months < sporadic_support_threshold:
             classes[prod] = "Sporadic"
@@ -184,7 +181,7 @@ def build_transaction_derived_attributes(
         transactions_df = transactions_df.copy()
         transactions_df["date"] = pd.to_datetime(transactions_df["date"])
         transactions_df = transactions_df[transactions_df["date"] <= pd.Timestamp(train_period_end)]
-    
+
     tiers: dict[str, pd.Series] = {
         "price_tier": derive_price_tier(transactions_df, product_col),
         "velocity_tier": derive_velocity_tier(transactions_df, product_col),

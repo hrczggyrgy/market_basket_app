@@ -219,7 +219,7 @@ def _promo_windows(catalog: pd.DataFrame, n_days: int, seed: int) -> dict[str, l
 
 def _seasonal_demand(day_of_year: int, category: str, year: int = 2024) -> float:
     """Return seasonal multiplier for category on given day (1-366 for leap years).
-    
+
     Enhanced with:
     - Leap year support (366 days)
     - More realistic holiday patterns
@@ -227,7 +227,7 @@ def _seasonal_demand(day_of_year: int, category: str, year: int = 2024) -> float
     """
     # Handle leap years
     days_in_year = 366 if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0) else 365
-    
+
     # Convert to radians (2π per year)
     t = 2 * np.pi * day_of_year / days_in_year
 
@@ -242,9 +242,9 @@ def _seasonal_demand(day_of_year: int, category: str, year: int = 2024) -> float
         "Personal Care": 1.0 + 0.07 * np.sin(t),         # Mild summer
         "Pet": 1.0,                                      # No seasonality
     }
-    
+
     base_multiplier = seasonal.get(category, 1.0)
-    
+
     # Add holiday spikes for key shopping periods
     # Approximate major holiday periods (simplified for demo)
     holiday_multipliers = {
@@ -253,7 +253,7 @@ def _seasonal_demand(day_of_year: int, category: str, year: int = 2024) -> float
         "BlackFriday": 332 <= day_of_year <= 333,   # Day after Thanksgiving
         "SummerSale": 180 <= day_of_year <= 186,    # Early July
     }
-    
+
     holiday_boost = 1.0
     if holiday_multipliers["Christmas"]:
         holiday_boost = 1.3  # Strong holiday shopping
@@ -263,7 +263,7 @@ def _seasonal_demand(day_of_year: int, category: str, year: int = 2024) -> float
         holiday_boost = 1.4  # Major shopping event
     elif holiday_multipliers["SummerSale"]:
         holiday_boost = 1.15
-    
+
     return base_multiplier * holiday_boost
 
 
@@ -314,7 +314,7 @@ def _pick_basket_products(
     """Pick remaining products for basket using category affinity and segment preferences."""
     weights = catalog["popularity"].to_numpy().copy()
     available = set(catalog["product"]) - set(picked)
-    
+
     # Apply segment category preferences
     if category_preferences:
         for cat, multiplier in category_preferences.items():
@@ -372,11 +372,9 @@ def generate_transactions(
                 active_promo_days[sku][d] = w
 
     # Map products to SKU and catalog rows
-    sku_by_name = catalog.set_index("product")["stockcode"].to_dict()
     product_by_name = catalog.set_index("product")
 
     # Base popularity weights
-    base_weights = catalog["popularity"].to_numpy().copy()
 
     # Generate days range
     end_date = pd.Timestamp("2024-12-31")
@@ -422,7 +420,6 @@ def generate_transactions(
             cust_idx += 1
 
         # Process existing customers for purchases
-        day_of_year = date.dayofyear
         for customer_id, state in list(customer_states.items()):
             segment = state["segment"]
             seg_params = SEGMENTS[segment]
@@ -456,7 +453,7 @@ def generate_transactions(
 
             # Pick products with affinity logic and segment preferences
             picked: list[str] = []
-            
+
             # Get segment category preferences
             cat_prefs = seg_params.get("category_preferences", {})
 
@@ -495,9 +492,7 @@ def generate_transactions(
                     promo_type = promo["type"]
                     params = promo["params"]
 
-                    if promo_type == "discount":
-                        price = round(price * (1 - params["discount"]), 2)
-                    elif promo_type == "clearance":
+                    if promo_type in ("discount", "clearance"):
                         price = round(price * (1 - params["discount"]), 2)
                     elif promo_type == "bogo":
                         # Handled via quantity adjustment below

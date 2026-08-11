@@ -19,8 +19,8 @@ import statsmodels.api as sm
 from src.analytics.data import revenue_column
 from src.analytics.schemas import (
     CROSS_ELASTICITY,
-    DEMAND_TRANSFERENCE,
     DELIST_IMPACT,
+    DEMAND_TRANSFERENCE,
     NODE_DELIST_IMPACT,
     RECOVERY_HHI,
     SDP_SCORES,
@@ -117,7 +117,7 @@ def compute_substitutable_demand_percentage(
     SDP(A) = sum of observed switching recovery proxy away from A / total revenue.
     High SDP (>= 0.8) marks a highly substitutable delist candidate; low SDP
     (< 0.2) marks a unique demand driver that must stay in stock.
-    
+
     WARNING: Based on observed switching correlations, NOT causal estimates.
     """
     df = transactions_df.copy()
@@ -142,7 +142,7 @@ def delist_impact_analysis(
 
     ``observed_revenue_recovered`` is the sum of ``observed_switching_recovery_proxy`` for the delisted
     product's transfers; ``net_revenue_impact`` = recovered - own revenue.
-    
+
     WARNING: This is based on OBSERVED switching correlations, NOT causal estimates.
     """
     df = transactions_df.copy()
@@ -185,7 +185,7 @@ def node_delist_impact(
 
     ``node_sdp`` = internal recovery / node revenue, a measure of how
     self-contained each cluster (e.g. CDT leaf) is against delists.
-    
+
     WARNING: Based on observed switching correlations, NOT causal estimates.
     """
     df = transactions_df.copy()
@@ -270,9 +270,9 @@ def build_similarity_substitution_score(
     - No choice data; similarity is used as a proxy for substitution
     - Softmax over similarity + price + revenue is a scoring heuristic, NOT a discrete choice model
     - Results are descriptive similarity scores, NOT probability of substitution
-    
+
     USE FOR EXPLORATORY ANALYSIS ONLY.
-    
+
     U(j | i removed) = w_price * price_j + w_sim * sim(i, j)
                       + w_rev * log(revenue_j + 1)
     with a softmax over the products j != i. Uses median price and total
@@ -445,7 +445,7 @@ def compute_cross_price_elasticity(
         # Validate data before log transformation
         if (weekly[["avg_price_a", "avg_price_b", "total_qty_a"]] == 0).any().any():
             continue  # Skip products with zero values
-        
+
         log_price_a = np.log(weekly["avg_price_a"])
         log_price_b = np.log(weekly["avg_price_b"])
         log_qty_a = np.log(weekly["total_qty_a"])
@@ -488,7 +488,7 @@ def compute_recovery_hhi(demand_transference_df: pd.DataFrame) -> pd.DataFrame:
     HHI = sum(s_i^2) over shares of recovered revenue. ~1 indicates a single
     substitute captures most demand (fragile); ~0 indicates diversified,
     robust recovery.
-    
+
     WARNING: Based on observed switching correlations, NOT causal estimates.
     """
     rows = []

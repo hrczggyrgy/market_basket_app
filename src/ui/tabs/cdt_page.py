@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import networkx as nx
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -12,9 +11,7 @@ from src.analytics.cdt import (
     build_similarity_matrix,
     build_transaction_derived_attributes,
     get_cluster_assignments,
-    get_dendrogram_data,
     perform_hierarchical_clustering,
-    similarity_to_distance,
     tree_to_dataframe,
 )
 from src.ui.plots import PALETTE, empty_state, new_fig, show
@@ -72,7 +69,7 @@ def _render_dendrogram(sim: pd.DataFrame) -> None:
 
     # Plotly dendrogram: create line segments for branches
     fig = new_fig()
-    for i, (x, y) in enumerate(zip(ddata["icoord"], ddata["dcoord"])):
+    for _i, (x, y) in enumerate(zip(ddata["icoord"], ddata["dcoord"], strict=False)):
         fig.add_trace(
             go.Scatter(
                 x=x,

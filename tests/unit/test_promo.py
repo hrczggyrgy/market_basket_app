@@ -18,8 +18,8 @@ from src.analytics.promo import (
     halo_effect_analysis,
     mark_promo_transactions,
     pre_post_promo_lift,
-    promotion_timing_analysis,
     promo_roi_analysis,
+    promotion_timing_analysis,
     score_uplift_by_customer,
     train_uplift_learner,
 )

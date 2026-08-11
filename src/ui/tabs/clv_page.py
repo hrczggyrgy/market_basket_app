@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.analytics.clv import compute_clv_customer_df, predict_clv_bg_nbd
-from src.ui.plots import PALETTE, empty_state, new_fig, render_bar_with_ci, show
+from src.ui.plots import PALETTE, empty_state, render_bar_with_ci, show
 from src.ui.registry import ModeSpec
 
 
@@ -161,6 +161,8 @@ def _render_clv_diagnostics(diagnostics: pd.DataFrame) -> None:
         show(empty_state("No diagnostics"))
         return
 
+    st.caption("Model: BG/NBD (purchase frequency/recency) + Gamma-Gamma (monetary value).")
+
     status = diagnostics[diagnostics["metric"] == "gg_independence_status"]
     if not status.empty and len(status) == 1:
         status_code = float(status["value"].iloc[0])
@@ -180,9 +182,9 @@ def _render_clv_diagnostics(diagnostics: pd.DataFrame) -> None:
             data=[
                 go.Bar(
                     x=key_params["metric"],
-                    y=key_params["value"],
+                    y=key_params["value"].astype(float),
                     marker={"color": PALETTE[0]},
-                    text=key_params["value"].apply(lambda v: f"{v:.3f}"),
+                    text=key_params["value"].astype(float).apply(lambda v: f"{v:.3f}"),
                     textposition="outside",
                 )
             ]
@@ -219,7 +221,11 @@ def render(df: pd.DataFrame) -> None:
 
     st.divider()
     customers = compute_clv_customer_df(
-        df, prediction_horizon_days=horizon, freq=freq, discount_rate_pct=discount_rate
+        df,
+        prediction_horizon_days=horizon,
+        freq=freq,
+        discount_rate_pct=discount_rate,
+        predictions=predictions,
     )
 
     # Filters

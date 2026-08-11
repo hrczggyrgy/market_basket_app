@@ -12,8 +12,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from src.analytics.copurchase import compute_affinity_matrix
 from src.analytics.cdt.embedding import build_product_embeddings
+from src.analytics.copurchase import compute_affinity_matrix
 
 
 def _customer_product_matrix(
@@ -24,7 +24,7 @@ def _customer_product_matrix(
     top_n_products: int | None = None,
 ) -> pd.DataFrame:
     """Binary customer x product matrix, dropping rare products.
-    
+
     Args:
         top_n_products: If provided, only keep top-N products by support.
     """
@@ -32,7 +32,7 @@ def _customer_product_matrix(
     support = cust_product.sum(axis=0)
     valid = support[support >= min_product_support].index
     cust_product = cust_product[valid]
-    
+
     if top_n_products is not None and len(cust_product.columns) > top_n_products:
         # Keep only top-N products by support
         top_products = support.sort_values(ascending=False).head(top_n_products).index
@@ -44,7 +44,7 @@ def _customer_product_matrix(
             UserWarning,
             stacklevel=2
         )
-    
+
     return (cust_product > 0).astype(int)
 
 
@@ -272,7 +272,7 @@ def build_similarity_matrix_ensemble(
         scaled.append((sub - mean) / std)
     if weights is None:
         weights = tuple([1.0 / len(scaled)] * len(scaled))
-    ensemble = sum(w * s for w, s in zip(weights, scaled))
+    ensemble = sum(w * s for w, s in zip(weights, scaled, strict=True))
     ensemble = ensemble - ensemble.to_numpy().min()
     span = float(ensemble.to_numpy().max()) or 1.0
     ensemble = ensemble / span
@@ -312,7 +312,6 @@ def bootstrap_similarity_ci(
         cust_products[c] = frozenset().union(*baskets) if baskets else frozenset()
         cust_baskets[c] = baskets
 
-    customer_list = customers
     product_sets = [cust_products[c] for c in customers]
     basket_lists = [cust_baskets[c] for c in customers]
 
