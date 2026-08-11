@@ -206,7 +206,10 @@ def run_decision_center(
         except Exception:
             pass
 
+    # Filter out empty DataFrames to avoid FutureWarning
+    insight_parts = [part for part in insight_parts if not part.empty]
     insights = pd.concat(insight_parts, ignore_index=True) if insight_parts else _EMPTY
+    opp_parts = [part for part in opp_parts if not part.empty]
     opportunities = pd.concat(opp_parts, ignore_index=True) if opp_parts else _EMPTY
 
     if not insights.empty:

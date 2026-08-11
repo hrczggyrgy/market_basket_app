@@ -300,7 +300,7 @@ def render(df: pd.DataFrame) -> None:
         # Category-level rules rollup
         st.divider()
         st.subheader(":material/category: Category Affinities (Rollup)")
-        cat_rules = aggregate_rules_to_categories(filtered, lookup)
+        cat_rules = aggregate_rules_to_categories(filtered, lookup, df)
         if not cat_rules.empty:
             # Format for display
             cat_display = cat_rules.copy()

@@ -46,6 +46,7 @@ class DataQualityReport:
 
     # Duplicate transactions (exact duplicate rows)
     duplicate_count: int = 0
+    duplicate_txn_ids: List[str] = field(default_factory=list)
 
     # Volume warning
     volume_warning: Optional[str] = None
@@ -62,6 +63,7 @@ class DataQualityReport:
             len(self.low_freq_products) > 0,
             len(self.basket_outlier_txn_ids) > 0,
             self.incomplete_rows > 0,
+            self.duplicate_count > 0,
             self.volume_warning is not None,
         ])
 
@@ -76,6 +78,7 @@ class DataQualityReport:
             "incomplete_rows": self.incomplete_rows,
             "incomplete_row_details": self.incomplete_row_details,
             "duplicate_count": self.duplicate_count,
+            "duplicate_txn_ids": self.duplicate_txn_ids,
             "volume_warning": self.volume_warning,
             "n_transactions": self.n_transactions,
             "n_products": self.n_products,
@@ -95,6 +98,7 @@ class DataQualityReport:
             incomplete_rows=d.get("incomplete_rows", 0),
             incomplete_row_details=d.get("incomplete_row_details", {}),
             duplicate_count=d.get("duplicate_count", 0),
+            duplicate_txn_ids=d.get("duplicate_txn_ids", []),
             volume_warning=d.get("volume_warning"),
             n_transactions=d.get("n_transactions", 0),
             n_products=d.get("n_products", 0),
@@ -168,7 +172,10 @@ def assess_data_quality(
         report.incomplete_rows = int(incomplete_mask.sum())
 
     # 4. Check for duplicate transactions (exact duplicate rows)
-    report.duplicate_count = int(df.duplicated().sum())
+    duplicate_mask = df.duplicated()
+    report.duplicate_count = int(duplicate_mask.sum())
+    if report.duplicate_count > 0:
+        report.duplicate_txn_ids = df.loc[duplicate_mask, "transaction_id"].astype(str).tolist()
 
     # 5. Volume warning based on catalog size
     n_skus = report.n_products
@@ -241,15 +248,24 @@ def generate_quality_summary(report: DataQualityReport) -> str:
     if report.incomplete_rows > 0:
         details = ", ".join(f"{col}: {cnt}" for col, cnt in report.incomplete_row_details.items())
         lines.append(
-            f"⚠️ **Incomplete rows**: {report.incomplete_rows} rows with missing required fields "
+            f"��⚠��️ **Incomplete rows**: {report.incomplete_rows} rows with missing required fields "
             f"({details}). These were dropped during loading."
         )
 
     if report.volume_warning:
-        lines.append(f"⚠️ **Volume warning**: {report.volume_warning}")
+        lines.append(f"��⚠��️ **Volume warning**: {report.volume_warning}")
+
+    if report.duplicate_count > 0:
+        details = ", ".join(map(str, report.duplicate_txn_ids[:10]))
+        if len(report.duplicate_txn_ids) > 10:
+            details += f"... and {len(report.duplicate_txn_ids) - 10} more"
+        lines.append(
+            f"��⚠��️ **Duplicate transactions**: {report.duplicate_count} exact duplicate rows found "
+            f"(Transaction IDs: {details}). These may indicate data entry errors or system issues."
+        )
 
     if not lines:
-        lines.append("✅ No data quality issues detected.")
+        lines.append("��✅ No data quality issues detected.")
 
     return "\n\n".join(lines)
 
@@ -258,10 +274,11 @@ def compute_quality_score(report: DataQualityReport) -> float:
     """Compute a 0-1 quality score from a DataQualityReport.
 
     Score components:
-    - Volume adequacy: 30% weight
+    - Volume adequacy: 25% weight
     - Low-frequency products: 25% weight
     - Basket outliers: 15% weight
-    - Incomplete rows: 20% weight
+    - Incomplete rows: 15% weight
+    - Duplicate transactions: 10% weight
     - Coverage: 10% weight
 
     Returns:
@@ -269,7 +286,7 @@ def compute_quality_score(report: DataQualityReport) -> float:
     """
     score = 1.0
 
-    # Volume adequacy (30%)
+    # Volume adequacy (25%)
     if report.volume_warning:
         # Extract actual vs recommended
         try:
@@ -279,9 +296,9 @@ def compute_quality_score(report: DataQualityReport) -> float:
             recommended_str = parts[2].split(" for")[0]
             recommended = int(recommended_str.replace(",", ""))
             volume_ratio = min(1.0, actual / recommended)
-            score -= 0.30 * (1.0 - volume_ratio)
+            score -= 0.25 * (1.0 - volume_ratio)
         except (ValueError, IndexError, AttributeError):
-            score -= 0.15  # Default penalty if parsing fails
+            score -= 0.125  # Default penalty if parsing fails
 
     # Low-frequency products (25%)
     n_low_freq = len(report.low_freq_products)
@@ -295,9 +312,13 @@ def compute_quality_score(report: DataQualityReport) -> float:
     outlier_ratio = n_outliers / n_transactions
     score -= 0.15 * min(1.0, outlier_ratio * 10)  # Cap penalty
 
-    # Incomplete rows (20%)
+    # Incomplete rows (15%)
     incomplete_ratio = report.incomplete_rows / max(1, report.n_transactions)
-    score -= 0.20 * min(1.0, incomplete_ratio * 100)
+    score -= 0.15 * min(1.0, incomplete_ratio * 100)
+
+    # Duplicate transactions (10%)
+    duplicate_ratio = report.duplicate_count / max(1, report.n_transactions)
+    score -= 0.10 * min(1.0, duplicate_ratio * 100)  # Cap penalty
 
     # Coverage bonus (10% - if we have category/brand/etc)
     coverage_bonus = 0.0

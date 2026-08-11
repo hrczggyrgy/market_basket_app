@@ -170,7 +170,12 @@ def _kvi_heuristic(
     # SKUs rather than a fabricated 0, so it neither vanishes nor reads as
     # "perfectly inelastic" in the composite score.
     if "abs_elasticity" in X.columns:
-        med = X["abs_elasticity"].median()
+        # Compute median only if there is at least one non-NA value to avoid
+        # warnings about empty slices when all elasticities are missing.
+        if X["abs_elasticity"].notna().any():
+            med = X["abs_elasticity"].median()
+        else:
+            med = 0.5
         if pd.isna(med):
             med = 0.5
         X["abs_elasticity"] = X["abs_elasticity"].fillna(med)

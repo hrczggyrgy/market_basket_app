@@ -46,7 +46,7 @@ def predict_clv_bg_nbd(
 
     # Collapse line items to one purchase event per basket.
     purchases = (
-        df.groupby(["customer_id", "transaction_id"])
+        df.groupby(["customer_id", "transaction_id"], observed=False)
         .agg(date=("date", "min"), revenue=("revenue", "sum"))
         .reset_index()
     )
@@ -315,7 +315,7 @@ def _build_diagnostics(
 
     if purchases is not None and len(purchases) > 0:
         customers = (
-            purchases.groupby("customer_id")
+            purchases.groupby("customer_id", observed=False)
             .agg(frequency=("transaction_id", "size"), monetary_value=("revenue", "mean"))
             .reset_index()
         )
@@ -365,7 +365,7 @@ def _avg_order_value_stationarity(purchases: pd.DataFrame) -> float:
     purchases["date"] = pd.to_datetime(purchases["date"])
     purchases = purchases.sort_values(["customer_id", "date"])
     consistent = []
-    for _, grp in purchases.groupby("customer_id"):
+    for _, grp in purchases.groupby("customer_id", observed=False):
         if len(grp) < 3:
             continue
         half = len(grp) // 2
@@ -406,7 +406,7 @@ def compute_clv_customer_df(
         )
 
     metrics = (
-        df.groupby("customer_id")
+        df.groupby("customer_id", observed=False)
         .agg(
             frequency=("transaction_id", "nunique"),
             total_revenue=("revenue", "sum"),
