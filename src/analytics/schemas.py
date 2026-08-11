@@ -2177,8 +2177,8 @@ PRICING_INSIGHTS = DataContract(
         ),
         ValueValidator(
             "impact_value",
-            lambda s: s.isna() | np.isfinite(s),
-            "impact_value must be finite or NaN",
+            lambda s: s.isna() | pd.to_numeric(s, errors='coerce').notna(),
+            "impact_value must be numeric or NaN",
         ),
         ValueValidator(
             "stability",

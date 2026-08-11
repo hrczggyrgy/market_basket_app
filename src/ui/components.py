@@ -97,11 +97,11 @@ def render_pricing_decision_card(
     and recommended action in a consolidated view.
     """
     # Get SKU data
-    kvi_row = kvi_data[kvi_data["stockcode"] == stockcode].iloc[0] if not kvi_data.empty else None
-    decision_row = decision_data[decision_data["stockcode"] == stockcode].iloc[0] if not decision_data.empty else None
-    elast_row = elasticity_data[elasticity_data["stockcode"] == stockcode].iloc[0] if not elasticity_data.empty else None
-    status_row = status_data[status_data["stockcode"] == stockcode].iloc[0] if not status_data.empty else None
-    conf_row = confidence_data[confidence_data["stockcode"] == stockcode].iloc[0] if not confidence_data.empty else None
+    kvi_row = kvi_data[kvi_data["stockcode"] == stockcode].iloc[0] if not kvi_data.empty and (kvi_data["stockcode"] == stockcode).any() else None
+    decision_row = decision_data[decision_data["stockcode"] == stockcode].iloc[0] if not decision_data.empty and (decision_data["stockcode"] == stockcode).any() else None
+    elast_row = elasticity_data[elasticity_data["stockcode"] == stockcode].iloc[0] if not elasticity_data.empty and (elasticity_data["stockcode"] == stockcode).any() else None
+    status_row = status_data[status_data["stockcode"] == stockcode].iloc[0] if not status_data.empty and (status_data["stockcode"] == stockcode).any() else None
+    conf_row = confidence_data[confidence_data["stockcode"] == stockcode].iloc[0] if not confidence_data.empty and (confidence_data["stockcode"] == stockcode).any() else None
 
     if kvi_row is None:
         st.error(f"SKU {stockcode} not found in KVI data.")
