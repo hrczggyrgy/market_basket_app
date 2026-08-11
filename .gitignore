@@ -143,3 +143,5 @@ src.legacy/
 
 # Sample fixture (tracked)
 !sample_data/*.csv
+# Agent guidelines
+AGENTS.md
