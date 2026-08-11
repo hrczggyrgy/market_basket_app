@@ -1,0 +1,186 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "orchestrator",
+  "share": "manual",
+  "autoupdate": "notify",
+  "instructions": [
+    "AGENTS.md"
+  ],
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "reserved": 12000
+  },
+  "watcher": {
+    "ignore": [
+      "**/.git/**",
+      "**/.venv/**",
+      "**/venv/**",
+      "**/__pycache__/**",
+      "**/.pytest_cache/**",
+      "**/.mypy_cache/**",
+      "**/.ruff_cache/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/coverage/**"
+    ]
+  },
+  "permission": {
+    "read": "allow",
+    "list": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "lsp": "allow",
+    "edit": "ask",
+    "bash": "ask",
+    "task": "ask",
+    "question": "allow",
+    "websearch": "ask",
+    "webfetch": "ask",
+    "external_directory": "deny",
+    "doom_loop": "ask"
+  },
+  "agent": {
+    "orchestrator": {
+      "description": "Lead agent for the market-basket application. Clarifies requirements, decomposes work, delegates to specialists, integrates their findings, and reports a verified plan or result.",
+      "mode": "primary",
+      "temperature": 0.1,
+      "maxSteps": 35,
+      "permission": {
+        "read": "allow",
+        "list": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "lsp": "allow",
+        "edit": "ask",
+        "bash": "ask",
+        "task": {
+          "explore": "allow",
+          "data-scientist": "allow",
+          "ux-designer": "allow",
+          "builder": "allow",
+          "tester": "allow",
+          "reviewer": "allow",
+          "*": "deny"
+        },
+        "websearch": "ask",
+        "webfetch": "ask",
+        "external_directory": "deny"
+      }
+    },
+    "explore": {
+      "description": "Read-only repository analyst. Locate relevant files, trace data flow, identify existing patterns, and return concise evidence to the orchestrator.",
+      "mode": "subagent",
+      "temperature": 0.1,
+      "maxSteps": 18,
+      "permission": {
+        "read": "allow",
+        "list": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "lsp": "allow",
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny",
+        "websearch": "deny",
+        "webfetch": "deny",
+        "external_directory": "deny"
+      }
+    },
+    "data-scientist": {
+      "description": "Analyze market-basket data, schemas, statistical assumptions, metrics, price curves, edge cases, and reproducibility. Recommend tests and explain analytical risks.",
+      "mode": "subagent",
+      "temperature": 0.1,
+      "maxSteps": 28,
+      "permission": {
+        "read": "allow",
+        "list": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "lsp": "allow",
+        "edit": "ask",
+        "bash": "ask",
+        "task": "deny",
+        "websearch": "ask",
+        "webfetch": "ask",
+        "external_directory": "deny"
+      }
+    },
+    "ux-designer": {
+      "description": "Evaluate the Streamlit user experience: information architecture, user flow, accessibility, labels, error states, visual hierarchy, responsive behavior, and discoverability. Return actionable recommendations before implementation.",
+      "mode": "subagent",
+      "temperature": 0.3,
+      "maxSteps": 24,
+      "permission": {
+        "read": "allow",
+        "list": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "lsp": "allow",
+        "edit": "deny",
+        "bash": "ask",
+        "task": "deny",
+        "websearch": "ask",
+        "webfetch": "ask",
+        "external_directory": "deny"
+      }
+    },
+    "builder": {
+      "description": "Implement an approved plan in small, focused changes. Follow AGENTS.md, preserve existing behavior, and run focused verification.",
+      "mode": "subagent",
+      "temperature": 0.2,
+      "maxSteps": 45,
+      "permission": {
+        "read": "allow",
+        "list": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "lsp": "allow",
+        "edit": "ask",
+        "bash": "ask",
+        "task": "deny",
+        "websearch": "ask",
+        "webfetch": "ask",
+        "external_directory": "deny"
+      }
+    },
+    "tester": {
+      "description": "Create and run focused Python and Streamlit tests, diagnose failures, and report exact commands and results. Do not change production behavior without approval.",
+      "mode": "subagent",
+      "temperature": 0.1,
+      "maxSteps": 30,
+      "permission": {
+        "read": "allow",
+        "list": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "lsp": "allow",
+        "edit": "ask",
+        "bash": "ask",
+        "task": "deny",
+        "websearch": "ask",
+        "webfetch": "ask",
+        "external_directory": "deny"
+      }
+    },
+    "reviewer": {
+      "description": "Read-only final reviewer for correctness, security, data integrity, UX regressions, maintainability, and missing tests.",
+      "mode": "subagent",
+      "temperature": 0.1,
+      "maxSteps": 25,
+      "permission": {
+        "read": "allow",
+        "list": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "lsp": "allow",
+        "edit": "deny",
+        "bash": "ask",
+        "task": "deny",
+        "websearch": "ask",
+        "webfetch": "ask",
+        "external_directory": "deny"
+      }
+    }
+  }
+}
