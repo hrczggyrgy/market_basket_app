@@ -1849,6 +1849,208 @@ CLUSTER_STABILITY = DataContract(
 )
 
 # ---------------------------------------------------------------------------
+# Strategic Segmentation Metrics
+# ---------------------------------------------------------------------------
+
+SEGMENT_VALUE_METRICS = DataContract(
+    name="segment_value_metrics",
+    columns=(
+        "segment",
+        "customers",
+        "revenue",
+        "transactions",
+        "units",
+        "customer_share_pct",
+        "revenue_share_pct",
+        "transaction_share_pct",
+        "unit_share_pct",
+        "revenue_per_customer",
+        "transactions_per_customer",
+        "units_per_customer",
+        "revenue_per_transaction",
+        "value_concentration_index",
+    ),
+    validators=(
+        ValueValidator("customers", lambda s: s >= 0, "customers must be non-negative"),
+        ValueValidator("revenue", lambda s: s >= 0, "revenue must be non-negative"),
+        ValueValidator("transactions", lambda s: s >= 0, "transactions must be non-negative"),
+        ValueValidator("units", lambda s: s >= 0, "units must be non-negative"),
+        ValueValidator("customer_share_pct", lambda s: (s >= 0) & (s <= 100), "customer_share_pct must be in [0, 100]"),
+        ValueValidator("revenue_share_pct", lambda s: (s >= 0) & (s <= 100), "revenue_share_pct must be in [0, 100]"),
+        ValueValidator("transaction_share_pct", lambda s: (s >= 0) & (s <= 100), "transaction_share_pct must be in [0, 100]"),
+        ValueValidator("unit_share_pct", lambda s: (s >= 0) & (s <= 100), "unit_share_pct must be in [0, 100]"),
+        ValueValidator("revenue_per_customer", lambda s: s >= 0, "revenue_per_customer must be non-negative"),
+        ValueValidator("transactions_per_customer", lambda s: s >= 0, "transactions_per_customer must be non-negative"),
+        ValueValidator("units_per_customer", lambda s: s >= 0, "units_per_customer must be non-negative"),
+        ValueValidator("revenue_per_transaction", lambda s: s >= 0, "revenue_per_transaction must be non-negative"),
+        ValueValidator("value_concentration_index", lambda s: s >= 0, "value_concentration_index must be non-negative"),
+    ),
+)
+
+SEGMENT_ENGAGEMENT_METRICS = DataContract(
+    name="segment_engagement_metrics",
+    columns=(
+        "segment",
+        "purchase_frequency",
+        "recency_days",
+        "avg_days_between",
+        "active_weeks",
+        "active_months",
+        "purchase_streak",
+        "active_customer_rate_pct",
+        "dormancy_rate_pct",
+    ),
+    validators=(
+        ValueValidator("purchase_frequency", lambda s: s >= 0, "purchase_frequency must be non-negative"),
+        ValueValidator("recency_days", lambda s: s >= 0, "recency_days must be non-negative"),
+        ValueValidator("avg_days_between", lambda s: s >= 0, "avg_days_between must be non-negative"),
+        ValueValidator("active_weeks", lambda s: s >= 0, "active_weeks must be non-negative"),
+        ValueValidator("active_months", lambda s: s >= 0, "active_months must be non-negative"),
+        ValueValidator("purchase_streak", lambda s: s >= 0, "purchase_streak must be non-negative"),
+        ValueValidator("active_customer_rate_pct", lambda s: (s >= 0) & (s <= 100), "active_customer_rate_pct must be in [0, 100]"),
+        ValueValidator("dormancy_rate_pct", lambda s: (s >= 0) & (s <= 100), "dormancy_rate_pct must be in [0, 100]"),
+    ),
+)
+
+SEGMENT_RETENTION_METRICS = DataContract(
+    name="segment_retention_metrics",
+    columns=(
+        "segment",
+        "customer_lifetime_days",
+        "tenure",
+        "repeat_purchase_rate_pct",
+        "lapse_rate_pct",
+        "reactivation_rate_pct",
+    ),
+    validators=(
+        ValueValidator("customer_lifetime_days", lambda s: s >= 0, "customer_lifetime_days must be non-negative"),
+        ValueValidator("tenure", lambda s: s >= 0, "tenure must be non-negative"),
+        ValueValidator("repeat_purchase_rate_pct", lambda s: (s >= 0) & (s <= 100), "repeat_purchase_rate_pct must be in [0, 100]"),
+        ValueValidator("lapse_rate_pct", lambda s: (s >= 0) & (s <= 100), "lapse_rate_pct must be in [0, 100]"),
+        ValueValidator("reactivation_rate_pct", lambda s: (s >= 0) & (s <= 100), "reactivation_rate_pct must be in [0, 100]"),
+    ),
+)
+
+SEGMENT_BASKET_METRICS = DataContract(
+    name="segment_basket_metrics",
+    columns=(
+        "segment",
+        "avg_basket_value",
+        "avg_units_per_basket",
+        "avg_skus_per_basket",
+        "avg_categories_per_basket",
+        "basket_concentration_gini",
+        "basket_diversity_entropy",
+        "large_basket_rate_pct",
+        "small_basket_rate_pct",
+    ),
+    validators=(
+        ValueValidator("avg_basket_value", lambda s: s >= 0, "avg_basket_value must be non-negative"),
+        ValueValidator("avg_units_per_basket", lambda s: s >= 0, "avg_units_per_basket must be non-negative"),
+        ValueValidator("avg_skus_per_basket", lambda s: s >= 0, "avg_skus_per_basket must be non-negative"),
+        ValueValidator("avg_categories_per_basket", lambda s: s >= 0, "avg_categories_per_basket must be non-negative"),
+        ValueValidator("basket_concentration_gini", lambda s: (s >= 0) & (s <= 1), "basket_concentration_gini must be in [0, 1]"),
+        ValueValidator("basket_diversity_entropy", lambda s: s >= 0, "basket_diversity_entropy must be non-negative"),
+        ValueValidator("large_basket_rate_pct", lambda s: (s >= 0) & (s <= 100), "large_basket_rate_pct must be in [0, 100]"),
+        ValueValidator("small_basket_rate_pct", lambda s: (s >= 0) & (s <= 100), "small_basket_rate_pct must be in [0, 100]"),
+    ),
+)
+
+SEGMENT_PRICE_BEHAVIOR_METRICS = DataContract(
+    name="segment_price_behavior_metrics",
+    columns=(
+        "segment",
+        "avg_price_paid",
+        "price_cv",
+        "price_range",
+        "price_index_vs_overall",
+        "price_orientation_index",
+        "premium_product_share_pct",
+        "value_product_share_pct",
+        "kvi_penetration_pct",
+    ),
+    validators=(
+        ValueValidator("avg_price_paid", lambda s: s >= 0, "avg_price_paid must be non-negative"),
+        ValueValidator("price_cv", lambda s: s >= 0, "price_cv must be non-negative"),
+        ValueValidator("price_range", lambda s: s >= 0, "price_range must be non-negative"),
+        ValueValidator("price_index_vs_overall", lambda s: s >= 0, "price_index_vs_overall must be non-negative"),
+        ValueValidator("price_orientation_index", lambda s: s >= -100, "price_orientation_index must be >= -100"),
+        ValueValidator("premium_product_share_pct", lambda s: (s >= 0) & (s <= 100), "premium_product_share_pct must be in [0, 100]"),
+        ValueValidator("value_product_share_pct", lambda s: (s >= 0) & (s <= 100), "value_product_share_pct must be in [0, 100]"),
+        ValueValidator("kvi_penetration_pct", lambda s: (s >= 0) & (s <= 100), "kvi_penetration_pct must be in [0, 100]"),
+    ),
+)
+
+SEGMENT_GROWTH_METRICS = DataContract(
+    name="segment_growth_metrics",
+    columns=(
+        "segment",
+        "revenue_growth_pct",
+        "customer_growth_pct",
+        "frequency_growth_pct",
+        "avg_order_value_growth_pct",
+        "segment_share_change_pct",
+    ),
+    validators=(
+        ValueValidator("revenue_growth_pct", lambda s: s >= -100, "revenue_growth_pct must be >= -100"),
+        ValueValidator("customer_growth_pct", lambda s: s >= -100, "customer_growth_pct must be >= -100"),
+        ValueValidator("frequency_growth_pct", lambda s: s >= -100, "frequency_growth_pct must be >= -100"),
+        ValueValidator("avg_order_value_growth_pct", lambda s: s >= -100, "avg_order_value_growth_pct must be >= -100"),
+        ValueValidator("segment_share_change_pct", lambda s: s >= -100, "segment_share_change_pct must be >= -100"),
+    ),
+)
+
+SEGMENT_CONCENTRATION_METRICS = DataContract(
+    name="segment_concentration_metrics",
+    columns=(
+        "segment",
+        "revenue_concentration_gini",
+        "top_1pct_revenue_share",
+        "top_5pct_revenue_share",
+        "top_10pct_revenue_share",
+        "revenue_mean",
+        "revenue_median",
+        "revenue_std",
+    ),
+    validators=(
+        ValueValidator("revenue_concentration_gini", lambda s: (s >= 0) & (s <= 1), "revenue_concentration_gini must be in [0, 1]"),
+        ValueValidator("top_1pct_revenue_share", lambda s: (s >= 0) & (s <= 100), "top_1pct_revenue_share must be in [0, 100]"),
+        ValueValidator("top_5pct_revenue_share", lambda s: (s >= 0) & (s <= 100), "top_5pct_revenue_share must be in [0, 100]"),
+        ValueValidator("top_10pct_revenue_share", lambda s: (s >= 0) & (s <= 100), "top_10pct_revenue_share must be in [0, 100]"),
+        ValueValidator("revenue_mean", lambda s: s >= 0, "revenue_mean must be non-negative"),
+        ValueValidator("revenue_median", lambda s: s >= 0, "revenue_median must be non-negative"),
+        ValueValidator("revenue_std", lambda s: s >= 0, "revenue_std must be non-negative"),
+    ),
+)
+
+SEGMENT_STABILITY_SCORE = DataContract(
+    name="segment_stability_score",
+    columns=(
+        "segment",
+        "customer_count",
+        "stability_score",
+        "evidence_level",
+    ),
+    validators=(
+        ValueValidator("customer_count", lambda s: s >= 0, "customer_count must be non-negative"),
+        ValueValidator("stability_score", lambda s: (s >= 0) & (s <= 100), "stability_score must be in [0, 100]"),
+        ValueValidator("evidence_level", lambda s: s.isin([1, 2, 3, 4, 5]), "evidence_level must be in [1, 2, 3, 4, 5]"),
+    ),
+)
+
+SEGMENT_DISTINCTIVENESS = DataContract(
+    name="segment_distinctiveness",
+    columns=(
+        "segment",
+        "distinctiveness_score",
+        "defining_characteristics",
+    ),
+    validators=(
+        ValueValidator("distinctiveness_score", lambda s: (s >= 0) & (s <= 100), "distinctiveness_score must be in [0, 100]"),
+    ),
+)
+
+# ---------------------------------------------------------------------------
 # Pricing contracts
 # ---------------------------------------------------------------------------
 

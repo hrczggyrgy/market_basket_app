@@ -1,5 +1,5 @@
 """Customer Segmentation package.
-
+ 
 Public API
 ----------
 - rfm: compute_rfm_features, rfm_segmentation
@@ -7,8 +7,13 @@ Public API
 - survival: survival_analysis, kaplan_meier_estimates
 - value_based: value_based_segmentation
 - core: MIN_CLUSTER_SIZE, _label_rfm_clusters, _label_behavioral_clusters,
-  compute_cluster_quality_metrics, compute_cluster_stability,
-  format_quality_metrics, format_stability_metrics
+   compute_cluster_quality_metrics, compute_cluster_stability,
+   format_quality_metrics, format_stability_metrics
+- strategic: calculate_segment_value_metrics, calculate_segment_engagement_metrics,
+   calculate_segment_retention_metrics, calculate_segment_basket_metrics,
+   calculate_segment_price_behavior_metrics, calculate_segment_growth_metrics,
+   calculate_segment_concentration_metrics, calculate_segment_stability_score,
+   calculate_segment_distinctiveness
 """
 
 from src.analytics.segmentation.behavioral import (
@@ -25,6 +30,15 @@ from src.analytics.segmentation.core import (
     compute_cluster_stability,
     format_quality_metrics,
     format_stability_metrics,
+    calculate_segment_value_metrics,
+    calculate_segment_engagement_metrics,
+    calculate_segment_retention_metrics,
+    calculate_segment_basket_metrics,
+    calculate_segment_price_behavior_metrics,
+    calculate_segment_growth_metrics,
+    calculate_segment_concentration_metrics,
+    calculate_segment_stability_score,
+    calculate_segment_distinctiveness,
 )
 from src.analytics.segmentation.rfm import compute_rfm_features, rfm_segmentation
 from src.analytics.segmentation.survival import kaplan_meier_estimates, survival_analysis
@@ -52,4 +66,14 @@ __all__ = [
     "compute_cluster_stability",
     "format_quality_metrics",
     "format_stability_metrics",
+    # strategic
+    "calculate_segment_value_metrics",
+    "calculate_segment_engagement_metrics",
+    "calculate_segment_retention_metrics",
+    "calculate_segment_basket_metrics",
+    "calculate_segment_price_behavior_metrics",
+    "calculate_segment_growth_metrics",
+    "calculate_segment_concentration_metrics",
+    "calculate_segment_stability_score",
+    "calculate_segment_distinctiveness",
 ]
