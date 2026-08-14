@@ -95,7 +95,9 @@ def run_cdt_validation(
 
     if n_clusters is None:
         opt = find_optimal_clusters_sklearn(
-            build_similarity_matrix(transactions_df, method=similarity_method, min_cooccurrence=min_cooccurrence),
+            build_similarity_matrix(
+                transactions_df, method=similarity_method, min_cooccurrence=min_cooccurrence
+            ),
             max_clusters=min(10, transactions_df["stockcode"].nunique() - 1),
         )
         if opt.empty:

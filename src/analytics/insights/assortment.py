@@ -92,7 +92,11 @@ def generate_assortment_insights(
         )
 
     if solution_df is not None and not solution_df.empty:
-        n_kept = int((solution_df["selected"] == 1).sum()) if "selected" in solution_df.columns else int(len(solution_df))
+        n_kept = (
+            int((solution_df["selected"] == 1).sum())
+            if "selected" in solution_df.columns
+            else int(len(solution_df))
+        )
         kept_sol_rev = float(solution_df["revenue"].sum())
         insights.append(
             Insight(

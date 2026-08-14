@@ -20,7 +20,14 @@ REQUIRED_COLUMNS = list(TRANSACTIONS.columns)
 
 _CANONICAL_MAPPING = {
     "date": ["date", "transaction_date", "dt", "order_date"],
-    "transaction_id": ["transaction_id", "txn_id", "order_id", "order_no", "basket_id", "invoice_no"],
+    "transaction_id": [
+        "transaction_id",
+        "txn_id",
+        "order_id",
+        "order_no",
+        "basket_id",
+        "invoice_no",
+    ],
     "stockcode": ["stockcode", "item_code", "sku", "sku_code", "product_code", "stock_code"],
     "product": ["product", "product_name", "item_name", "item_desc", "description"],
     "customer_id": ["customer_id", "cust_id", "client_id", "user_id", "buyer", "customer"],
@@ -86,7 +93,9 @@ def load_transactions(
     else:
         raw = pd.read_csv(source, low_memory=False)
 
-    mapping = dict(column_mapping) if column_mapping else detect_column_mapping(raw.columns.tolist())
+    mapping = (
+        dict(column_mapping) if column_mapping else detect_column_mapping(raw.columns.tolist())
+    )
     missing = [c for c in REQUIRED_COLUMNS if c not in mapping or mapping[c] not in raw.columns]
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
@@ -101,7 +110,11 @@ def load_transactions(
 
     return_mask = (df["price"] < 0) | (df["quantity"] < 0)
     return_count = int(return_mask.sum())
-    return_value = float(abs((df.loc[return_mask, "price"] * df.loc[return_mask, "quantity"]).sum())) if return_count else 0.0
+    return_value = (
+        float(abs((df.loc[return_mask, "price"] * df.loc[return_mask, "quantity"]).sum()))
+        if return_count
+        else 0.0
+    )
 
     before = len(df)
     # Transaction-level validity (required for all analyses)
@@ -153,7 +166,9 @@ def load_transactions(
     if dropped > 0:
         warning = f"Removed {dropped} rows with missing/invalid data"
     if return_count > 0:
-        warning = (warning + "; " if warning else "") + f"Detected {return_count} return row(s) worth {return_value:.2f} (excluded)"
+        warning = (
+            warning + "; " if warning else ""
+        ) + f"Detected {return_count} return row(s) worth {return_value:.2f} (excluded)"
 
     quality_report = None
     if assess_quality:
@@ -200,7 +215,11 @@ def get_data_summary(df: pd.DataFrame) -> dict[str, float | int | str]:
 
 def derive_product_lookup(df: pd.DataFrame) -> pd.DataFrame:
     """Unique product-level attributes keyed by stockcode."""
-    cols = [c for c in ("stockcode", "product", "category", "brand", "size", "flavor") if c in df.columns]
+    cols = [
+        c
+        for c in ("stockcode", "product", "category", "brand", "size", "flavor")
+        if c in df.columns
+    ]
     lookup = df[cols].drop_duplicates(subset="stockcode")
     lookup["product"] = lookup["product"].fillna(lookup["stockcode"])
     for col in ("category", "brand", "size", "flavor"):
@@ -238,11 +257,13 @@ def safe_divide(
             f"Division by near-zero values detected in {np.sum(near_zero_mask)} cases. "
             "Results may be numerically unstable.",
             UserWarning,
-            stacklevel=2
+            stacklevel=2,
         )
 
     with np.errstate(divide="ignore", invalid="ignore"):
-        result = np.divide(numerator, denominator, out=np.zeros_like(denominator), where=denominator != 0)
+        result = np.divide(
+            numerator, denominator, out=np.zeros_like(denominator), where=denominator != 0
+        )
     return result
 
 
@@ -272,9 +293,11 @@ def assign_basket_mission(
     df = df.copy()
     df["product_mission"] = df[product_col].map(product_mission)
     # Aggregate to transaction level
-    txn_mission = df.groupby("transaction_id")["product_mission"].agg(
-        lambda x: x.mode().iloc[0] if not x.mode().empty else labels[1]
-    ).rename("basket_mission")
+    txn_mission = (
+        df.groupby("transaction_id")["product_mission"]
+        .agg(lambda x: x.mode().iloc[0] if not x.mode().empty else labels[1])
+        .rename("basket_mission")
+    )
     return df.merge(txn_mission, on="transaction_id", how="left")
 
 
@@ -290,6 +313,7 @@ def add_segment_columns(df: pd.DataFrame) -> pd.DataFrame:
         DataFrame with added segment columns if available
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     df = df.copy()
@@ -298,6 +322,7 @@ def add_segment_columns(df: pd.DataFrame) -> pd.DataFrame:
     # Try RFM segment (cheap quantile-based)
     try:
         from src.analytics.segmentation import compute_rfm_features, rfm_segmentation
+
         rfm_features = compute_rfm_features(df)
         rfm_seg = rfm_segmentation(rfm_features)
         if "segment" in rfm_seg.columns:
@@ -310,6 +335,7 @@ def add_segment_columns(df: pd.DataFrame) -> pd.DataFrame:
     # Try behavioral segment
     try:
         from src.analytics.segmentation import behavioral_segmentation
+
         beh_seg = behavioral_segmentation(df)
         if "segment" in beh_seg.columns:
             seg_map = beh_seg.set_index("customer_id")["segment"].to_dict()

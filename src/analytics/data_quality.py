@@ -59,13 +59,15 @@ class DataQualityReport:
 
     def has_issues(self) -> bool:
         """Return True if any quality issues were found."""
-        return any([
-            len(self.low_freq_products) > 0,
-            len(self.basket_outlier_txn_ids) > 0,
-            self.incomplete_rows > 0,
-            self.duplicate_count > 0,
-            self.volume_warning is not None,
-        ])
+        return any(
+            [
+                len(self.low_freq_products) > 0,
+                len(self.basket_outlier_txn_ids) > 0,
+                self.incomplete_rows > 0,
+                self.duplicate_count > 0,
+                self.volume_warning is not None,
+            ]
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -134,11 +136,15 @@ def assess_data_quality(
     if basket_outlier_percentile is None:
         basket_outlier_percentile = getattr(config, "basket_outlier_percentile", 0.99)
     if min_viable_transactions is None:
-        min_viable_transactions = getattr(config, "min_viable_transactions", {
-            200: 2000,
-            1000: 5000,
-            float('inf'): 10000,
-        })
+        min_viable_transactions = getattr(
+            config,
+            "min_viable_transactions",
+            {
+                200: 2000,
+                1000: 5000,
+                float("inf"): 10000,
+            },
+        )
 
     report = DataQualityReport()
     report.n_transactions = df["transaction_id"].nunique()
@@ -328,15 +334,14 @@ def compute_quality_score(report: DataQualityReport) -> float:
 
 
 def attach_quality_metadata(
-    df: pd.DataFrame,
-    quality_score: float,
-    quality_report: Optional[DataQualityReport] = None
+    df: pd.DataFrame, quality_score: float, quality_report: Optional[DataQualityReport] = None
 ) -> pd.DataFrame:
     """Attach quality metadata to a DataFrame output.
 
     Adds a '_quality' column with JSON-serialized quality info.
     """
     import json
+
     result = df.copy()
     meta = {
         "quality_score": round(quality_score, 3),
@@ -354,6 +359,7 @@ def get_quality_score(df: pd.DataFrame) -> Optional[float]:
         return None
     try:
         import json
+
         meta = json.loads(df["_quality"].iloc[0])
         return meta.get("quality_score")
     except (json.JSONDecodeError, KeyError, IndexError):

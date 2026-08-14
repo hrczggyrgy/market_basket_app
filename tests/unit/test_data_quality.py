@@ -30,15 +30,17 @@ def test_assess_data_quality_basic(sample_df: pd.DataFrame) -> None:
 
 def test_low_freq_products_detected() -> None:
     # Create a fixture with a product that appears very few times
-    df = pd.DataFrame({
-        "date": pd.date_range("2024-01-01", periods=100, freq="D"),
-        "transaction_id": [f"T{i}" for i in range(100)],
-        "stockcode": ["A"] * 95 + ["B"] * 5,  # B appears only 5 times
-        "product": ["Product A"] * 95 + ["Product B"] * 5,
-        "customer_id": [f"C{i % 10}" for i in range(100)],
-        "price": [10.0] * 100,
-        "quantity": [1] * 100,
-    })
+    df = pd.DataFrame(
+        {
+            "date": pd.date_range("2024-01-01", periods=100, freq="D"),
+            "transaction_id": [f"T{i}" for i in range(100)],
+            "stockcode": ["A"] * 95 + ["B"] * 5,  # B appears only 5 times
+            "product": ["Product A"] * 95 + ["Product B"] * 5,
+            "customer_id": [f"C{i % 10}" for i in range(100)],
+            "price": [10.0] * 100,
+            "quantity": [1] * 100,
+        }
+    )
     report = assess_data_quality(df, min_product_transactions=10)
     assert "B" in report.low_freq_products
     assert report.low_freq_counts["B"] == 5
@@ -52,21 +54,23 @@ def test_basket_outliers_detected() -> None:
     # First 20 baskets have 2 items each (SKU A and B)
     # Last basket has 10 items (SKU A, B, C, D, E, F, G, H, I, J)
     stockcodes = [("A", "B")] * 20 + [("A", "B", "C", "D", "E", "F", "G", "H", "I", "J")]
-    
+
     rows = []
     for i in range(21):
         for sku in stockcodes[i]:
-            rows.append({
-                "date": dates[i],
-                "transaction_id": txn_ids[i],
-                "stockcode": sku,
-                "product": f"Product {sku}",
-                "customer_id": "C1",
-                "price": 10.0,
-                "quantity": 1,
-            })
+            rows.append(
+                {
+                    "date": dates[i],
+                    "transaction_id": txn_ids[i],
+                    "stockcode": sku,
+                    "product": f"Product {sku}",
+                    "customer_id": "C1",
+                    "price": 10.0,
+                    "quantity": 1,
+                }
+            )
     df = pd.DataFrame(rows)
-    
+
     # 20 baskets with 2 unique products, 1 basket with 10 unique products
     # 95th percentile of [2,2,2,...,2,10] = 10 (20th out of 21)
     report = assess_data_quality(df, basket_outlier_percentile=0.95)
@@ -75,15 +79,17 @@ def test_basket_outliers_detected() -> None:
 
 
 def test_incomplete_rows_detected() -> None:
-    df = pd.DataFrame({
-        "date": ["2024-01-01", "2024-01-01", None],
-        "transaction_id": ["T1", "T2", "T3"],
-        "stockcode": ["A", "B", "C"],
-        "product": ["Product A", "Product B", "Product C"],
-        "customer_id": ["C1", "C2", "C3"],
-        "price": [10.0, 20.0, 30.0],
-        "quantity": [1, 1, 1],
-    })
+    df = pd.DataFrame(
+        {
+            "date": ["2024-01-01", "2024-01-01", None],
+            "transaction_id": ["T1", "T2", "T3"],
+            "stockcode": ["A", "B", "C"],
+            "product": ["Product A", "Product B", "Product C"],
+            "customer_id": ["C1", "C2", "C3"],
+            "price": [10.0, 20.0, 30.0],
+            "quantity": [1, 1, 1],
+        }
+    )
     report = assess_data_quality(df)
     assert report.incomplete_rows == 1
     assert "date" in report.incomplete_row_details
@@ -91,15 +97,17 @@ def test_incomplete_rows_detected() -> None:
 
 def test_volume_warning() -> None:
     # Create data with few transactions but many SKUs
-    df = pd.DataFrame({
-        "date": ["2024-01-01"] * 100,
-        "transaction_id": [f"T{i}" for i in range(100)],
-        "stockcode": [f"SKU{i}" for i in range(100)],  # 100 SKUs, only 100 transactions
-        "product": [f"Product {i}" for i in range(100)],
-        "customer_id": ["C1"] * 100,
-        "price": [10.0] * 100,
-        "quantity": [1] * 100,
-    })
+    df = pd.DataFrame(
+        {
+            "date": ["2024-01-01"] * 100,
+            "transaction_id": [f"T{i}" for i in range(100)],
+            "stockcode": [f"SKU{i}" for i in range(100)],  # 100 SKUs, only 100 transactions
+            "product": [f"Product {i}" for i in range(100)],
+            "customer_id": ["C1"] * 100,
+            "price": [10.0] * 100,
+            "quantity": [1] * 100,
+        }
+    )
     # With 100 SKUs, min viable is 2000 transactions
     report = assess_data_quality(df)
     assert report.volume_warning is not None
@@ -111,9 +119,9 @@ def test_filter_data_by_quality(sample_df: pd.DataFrame) -> None:
     # Manually set some exclusions
     report.excluded_products = ["SKU001"]
     report.excluded_txn_ids = ["T123"]
-    
+
     filtered_df, filtered_report = filter_data_by_quality(sample_df, report)
-    
+
     assert "SKU001" not in filtered_df["stockcode"].values
     assert "T123" not in filtered_df["transaction_id"].values
     assert filtered_report.n_products < sample_df["stockcode"].nunique()
@@ -124,7 +132,7 @@ def test_generate_quality_summary() -> None:
     empty_report = DataQualityReport(n_transactions=100, n_products=50)
     summary = generate_quality_summary(empty_report)
     assert "No data quality issues detected" in summary
-    
+
     # Report with issues
     report = DataQualityReport(
         n_transactions=100,
@@ -162,7 +170,7 @@ def test_report_serialization() -> None:
     )
     d = report.to_dict()
     restored = DataQualityReport.from_dict(d)
-    
+
     assert restored.low_freq_products == ["A", "B"]
     assert restored.low_freq_counts == {"A": 5, "B": 3}
     assert restored.basket_outlier_txn_ids == ["T1"]

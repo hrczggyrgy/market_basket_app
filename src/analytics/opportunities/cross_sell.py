@@ -64,19 +64,28 @@ def generate_cross_sell_opportunities(
                         f"and {int(row.get('cooccurrence', 0))} co-occurrences."
                     ),
                     value=value,
-                    confidence="high" if lift >= 2.0 and float(row["support"]) >= 0.05 else "medium",
+                    confidence="high"
+                    if lift >= 2.0 and float(row["support"]) >= 0.05
+                    else "medium",
                 )
             )
 
     if affinity_df is not None and not affinity_df.empty and len(opportunities) < top_n:
         work = affinity_df.copy()
         work = work[work["affinity"].ge(_MIN_LIFT)]
-        work = work.sort_values(["affinity", "cooccurrence"], ascending=False).head(top_n - len(opportunities))
+        work = work.sort_values(["affinity", "cooccurrence"], ascending=False).head(
+            top_n - len(opportunities)
+        )
         for _, row in work.iterrows():
             a, b = str(row["product_a"]), str(row["product_b"])
             value: float | None = None
             if revenue_by_product is not None and b in revenue_by_product.index:
-                value = round(float(revenue_by_product.loc[b]) * 0.01 * min(float(row["affinity"]) - 1.0, 3.0), 0)
+                value = round(
+                    float(revenue_by_product.loc[b])
+                    * 0.01
+                    * min(float(row["affinity"]) - 1.0, 3.0),
+                    0,
+                )
             opportunities.append(
                 Opportunity(
                     domain="cross_sell",
@@ -96,5 +105,7 @@ def generate_cross_sell_opportunities(
 
     table = opportunities_to_dataframe(opportunities)
     if not table.empty:
-        table = table.sort_values("value", ascending=False, na_position="last").reset_index(drop=True)
+        table = table.sort_values("value", ascending=False, na_position="last").reset_index(
+            drop=True
+        )
     return check(table, OPPORTUNITY_LIST, allow_empty=True)

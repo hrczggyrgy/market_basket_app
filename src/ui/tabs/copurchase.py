@@ -75,7 +75,9 @@ def _render_heatmap(
     if mission_col and mission_val:
         filter_desc.append(f"{mission_col}={mission_val}")
     filter_str = " | ".join(filter_desc) if filter_desc else "all"
-    st.caption(f"Shared transactions between the top {top_n} products by purchase frequency ({filter_str}).")
+    st.caption(
+        f"Shared transactions between the top {top_n} products by purchase frequency ({filter_str})."
+    )
 
 
 def _render_centrality_network(
@@ -114,7 +116,9 @@ def _render_centrality_network(
     for i in range(len(cooccurrence.index)):
         for j in range(i + 1, len(cooccurrence.index)):
             if values[i, j] >= min_cooccurrence:
-                graph.add_edge(cooccurrence.index[i], cooccurrence.columns[j], weight=float(values[i, j]))
+                graph.add_edge(
+                    cooccurrence.index[i], cooccurrence.columns[j], weight=float(values[i, j])
+                )
 
     pos = nx.spring_layout(graph, seed=42, k=0.6)
     edge_x: list[float] = []

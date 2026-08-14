@@ -5,8 +5,9 @@ Centralizes all tunable parameters with sensible defaults.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Any, Dict, List
 
 
 @dataclass
@@ -83,7 +84,9 @@ class AnalyticsConfig:
     # CLV
     clv_prediction_horizon_days: int = 90
     clv_observation_cutoff_days: int = 90
-    clv_penalizer_escalation: List[float] = field(default_factory=lambda: [0.01, 0.1, 0.5, 1.0, 2.0])
+    clv_penalizer_escalation: List[float] = field(
+        default_factory=lambda: [0.01, 0.1, 0.5, 1.0, 2.0]
+    )
 
     # Transference
     transference_bootstrap_n_resamples: int = 100
@@ -120,11 +123,13 @@ class AnalyticsConfig:
     # Data Quality
     min_product_transactions: int = 50
     basket_outlier_percentile: float = 0.99
-    min_viable_transactions: Dict[float, int] = field(default_factory=lambda: {
-        200: 2000,
-        1000: 5000,
-        float('inf'): 10000,
-    })
+    min_viable_transactions: Dict[float, int] = field(
+        default_factory=lambda: {
+            200: 2000,
+            1000: 5000,
+            float("inf"): 10000,
+        }
+    )
 
     # Output
     output_contract_check: bool = True
@@ -142,10 +147,6 @@ DEFAULT_CONFIG = AnalyticsConfig()
 def get_config() -> AnalyticsConfig:
     """Return the global default configuration."""
     return DEFAULT_CONFIG
-
-
-import copy
-from typing import Any
 
 
 def update_config(**kwargs: Any) -> AnalyticsConfig:

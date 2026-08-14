@@ -22,7 +22,9 @@ def test_analytics_baseline_unchanged() -> None:
 
     summary = harness.summary()
     failed = summary[summary["success"] == False]  # noqa: E712
-    assert len(failed) == 0, f"{len(failed)} analytics functions failed:\n{failed[['module', 'function', 'error']]}"
+    assert len(failed) == 0, (
+        f"{len(failed)} analytics functions failed:\n{failed[['module', 'function', 'error']]}"
+    )
 
     discrepancies = harness.validate_cross_contracts()
     assert len(discrepancies) == 0, f"cross-contract violations:\n{discrepancies}"

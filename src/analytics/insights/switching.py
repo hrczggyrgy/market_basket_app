@@ -54,7 +54,9 @@ def generate_switching_insights(
 
     # Compute evidence metrics from demand_transference_df
     n_transition_pairs = len(demand_transference_df)
-    n_unique_products = len(set(demand_transference_df["from_product"]) | set(demand_transference_df["to_product"]))
+    n_unique_products = len(
+        set(demand_transference_df["from_product"]) | set(demand_transference_df["to_product"])
+    )
     # Determine evidence level based on transition pairs and unique products
     if n_transition_pairs >= 50 and n_unique_products >= 20:
         evidence_level = 5
@@ -100,8 +102,8 @@ def generate_switching_insights(
                     n_transition_pairs=n_transition_pairs,
                     n_unique_products=n_unique_products,
                     confidence_gate=confidence_gate,
-                 )
-             )
+                )
+            )
         if not winners.empty:
             top_winner = winners.iloc[-1]
             winner_proxy = float(top_winner["net"])
@@ -169,8 +171,8 @@ def generate_switching_insights(
                     n_transition_pairs=n_transition_pairs,
                     n_unique_products=n_unique_products,
                     confidence_gate=confidence_gate,
-                    )
                 )
+            )
 
     if delist_impact_df is not None and not delist_impact_df.empty:
         positive = delist_impact_df[delist_impact_df["net_revenue_impact"] > 0]

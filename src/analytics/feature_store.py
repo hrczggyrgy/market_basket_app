@@ -41,10 +41,9 @@ class FeatureStore:
         """stockcode -> category (first observed value per product)."""
         if self._category_map is None:
             if self.has_category:
-                self._category_map = (
-                    self.df.drop_duplicates("stockcode")
-                    .set_index("stockcode")["category"]
-                )
+                self._category_map = self.df.drop_duplicates("stockcode").set_index("stockcode")[
+                    "category"
+                ]
             else:
                 self._category_map = pd.Series(dtype=object)
         return self._category_map
@@ -71,22 +70,53 @@ def build_feature_store(df: pd.DataFrame) -> FeatureStore:
             df=d,
             product_lookup=derive_product_lookup(df),
             customer_features=pd.DataFrame(
-                columns=["customer_id", "n_orders", "n_line_items", "n_products",
-                         "total_revenue", "first_date", "last_date", "active_days",
-                         "avg_order_value"]
+                columns=[
+                    "customer_id",
+                    "n_orders",
+                    "n_line_items",
+                    "n_products",
+                    "total_revenue",
+                    "first_date",
+                    "last_date",
+                    "active_days",
+                    "avg_order_value",
+                ]
             ),
             product_features=pd.DataFrame(
-                columns=["stockcode", "n_orders", "n_line_items", "units",
-                         "total_revenue", "n_customers", "avg_price", "first_date",
-                         "last_date"]
+                columns=[
+                    "stockcode",
+                    "n_orders",
+                    "n_line_items",
+                    "units",
+                    "total_revenue",
+                    "n_customers",
+                    "avg_price",
+                    "first_date",
+                    "last_date",
+                ]
             ),
             basket_features=pd.DataFrame(
-                columns=["transaction_id", "customer_id", "date", "basket_size",
-                         "n_products", "basket_revenue", "iso_week"]
+                columns=[
+                    "transaction_id",
+                    "customer_id",
+                    "date",
+                    "basket_size",
+                    "n_products",
+                    "basket_revenue",
+                    "iso_week",
+                ]
             ),
             weekly_product_panel=pd.DataFrame(
-                columns=["stockcode", "iso_week", "units", "revenue", "avg_price",
-                         "n_transactions", "n_customers", "active_days"]
+                columns=[
+                    "stockcode",
+                    "iso_week",
+                    "units",
+                    "revenue",
+                    "avg_price",
+                    "n_transactions",
+                    "n_customers",
+                    "active_days",
+                ]
             ),
             customer_product_binary=sparse.csr_matrix((0, 0)),
             customer_product_counts=sparse.csr_matrix((0, 0)),
@@ -111,9 +141,9 @@ def build_feature_store(df: pd.DataFrame) -> FeatureStore:
         last_date=("date", "max"),
     )
     if "category" in d.columns:
-        product_stats["category"] = (
-            d.drop_duplicates("stockcode").set_index("stockcode")["category"]
-        )
+        product_stats["category"] = d.drop_duplicates("stockcode").set_index("stockcode")[
+            "category"
+        ]
     product_features = product_stats.reset_index()
 
     # customer-level aggregates (one grouped pass)
@@ -144,16 +174,13 @@ def build_feature_store(df: pd.DataFrame) -> FeatureStore:
     basket_features = basket.reset_index()
 
     # weekly product panel (product x week)
-    weekly = (
-        d.groupby(["stockcode", "iso_week"], as_index=False)
-        .agg(
-            units=("quantity", "sum"),
-            revenue=("price_times_qty", "sum"),
-            avg_price=("price", "mean"),
-            n_transactions=("transaction_id", "nunique"),
-            n_customers=("customer_id", "nunique"),
-            active_days=("date", "nunique"),
-        )
+    weekly = d.groupby(["stockcode", "iso_week"], as_index=False).agg(
+        units=("quantity", "sum"),
+        revenue=("price_times_qty", "sum"),
+        avg_price=("price", "mean"),
+        n_transactions=("transaction_id", "nunique"),
+        n_customers=("customer_id", "nunique"),
+        active_days=("date", "nunique"),
     )
     weekly_product_panel = weekly
 
@@ -166,9 +193,7 @@ def build_feature_store(df: pd.DataFrame) -> FeatureStore:
     cols = d["stockcode"].map(product_index).to_numpy(dtype=np.int64)
     vals = d["quantity"].to_numpy(dtype=np.float32)
     shape = (len(customers_array), len(products_array))
-    counts = sparse.csr_matrix(
-        (vals, (rows, cols)), shape=shape, dtype=np.float32
-    )
+    counts = sparse.csr_matrix((vals, (rows, cols)), shape=shape, dtype=np.float32)
     counts.sum_duplicates()
     counts.sort_indices()
     binary = (counts > 0).astype(np.float32)

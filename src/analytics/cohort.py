@@ -36,7 +36,9 @@ def compute_cohorts(df: pd.DataFrame, cohort_period: str = "M") -> pd.DataFrame:
     df["period_index"] = (df["period"] - df["first_cohort"]).apply(lambda p: p.n)
     df = df[df["period_index"].ge(0)]
     sizes = df.groupby("first_cohort")["customer_id"].nunique()
-    retained = df.groupby(["first_cohort", "period_index"])["customer_id"].nunique().rename("retained")
+    retained = (
+        df.groupby(["first_cohort", "period_index"])["customer_id"].nunique().rename("retained")
+    )
     table = retained.reset_index().rename(columns={"first_cohort": "cohort"})
     table["cohort_size"] = table["cohort"].map(sizes)
     table["retention_rate"] = table["retained"] / table["cohort_size"]
@@ -104,7 +106,9 @@ def year_over_year_comparison(df: pd.DataFrame) -> pd.DataFrame:
     )
     current = grouped[grouped["year"] == latest_year]
     merged = current.merge(prior, on="week", how="left")
-    merged["revenue_yoy_growth"] = (merged["revenue"] - merged["prior_revenue"]) / merged["prior_revenue"] * 100
+    merged["revenue_yoy_growth"] = (
+        (merged["revenue"] - merged["prior_revenue"]) / merged["prior_revenue"] * 100
+    )
     merged["aov_yoy_growth"] = (merged["aov"] - merged["prior_aov"]) / merged["prior_aov"] * 100
     return check(merged, YOY_COMPARISON)
 
@@ -137,7 +141,9 @@ def compute_cohort_decay_rate(df: pd.DataFrame, cohort_period: str = "M") -> pd.
     """Exponential decay rate of each cohort's retention curve (log-linear slope)."""
     retention = compute_cohorts(df, cohort_period)
     if retention.empty:
-        return check(pd.DataFrame(columns=list(COHORT_DECAY.columns)), COHORT_DECAY, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(COHORT_DECAY.columns)), COHORT_DECAY, allow_empty=True
+        )
     rows = []
     for cohort, group in retention.groupby("cohort"):
         group = group[group["period_index"] > 0]
@@ -148,7 +154,9 @@ def compute_cohort_decay_rate(df: pd.DataFrame, cohort_period: str = "M") -> pd.
         slope = linregress(x, y).slope
         rows.append({"cohort": cohort, "decay_rate": float(-slope) if not np.isnan(slope) else 0.0})
     if not rows:
-        return check(pd.DataFrame(columns=list(COHORT_DECAY.columns)), COHORT_DECAY, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(COHORT_DECAY.columns)), COHORT_DECAY, allow_empty=True
+        )
     table = pd.DataFrame(rows).sort_values("cohort").reset_index(drop=True)
     return check(table, COHORT_DECAY)
 
@@ -170,13 +178,17 @@ def compute_role_retention(
         Empty when category data is unavailable or too few customers per role.
     """
     if "category" not in df.columns or df.empty:
-        return check(pd.DataFrame(columns=list(ROLE_RETENTION.columns)), ROLE_RETENTION, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(ROLE_RETENTION.columns)), ROLE_RETENTION, allow_empty=True
+        )
 
     from src.analytics.category import compute_category_roles
 
     roles = compute_category_roles(df)
     if roles.empty or "role" not in roles.columns:
-        return check(pd.DataFrame(columns=list(ROLE_RETENTION.columns)), ROLE_RETENTION, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(ROLE_RETENTION.columns)), ROLE_RETENTION, allow_empty=True
+        )
 
     cat_to_role = dict(zip(roles["category"], roles["role"], strict=True))
 
@@ -186,7 +198,11 @@ def compute_role_retention(
     df["role"] = df["category"].map(cat_to_role).fillna("Unknown")
 
     # Dominant category by revenue in each basket
-    basket_cat = df.groupby(["transaction_id", "category", "role"], observed=True)["revenue"].sum().reset_index()
+    basket_cat = (
+        df.groupby(["transaction_id", "category", "role"], observed=True)["revenue"]
+        .sum()
+        .reset_index()
+    )
     basket_total = basket_cat.groupby("transaction_id")["revenue"].transform("sum")
     basket_cat["rev_share"] = basket_cat["revenue"] / basket_total
     dominant = basket_cat.loc[basket_cat.groupby("transaction_id")["rev_share"].idxmax()]
@@ -211,12 +227,20 @@ def compute_role_retention(
     sizes = df.groupby(["customer_role", "first_cohort"])["customer_id"].nunique()
     valid = sizes[sizes >= min_role_customers]
     if valid.empty:
-        return check(pd.DataFrame(columns=list(ROLE_RETENTION.columns)), ROLE_RETENTION, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(ROLE_RETENTION.columns)), ROLE_RETENTION, allow_empty=True
+        )
 
     df = df[df.set_index(["customer_role", "first_cohort"]).index.isin(valid.index)]
 
-    retained = df.groupby(["customer_role", "first_cohort", "period_index"])["customer_id"].nunique().rename("retained")
-    table = retained.reset_index().rename(columns={"customer_role": "role", "first_cohort": "cohort"})
+    retained = (
+        df.groupby(["customer_role", "first_cohort", "period_index"])["customer_id"]
+        .nunique()
+        .rename("retained")
+    )
+    table = retained.reset_index().rename(
+        columns={"customer_role": "role", "first_cohort": "cohort"}
+    )
     table["cohort_size"] = table[["role", "cohort"]].apply(
         lambda row: int(sizes.get((row["role"], row["cohort"]), 0)), axis=1
     )

@@ -63,11 +63,13 @@ def generate_product_opportunities(
     repeat_col = "repeat_rate" in rational.columns
     if velocity_col and repeat_col:
         sticky = rational[
-            (rational["velocity"] > rational["velocity"].median()) &
-            (rational["repeat_rate"] > rational["repeat_rate"].median())
+            (rational["velocity"] > rational["velocity"].median())
+            & (rational["repeat_rate"] > rational["repeat_rate"].median())
         ]
         if not sticky.empty:
-            sticky = sticky.sort_values(["velocity", "repeat_rate"], ascending=[False, False]).head(top_n // 2)
+            sticky = sticky.sort_values(["velocity", "repeat_rate"], ascending=[False, False]).head(
+                top_n // 2
+            )
             for _, row in sticky.iterrows():
                 opportunities.append(
                     Opportunity(
@@ -90,11 +92,13 @@ def generate_product_opportunities(
     repeat_col = "repeat_rate" in rational.columns
     if velocity_col and repeat_col:
         slow = rational[
-            (rational["velocity"] <= rational["velocity"].median()) &
-            (rational["repeat_rate"] <= rational["repeat_rate"].median())
+            (rational["velocity"] <= rational["velocity"].median())
+            & (rational["repeat_rate"] <= rational["repeat_rate"].median())
         ]
         if not slow.empty:
-            slow = slow.sort_values(["velocity", "repeat_rate"], ascending=[True, True]).head(top_n // 2)
+            slow = slow.sort_values(["velocity", "repeat_rate"], ascending=[True, True]).head(
+                top_n // 2
+            )
             for _, row in slow.iterrows():
                 opportunities.append(
                     Opportunity(
@@ -145,5 +149,7 @@ def generate_product_opportunities(
 
     table = opportunities_to_dataframe(opportunities)
     if not table.empty:
-        table = table.sort_values("value", ascending=False, na_position="last").reset_index(drop=True)
+        table = table.sort_values("value", ascending=False, na_position="last").reset_index(
+            drop=True
+        )
     return check(table, OPPORTUNITY_LIST, allow_empty=True)

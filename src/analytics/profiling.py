@@ -22,6 +22,7 @@ from typing import Any, Callable
 
 try:
     import streamlit as st
+
     HAS_ST = True
 except ImportError:
     HAS_ST = False
@@ -48,6 +49,7 @@ def timed(name: str | None = None):
 
     Only active when ENGAGE_PROFILE=1 environment variable is set.
     """
+
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
         label = name or fn.__qualname__
 
@@ -63,7 +65,9 @@ def timed(name: str | None = None):
             finally:
                 elapsed = time.perf_counter() - start
                 _log(f"[PERF] {label}: {elapsed:.3f}s")
+
         return wrapper
+
     return decorator
 
 
@@ -74,6 +78,7 @@ def time_block(label: str):
         with time_block("my_operation"):
             do_something()
     """
+
     class Timer:
         def __enter__(self):
             self.start = time.perf_counter()
@@ -84,9 +89,14 @@ def time_block(label: str):
             _log(f"[PERF] {label}: {elapsed:.3f}s")
 
     if not ENGAGE_PROFILE:
+
         class NoOp:
-            def __enter__(self): return self
-            def __exit__(self, *args): pass
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
         return NoOp()
 
     return Timer()

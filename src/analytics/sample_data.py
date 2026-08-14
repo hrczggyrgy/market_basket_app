@@ -37,27 +37,31 @@ THEMES = (
 
 # Category-specific price parameters (log-normal mu, sigma)
 CATEGORY_PRICE_PARAMS = {
-    "Coffee": (2.5, 0.4),      # $8-20
-    "Snacks": (1.5, 0.35),     # $3-8
-    "Beverages": (1.8, 0.3),   # $4-12
-    "Bakery": (1.2, 0.25),     # $2-6
-    "Dairy": (1.6, 0.3),       # $3-9
-    "Household": (2.0, 0.5),   # $5-25
-    "Personal Care": (2.3, 0.45), # $7-20
-    "Pet": (2.2, 0.4),         # $6-20
+    "Coffee": (2.5, 0.4),  # $8-20
+    "Snacks": (1.5, 0.35),  # $3-8
+    "Beverages": (1.8, 0.3),  # $4-12
+    "Bakery": (1.2, 0.25),  # $2-6
+    "Dairy": (1.6, 0.3),  # $3-9
+    "Household": (2.0, 0.5),  # $5-25
+    "Personal Care": (2.3, 0.45),  # $7-20
+    "Pet": (2.2, 0.4),  # $6-20
 }
 
 # Segment definitions with realistic parameters and category preferences
 SEGMENTS = {
     "champion": {
         "weight": 0.10,
-        "purchase_rate": 0.35,      # purchases per day
+        "purchase_rate": 0.35,  # purchases per day
         "avg_basket_size": 5.2,
         "loyalty": 0.85,
         "price_sensitivity": 0.7,
         "promo_responsiveness": 0.3,
         "churn_prob": 0.0001,
-        "category_preferences": {"Coffee": 1.5, "Bakery": 1.3, "Personal Care": 1.2},  # Premium preferences
+        "category_preferences": {
+            "Coffee": 1.5,
+            "Bakery": 1.3,
+            "Personal Care": 1.2,
+        },  # Premium preferences
     },
     "regular": {
         "weight": 0.25,
@@ -67,7 +71,11 @@ SEGMENTS = {
         "price_sensitivity": 1.0,
         "promo_responsiveness": 0.5,
         "churn_prob": 0.0005,
-        "category_preferences": {"Dairy": 1.2, "Snacks": 1.1, "Household": 1.0},  # Balanced preferences
+        "category_preferences": {
+            "Dairy": 1.2,
+            "Snacks": 1.1,
+            "Household": 1.0,
+        },  # Balanced preferences
     },
     "occasional": {
         "weight": 0.35,
@@ -77,7 +85,11 @@ SEGMENTS = {
         "price_sensitivity": 1.3,
         "promo_responsiveness": 0.8,
         "churn_prob": 0.002,
-        "category_preferences": {"Snacks": 1.4, "Beverages": 1.3, "Bakery": 1.2},  # Impulse purchases
+        "category_preferences": {
+            "Snacks": 1.4,
+            "Beverages": 1.3,
+            "Bakery": 1.2,
+        },  # Impulse purchases
     },
     "at_risk": {
         "weight": 0.20,
@@ -142,7 +154,7 @@ def _product_catalog(n_products: int, seed: int = 7) -> pd.DataFrame:
     # Use Zipf distribution for rank-based popularity
     ranks = np.arange(1, n_products + 1)
     zipf_exp = 1.15
-    popularity = 1.0 / (ranks ** zipf_exp)
+    popularity = 1.0 / (ranks**zipf_exp)
     popularity = popularity / popularity.sum()
 
     # Cost as 55-70% of price
@@ -152,7 +164,7 @@ def _product_catalog(n_products: int, seed: int = 7) -> pd.DataFrame:
     catalog = pd.DataFrame(
         {
             "stockcode": [f"SKU{i:04d}" for i in range(n_products)],
-            "product": [f"{cats[i]} {i+1:03d}" for i in range(n_products)],
+            "product": [f"{cats[i]} {i + 1:03d}" for i in range(n_products)],
             "category": cats,
             "brand": brands,
             "size": sizes,
@@ -203,16 +215,21 @@ def _promo_windows(catalog: pd.DataFrame, n_days: int, seed: int) -> dict[str, l
             elif ptype == "bogo":
                 params = {"bogo_qty": 1}  # Buy 1 Get 1
             elif ptype == "multibuy":
-                params = {"min_qty": int(rng.integers(2, 4)), "discount": round(rng.uniform(0.10, 0.25), 2)}
+                params = {
+                    "min_qty": int(rng.integers(2, 4)),
+                    "discount": round(rng.uniform(0.10, 0.25), 2),
+                }
             else:  # clearance
                 params = {"discount": round(rng.uniform(0.40, 0.70), 2)}
 
-            windows[sku].append({
-                "start": start,
-                "end": end,
-                "type": ptype,
-                "params": params,
-            })
+            windows[sku].append(
+                {
+                    "start": start,
+                    "end": end,
+                    "type": ptype,
+                    "params": params,
+                }
+            )
 
     return windows
 
@@ -233,14 +250,14 @@ def _seasonal_demand(day_of_year: int, category: str, year: int = 2024) -> float
 
     # Enhanced seasonal patterns with more realistic holiday effects
     seasonal = {
-        "Coffee": 1.0 + 0.15 * np.cos(t - np.pi/2),      # Peak in winter
-        "Beverages": 1.0 + 0.20 * np.sin(t),             # Peak in summer
-        "Bakery": 1.0 + 0.12 * np.cos(t - np.pi),        # Peak in holidays
-        "Snacks": 1.0 + 0.10 * np.sin(t + np.pi/4),      # Slight summer peak
-        "Dairy": 1.0 + 0.05 * np.cos(t),                 # Mild seasonal
-        "Household": 1.0 + 0.08 * np.cos(t - np.pi),     # Holiday cleaning
-        "Personal Care": 1.0 + 0.07 * np.sin(t),         # Mild summer
-        "Pet": 1.0,                                      # No seasonality
+        "Coffee": 1.0 + 0.15 * np.cos(t - np.pi / 2),  # Peak in winter
+        "Beverages": 1.0 + 0.20 * np.sin(t),  # Peak in summer
+        "Bakery": 1.0 + 0.12 * np.cos(t - np.pi),  # Peak in holidays
+        "Snacks": 1.0 + 0.10 * np.sin(t + np.pi / 4),  # Slight summer peak
+        "Dairy": 1.0 + 0.05 * np.cos(t),  # Mild seasonal
+        "Household": 1.0 + 0.08 * np.cos(t - np.pi),  # Holiday cleaning
+        "Personal Care": 1.0 + 0.07 * np.sin(t),  # Mild summer
+        "Pet": 1.0,  # No seasonality
     }
 
     base_multiplier = seasonal.get(category, 1.0)
@@ -250,8 +267,8 @@ def _seasonal_demand(day_of_year: int, category: str, year: int = 2024) -> float
     holiday_multipliers = {
         "Christmas": (day_of_year >= 359 and day_of_year <= 365) or (day_of_year <= 2),
         "Thanksgiving": 330 <= day_of_year <= 336,  # Late November
-        "BlackFriday": 332 <= day_of_year <= 333,   # Day after Thanksgiving
-        "SummerSale": 180 <= day_of_year <= 186,    # Early July
+        "BlackFriday": 332 <= day_of_year <= 333,  # Day after Thanksgiving
+        "SummerSale": 180 <= day_of_year <= 186,  # Early July
     }
 
     holiday_boost = 1.0
@@ -425,7 +442,9 @@ def generate_transactions(
             seg_params = SEGMENTS[segment]
 
             # Churn check
-            days_since_last = day_idx - state["last_purchase_day"] if state["last_purchase_day"] >= 0 else 999
+            days_since_last = (
+                day_idx - state["last_purchase_day"] if state["last_purchase_day"] >= 0 else 999
+            )
             if rng.random() < seg_params["churn_prob"] * max(1, days_since_last / 30):
                 del customer_states[customer_id]
                 continue
@@ -472,7 +491,9 @@ def generate_transactions(
                                 picked.append(prod)
 
             # Fill rest of basket with segment preferences
-            picked = _pick_basket_products(catalog, picked, basket_size, rng, category_preferences=cat_prefs)
+            picked = _pick_basket_products(
+                catalog, picked, basket_size, rng, category_preferences=cat_prefs
+            )
 
             state["last_purchase_day"] = day_idx
             state["purchase_count"] += 1
@@ -583,4 +604,6 @@ if __name__ == "__main__":
     print(f"Date range: {df['date'].min()} to {df['date'].max()}")
     print(f"Avg basket: {df.groupby('transaction_id')['quantity'].sum().mean():.1f}")
     print(f"Promo rate: {df['promo_flag'].mean():.1%}")
-    print(f"Revenue concentration (top 20% SKUs): {df.groupby('stockcode')['price'].sum().sort_values(ascending=False).head(int(0.2*df['stockcode'].nunique())).sum() / df['price'].sum():.1%}")
+    print(
+        f"Revenue concentration (top 20% SKUs): {df.groupby('stockcode')['price'].sum().sort_values(ascending=False).head(int(0.2 * df['stockcode'].nunique())).sum() / df['price'].sum():.1%}"
+    )

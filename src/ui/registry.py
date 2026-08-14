@@ -11,9 +11,10 @@ import pandas as pd
 @dataclass(frozen=True)
 class ModeSpec:
     """Sidebar mode specification."""
-    key: str              # unique internal key
-    label: str            # display label in sidebar
-    icon: str             # Material Symbols shortcode (e.g., ":material/analytics:")
+
+    key: str  # unique internal key
+    label: str  # display label in sidebar
+    icon: str  # Material Symbols shortcode (e.g., ":material/analytics:")
     handler: Callable[[pd.DataFrame], None]  # render function
     requires: tuple[str, ...] = ()  # optional: data capability flags required
 
@@ -70,4 +71,5 @@ def dispatch(mode_key: str, df: pd.DataFrame) -> None:
         st.error(f"Error in {mode.label}: {e}")
         if st.checkbox("Show traceback", key=f"traceback_{mode_key}"):
             import traceback
+
             st.code(traceback.format_exc())

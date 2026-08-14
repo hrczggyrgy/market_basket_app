@@ -25,10 +25,10 @@ KIND_META: dict[str, dict[str, str]] = {
 
 def render_evidence_badge(evidence_level: int | None = None) -> None:
     """Render an evidence level badge (1-5) with appropriate color and tooltip.
-    
+
     Evidence levels:
     1: Exploratory
-    2: Descriptive  
+    2: Descriptive
     3: Predictive
     4: Quasi-causal
     5: Causal
@@ -51,19 +51,19 @@ def render_evidence_badge(evidence_level: int | None = None) -> None:
     else:  # evidence_level == 5
         level_label = "Causal"
         color = "#9B5DE5"  # Purple
-    
+
     st.markdown(
         f'<span style="background-color: {color}; color: white; padding: 2px 8px; '
         f'border-radius: 10px; font-size: 0.8em; font-weight: 500;">{level_label}</span>',
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 
-def render_delta_badge(delta_value: float | None = None, 
-                      is_percent: bool = False,
-                      positive_good: bool = True) -> None:
+def render_delta_badge(
+    delta_value: float | None = None, is_percent: bool = False, positive_good: bool = True
+) -> None:
     """Render a delta/change badge with appropriate coloring.
-    
+
     Args:
         delta_value: The change value (can be positive or negative)
         is_percent: Whether the value is a percentage
@@ -75,24 +75,24 @@ def render_delta_badge(delta_value: float | None = None,
         st.markdown(
             '<span style="background-color: #888888; color: white; padding: 2px 8px; '
             'border-radius: 10px; font-size: 0.8em; font-weight: 500;">—</span>',
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
         return
-    
+
     # Format the value
     if is_percent:
         formatted_value = f"{delta_value:+.1%}"
     else:
         formatted_value = f"€{delta_value:+,.0f}"
-    
+
     # Determine if the delta is "good" or "bad"
     is_good = (delta_value > 0) if positive_good else (delta_value < 0)
     color = "#6BCB77" if is_good else "#FF6B6B"  # Green for good, Red for bad
-    
+
     st.markdown(
         f'<span style="background-color: {color}; color: white; padding: 2px 8px; '
         f'border-radius: 10px; font-size: 0.8em; font-weight: 500;">{formatted_value}</span>',
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 
@@ -136,27 +136,32 @@ def render_insight_cards(insights_df: pd.DataFrame) -> None:
                 st.markdown(f"**{meta['icon']} {title}**")
             with col2:
                 # Confidence indicator
-                confidence_colors = {"high": "#2ECC71", "medium": "#F39C12", "low": "#E74C3C", "insufficient": "#95A5A6"}
+                confidence_colors = {
+                    "high": "#2ECC71",
+                    "medium": "#F39C12",
+                    "low": "#E74C3C",
+                    "insufficient": "#95A5A6",
+                }
                 conf_color = confidence_colors.get(confidence.lower(), "#95A5A6")
                 st.markdown(
                     f'<span style="background-color: {conf_color}; color: white; padding: 2px 6px; '
                     f'border-radius: 3px; font-size: 0.8em;">{confidence.upper()}</span>',
-                    unsafe_allow_html=True
+                    unsafe_allow_html=True,
                 )
-            
+
             # Evidence section
             st.markdown(evidence)
-            
+
             # Evidence level badge
             render_evidence_badge(evidence_level)
-            
+
             # Action section
             if action:
                 st.markdown(f"**Recommended action:** {action}")
-            
+
             # Metrics section in an organized layout
             metric_cols = st.columns(4)
-            
+
             with metric_cols[0]:
                 # Display impact as delta badge for visual indication of positive/negative impact
                 if impact_value is not None and pd.notna(impact_value):
@@ -165,19 +170,19 @@ def render_insight_cards(insights_df: pd.DataFrame) -> None:
                     st.caption(f"Impact: €{impact_value:,.0f}")
                 else:
                     st.metric("Impact", "—")
-            
+
             with metric_cols[1]:
                 if sample_size is not None and pd.notna(sample_size):
                     st.metric("Sample Size", f"{int(sample_size):,}")
                 else:
                     st.metric("Sample Size", "—")
-            
+
             with metric_cols[2]:
                 if stability is not None and pd.notna(stability):
                     st.metric("Stability", f"{stability:.0%}")
                 else:
                     st.metric("Stability", "—")
-            
+
             with metric_cols[3]:
                 # Show switching-specific metrics if available
                 if n_transition_pairs is not None and n_unique_products is not None:
@@ -197,9 +202,7 @@ def render_opportunity_table(opps_df: pd.DataFrame) -> None:
     work = opps_df.copy()
     work = work.sort_values("value", ascending=False, na_position="last")
     display = work[["entity", "title", "value", "confidence", "action", "source"]].copy()
-    display["value"] = display["value"].map(
-        lambda v: f"€{float(v):,.0f}" if pd.notna(v) else "—"
-    )
+    display["value"] = display["value"].map(lambda v: f"€{float(v):,.0f}" if pd.notna(v) else "—")
     display.columns = ["Entity", "Opportunity", "Value", "Confidence", "Action", "Source"]
     st.dataframe(display, use_container_width=True, hide_index=True)
 
@@ -218,11 +221,31 @@ def render_pricing_decision_card(
     and recommended action in a consolidated view.
     """
     # Get SKU data
-    kvi_row = kvi_data[kvi_data["stockcode"] == stockcode].iloc[0] if not kvi_data.empty and (kvi_data["stockcode"] == stockcode).any() else None
-    decision_row = decision_data[decision_data["stockcode"] == stockcode].iloc[0] if not decision_data.empty and (decision_data["stockcode"] == stockcode).any() else None
-    elast_row = elasticity_data[elasticity_data["stockcode"] == stockcode].iloc[0] if not elasticity_data.empty and (elasticity_data["stockcode"] == stockcode).any() else None
-    status_row = status_data[status_data["stockcode"] == stockcode].iloc[0] if not status_data.empty and (status_data["stockcode"] == stockcode).any() else None
-    conf_row = confidence_data[confidence_data["stockcode"] == stockcode].iloc[0] if not confidence_data.empty and (confidence_data["stockcode"] == stockcode).any() else None
+    kvi_row = (
+        kvi_data[kvi_data["stockcode"] == stockcode].iloc[0]
+        if not kvi_data.empty and (kvi_data["stockcode"] == stockcode).any()
+        else None
+    )
+    decision_row = (
+        decision_data[decision_data["stockcode"] == stockcode].iloc[0]
+        if not decision_data.empty and (decision_data["stockcode"] == stockcode).any()
+        else None
+    )
+    elast_row = (
+        elasticity_data[elasticity_data["stockcode"] == stockcode].iloc[0]
+        if not elasticity_data.empty and (elasticity_data["stockcode"] == stockcode).any()
+        else None
+    )
+    status_row = (
+        status_data[status_data["stockcode"] == stockcode].iloc[0]
+        if not status_data.empty and (status_data["stockcode"] == stockcode).any()
+        else None
+    )
+    conf_row = (
+        confidence_data[confidence_data["stockcode"] == stockcode].iloc[0]
+        if not confidence_data.empty and (confidence_data["stockcode"] == stockcode).any()
+        else None
+    )
 
     if kvi_row is None:
         st.error(f"SKU {stockcode} not found in KVI data.")
@@ -253,7 +276,7 @@ def render_pricing_decision_card(
         st.markdown(
             f'<span style="background-color: {role_color}; color: white; padding: 4px 12px; '
             f'border-radius: 4px; font-weight: bold;">{decision_labels.get(decision, decision)}</span>',
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
         # Value metrics
@@ -261,10 +284,10 @@ def render_pricing_decision_card(
         with col1:
             st.metric("Revenue", f"€{float(kvi_row['total_revenue']):,.0f}")
         with col2:
-            penetration = float(kvi_row.get('basket_penetration', 0))
+            penetration = float(kvi_row.get("basket_penetration", 0))
             st.metric("Basket Penetration", f"{penetration:.1%}")
         with col3:
-            kvi_score = float(kvi_row.get('kvi_score', 0))
+            kvi_score = float(kvi_row.get("kvi_score", 0))
             st.metric("KVI Score", f"{kvi_score:.2f}")
 
         st.divider()

@@ -62,18 +62,18 @@ class SimulationConfig:
     end_date: str = "2024-12-31"
 
     # Calendar analogues
-    seasonal_strength: float = 1.0   # scales seasonal amplitude around 1.0
-    weekend_strength: float = 1.0    # scales Sat/Sun weekend boost around 1.0
-    holiday_strength: float = 1.0    # scales holiday demand bump around 1.0
+    seasonal_strength: float = 1.0  # scales seasonal amplitude around 1.0
+    weekend_strength: float = 1.0  # scales Sat/Sun weekend boost around 1.0
+    holiday_strength: float = 1.0  # scales holiday demand bump around 1.0
 
     # Segments
-    purchase_scale: float = 1.0      # multiplies every segment purchase_rate
-    basket_scale: float = 1.0        # multiplies every segment avg_basket_size
-    churn_scale: float = 1.0         # multiplies every segment churn_prob
+    purchase_scale: float = 1.0  # multiplies every segment purchase_rate
+    basket_scale: float = 1.0  # multiplies every segment avg_basket_size
+    churn_scale: float = 1.0  # multiplies every segment churn_prob
 
     # Basket building
     theme_probability: float = 0.15  # chance a basket starts from an affinity theme
-    affinity_boost: float = 3.0      # popularity^boost weighting within a category
+    affinity_boost: float = 3.0  # popularity^boost weighting within a category
     substitution_strength: float = 0.0  # chance to pull in a substitute-category SKU
 
     # Promotions
@@ -82,7 +82,7 @@ class SimulationConfig:
     promo_discount_scale: float = 1.0  # multiplies discount depth (capped)
 
     # Returns
-    return_rate: float = 0.0         # 0-1 fraction of line items refunded (+7d)
+    return_rate: float = 0.0  # 0-1 fraction of line items refunded (+7d)
 
 
 # --------------------------------------------------------------------------- #
@@ -149,6 +149,7 @@ def config_for(name: str) -> SimulationConfig:
 # Catalog
 # ------------------------------------------------------------------------- #
 
+
 def _assign_categories(rng: np.random.Generator, n_products: int) -> np.ndarray:
     cat_probs = np.array([0.15, 0.20, 0.15, 0.12, 0.10, 0.12, 0.08, 0.08])
     return rng.choice(CATEGORIES, size=n_products, p=cat_probs)
@@ -167,7 +168,7 @@ def generate_catalog(config: SimulationConfig, seed_offset: int = 1000) -> pd.Da
     price = np.clip(price, 0.99, 99.99)
 
     ranks = np.arange(1, n + 1)
-    popularity = 1.0 / (ranks ** 1.15)
+    popularity = 1.0 / (ranks**1.15)
     popularity = popularity / popularity.sum()
 
     cost = (price * rng.uniform(0.55, 0.70, n)).round(2)
@@ -181,7 +182,7 @@ def generate_catalog(config: SimulationConfig, seed_offset: int = 1000) -> pd.Da
     catalog = pd.DataFrame(
         {
             "stockcode": [f"SKU{i:04d}" for i in range(n)],
-            "product": [f"{cats[i]} {i+1:03d}" for i in range(n)],
+            "product": [f"{cats[i]} {i + 1:03d}" for i in range(n)],
             "category": cats,
             "brand": [f"B{(i % 5) + 1}" for i in range(n)],
             "size": rng.choice(["S", "M", "L", "XL"], size=n, p=[0.2, 0.45, 0.25, 0.1]),
@@ -204,7 +205,9 @@ _PROMO_TYPES = ("discount", "bogo", "multibuy", "clearance")
 _PROMO_PROBS = (0.55, 0.20, 0.15, 0.10)
 
 
-def _promo_windows(catalog: pd.DataFrame, config: SimulationConfig, seed: int) -> dict[str, list[dict]]:
+def _promo_windows(
+    catalog: pd.DataFrame, config: SimulationConfig, seed: int
+) -> dict[str, list[dict]]:
     rng = np.random.default_rng(seed)
     windows: dict[str, list[dict]] = {}
     for sku in catalog.loc[catalog["promo_capable"], "stockcode"]:
@@ -226,9 +229,16 @@ def _promo_windows(catalog: pd.DataFrame, config: SimulationConfig, seed: int) -
             elif ptype == "bogo":
                 params = {"bogo_qty": 1}
             elif ptype == "multibuy":
-                params = {"min_qty": int(rng.integers(2, 4)), "discount": round(min(0.55, discount + 0.05), 2)}
+                params = {
+                    "min_qty": int(rng.integers(2, 4)),
+                    "discount": round(min(0.55, discount + 0.05), 2),
+                }
             else:  # clearance
-                params = {"discount": round(min(0.75, rng.uniform(0.40, 0.55) * config.promo_discount_scale), 2)}
+                params = {
+                    "discount": round(
+                        min(0.75, rng.uniform(0.40, 0.55) * config.promo_discount_scale), 2
+                    )
+                }
             windows[sku].append({"start": start, "end": end, "type": ptype, "params": params})
     return windows
 
@@ -237,7 +247,10 @@ def _promo_windows(catalog: pd.DataFrame, config: SimulationConfig, seed: int) -
 # Calendar
 # ------------------------------------------------------------------------- #
 
-def _seasonal_demand(day_of_year: int, category: str, strength: float = 1.0, year: int = 2024) -> float:
+
+def _seasonal_demand(
+    day_of_year: int, category: str, strength: float = 1.0, year: int = 2024
+) -> float:
     """Return seasonal multiplier for category on given day (1-366 for leap years).
 
     Enhanced with leap year support and holiday effects.
@@ -293,6 +306,7 @@ def _holiday_multiplier(month: int, day: int, strength: float = 1.0) -> float:
 # Customers
 # ------------------------------------------------------------------------- #
 
+
 def generate_customers(config: SimulationConfig, seed_offset: int = 3000) -> pd.DataFrame:
     """Assign customer_id -> (segment, acquisition_day) across the horizon."""
     rng = np.random.default_rng(config.seed + seed_offset)
@@ -328,6 +342,7 @@ def generate_customers(config: SimulationConfig, seed_offset: int = 3000) -> pd.
 # --------------------------------------------------------------------------- #
 # Basket building
 # ------------------------------------------------------------------------- #
+
 
 def _pick_basket_products(
     catalog: pd.DataFrame,
@@ -415,6 +430,7 @@ def _pick_basket_products(
 # Main generator
 # ------------------------------------------------------------------------- #
 
+
 def generate_sample_transactions(config: SimulationConfig) -> pd.DataFrame:
     """Generate the full transaction set from a config. Schema fixed to 13 cols."""
     rng = np.random.default_rng(config.seed)
@@ -468,8 +484,13 @@ def generate_sample_transactions(config: SimulationConfig) -> pd.DataFrame:
             segment = state["segment"]
             seg_params = SEGMENTS[segment]
 
-            days_since_last = day_idx - state["last_purchase_day"] if state["last_purchase_day"] >= 0 else 999
-            if rng.random() < seg_params["churn_prob"] * max(1, days_since_last / 30) * config.churn_scale:
+            days_since_last = (
+                day_idx - state["last_purchase_day"] if state["last_purchase_day"] >= 0 else 999
+            )
+            if (
+                rng.random()
+                < seg_params["churn_prob"] * max(1, days_since_last / 30) * config.churn_scale
+            ):
                 active.discard(customer_id)
                 continue
 
@@ -530,7 +551,10 @@ def generate_sample_transactions(config: SimulationConfig) -> pd.DataFrame:
 
                 if _weekly_demand(dow, cat, config.weekend_strength) > 1.0 and rng.random() < 0.3:
                     qty += 1
-                if _seasonal_demand(doy, cat, config.seasonal_strength, year=2024) > 1.0 and rng.random() < 0.2:
+                if (
+                    _seasonal_demand(doy, cat, config.seasonal_strength, year=2024) > 1.0
+                    and rng.random() < 0.2
+                ):
                     qty += 1
 
                 cost = round(price * 0.6, 2)
@@ -579,7 +603,11 @@ def _apply_returns(df: pd.DataFrame, config: SimulationConfig) -> pd.DataFrame:
     ret["txn_id_suffix"] = range(len(ret))
     ret["transaction_id"] = ret["transaction_id"] + "-R" + ret["txn_id_suffix"].astype(str)
     ret = ret.drop(columns=["txn_id_suffix"])
-    return pd.concat([df, ret], ignore_index=True).sort_values(["date", "transaction_id"]).reset_index(drop=True)
+    return (
+        pd.concat([df, ret], ignore_index=True)
+        .sort_values(["date", "transaction_id"])
+        .reset_index(drop=True)
+    )
 
 
 def calibration_report(df: pd.DataFrame, config: SimulationConfig) -> pd.DataFrame:
@@ -606,13 +634,16 @@ def calibration_report(df: pd.DataFrame, config: SimulationConfig) -> pd.DataFra
             "> 1.0",
         )
         add("avg_units_per_customer", df.groupby("customer_id")["quantity"].sum().mean(), "> 1.0")
-        add("revenue_pareto_top20",
+        add(
+            "revenue_pareto_top20",
             df.assign(revenue=df["price"] * df["quantity"])
-            .groupby("stockcode")["revenue"].sum()
+            .groupby("stockcode")["revenue"]
+            .sum()
             .nlargest(max(1, int(df["stockcode"].nunique() * 0.2)))
             .sum()
             / (df["price"] * df["quantity"]).sum(),
-            "~0.8")
+            "~0.8",
+        )
 
     return pd.DataFrame(metrics, columns=["metric", "value", "target"])
 

@@ -22,6 +22,7 @@ from src.analytics.schemas import CATEGORY_RULES, FREQUENT_ITEMSETS, RULES, RULE
 @dataclass
 class ActionabilityConfig:
     """Configuration for actionability calibration workflow."""
+
     min_support: float = 0.02
     max_support: float = 0.05
     min_confidence: float = 0.40
@@ -34,6 +35,7 @@ class ActionabilityConfig:
 @dataclass
 class ActionabilityResult:
     """Result of actionability calibration."""
+
     total_rules_reviewed: int
     actionable_count: int
     non_actionable_count: int
@@ -78,16 +80,21 @@ def run_fpgrowth(
         top_skus = sku_support.head(max_skus).index
         basket = basket[top_skus]
         import warnings
+
         warnings.warn(
             f"FP-Growth: SKU count ({n_skus}) exceeds max_skus ({max_skus}). "
             f"Using top {max_skus} SKUs by support.",
             UserWarning,
-            stacklevel=2
+            stacklevel=2,
         )
 
     freq = fpgrowth(basket, min_support=min_support, use_colnames=True, max_len=max_len)
     if freq.empty:
-        return check(pd.DataFrame(columns=list(FREQUENT_ITEMSETS.columns)), FREQUENT_ITEMSETS, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(FREQUENT_ITEMSETS.columns)),
+            FREQUENT_ITEMSETS,
+            allow_empty=True,
+        )
     freq = freq.copy()
     freq["length"] = freq["itemsets"].map(len)
     freq = freq.sort_values(["support", "length"], ascending=False).reset_index(drop=True)
@@ -344,7 +351,9 @@ def aggregate_rules_to_categories(
     """
     check(rules, RULES, allow_empty=True)
     if rules.empty:
-        return check(pd.DataFrame(columns=list(CATEGORY_RULES.columns)), CATEGORY_RULES, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(CATEGORY_RULES.columns)), CATEGORY_RULES, allow_empty=True
+        )
 
     # Build stockcode -> category mapping
     cat_map = product_lookup.set_index("stockcode")["category"].to_dict()
@@ -374,7 +383,6 @@ def aggregate_rules_to_categories(
             .astype(bool)
         )
 
-
         def compute_cat_lift(row):
             ante_cats = row["antecedent_category"].split(" + ")
             cons_cats = row["consequent_category"].split(" + ")
@@ -403,26 +411,36 @@ def aggregate_rules_to_categories(
     else:
         # Fallback to SKU-level lift mean (but warn)
         import warnings
+
         warnings.warn(
             "aggregate_rules_to_categories: No transactions_df provided. "
             "Category lift computed as mean of SKU-level lifts (not basket-based).",
             UserWarning,
-            stacklevel=2
+            stacklevel=2,
         )
         rules_cat["cat_lift"] = rules_cat["lift"]
 
     # Aggregate by category pair
-    agg = rules_cat.groupby(["antecedent_category", "consequent_category"]).agg(
-        rule_count=("lift", "count"),
-        support=("support", "mean"),
-        confidence=("confidence", "mean"),
-        lift=("lift", "mean"),  # SKU-level mean lift
-        avg_lift=("cat_lift", "mean"),  # Basket-based category lift (renamed for schema compatibility)
-        max_lift=("lift", "max"),
-    ).reset_index()
+    agg = (
+        rules_cat.groupby(["antecedent_category", "consequent_category"])
+        .agg(
+            rule_count=("lift", "count"),
+            support=("support", "mean"),
+            confidence=("confidence", "mean"),
+            lift=("lift", "mean"),  # SKU-level mean lift
+            avg_lift=(
+                "cat_lift",
+                "mean",
+            ),  # Basket-based category lift (renamed for schema compatibility)
+            max_lift=("lift", "max"),
+        )
+        .reset_index()
+    )
 
     # Sort by basket-based category lift (primary), then rule_count
-    agg = agg.sort_values(["avg_lift", "rule_count"], ascending=[False, False]).reset_index(drop=True)
+    agg = agg.sort_values(["avg_lift", "rule_count"], ascending=[False, False]).reset_index(
+        drop=True
+    )
 
     return check(agg, CATEGORY_RULES, allow_empty=True)
 
@@ -484,7 +502,9 @@ def sample_rules_for_review(
         Sampled DataFrame with added 'actionable' column (initially None)
     """
     if rules.empty:
-        return check(pd.DataFrame(columns=list(RULES.columns) + ["actionable"]), RULES, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(RULES.columns) + ["actionable"]), RULES, allow_empty=True
+        )
 
     if seed is not None:
         random_state = seed
@@ -540,7 +560,13 @@ def calculate_actionability_rate(reviewed_rules: pd.DataFrame) -> tuple:
     total_reviewed = len(reviewed)
 
     if total_reviewed == 0:
-        return (0, 0, 0, 0.0, "No rules reviewed yet. Start reviewing to calculate actionability rate.")
+        return (
+            0,
+            0,
+            0,
+            0.0,
+            "No rules reviewed yet. Start reviewing to calculate actionability rate.",
+        )
 
     actionable_count = int(reviewed["actionable"].sum())
     non_actionable_count = total_reviewed - actionable_count
@@ -548,7 +574,13 @@ def calculate_actionability_rate(reviewed_rules: pd.DataFrame) -> tuple:
 
     guidance = get_actionability_guidance(actionable_count / total_reviewed)
 
-    return (actionable_count, non_actionable_count, len(reviewed_rules) - total_reviewed, actionability_rate, guidance)
+    return (
+        actionable_count,
+        non_actionable_count,
+        len(reviewed_rules) - total_reviewed,
+        actionability_rate,
+        guidance,
+    )
 
 
 def export_thresholds(thresholds: dict, filepath: str) -> None:
@@ -642,7 +674,9 @@ def run_actionability_calibration(
         )
 
     # Sort by lift (primary) then support/confidence (secondary)
-    rules = rules.sort_values(["lift", "support", "confidence"], ascending=[False, False, False]).reset_index(drop=True)
+    rules = rules.sort_values(
+        ["lift", "support", "confidence"], ascending=[False, False, False]
+    ).reset_index(drop=True)
 
     # Sample for review
 
@@ -668,8 +702,5 @@ def sort_rules_by_lift(rules: pd.DataFrame) -> pd.DataFrame:
     if rules.empty:
         return rules
     return rules.sort_values(
-        ["lift", "support", "confidence"],
-        ascending=[False, False, False]
+        ["lift", "support", "confidence"], ascending=[False, False, False]
     ).reset_index(drop=True)
-
-

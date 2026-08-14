@@ -76,7 +76,9 @@ def test_delist_impact_analysis(sample_df: pd.DataFrame) -> None:
         ),
         "own": float(revenue.loc[top2].sum()),
     }
-    assert abs(impact["net_revenue_impact"].sum() - (expected["recovered"] - expected["own"])) < 1e-6
+    assert (
+        abs(impact["net_revenue_impact"].sum() - (expected["recovered"] - expected["own"])) < 1e-6
+    )
 
 
 def test_node_delist_impact(sample_df: pd.DataFrame) -> None:
@@ -145,9 +147,7 @@ def test_recovery_hhi(sample_df: pd.DataFrame) -> None:
 
 
 def test_bootstrap_ci_small(sample_df: pd.DataFrame) -> None:
-    ci = bootstrap_demand_transference_ci(
-        sample_df, n_resamples=15, max_pairs=3, random_seed=42
-    )
+    ci = bootstrap_demand_transference_ci(sample_df, n_resamples=15, max_pairs=3, random_seed=42)
     TRANSFERENCE_CI.validate(ci)
     if not ci.empty:
         assert (ci["lower"] <= ci["estimate"]).all()

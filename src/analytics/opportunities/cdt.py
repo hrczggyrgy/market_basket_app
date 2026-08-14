@@ -47,7 +47,7 @@ def generate_cdt_opportunities(
     if "parent" in tree_df.columns and "is_leaf" in tree_df.columns:
         # We'll consider each parent that has at least two leaf children
         parent_groups = tree_df[tree_df["is_leaf"]].groupby("parent")
-        for parent_id, group in parent_groups:
+        for _parent_id, group in parent_groups:
             if len(group) >= 2:
                 # Take up to 2 pairs from this group (or just one opportunity per parent)
                 # For simplicity, we create one opportunity per parent group
@@ -73,16 +73,11 @@ def generate_cdt_opportunities(
                     break
 
     # If we need more opportunities, we can look at the root's children (if any)
-    if len(opportunities) < top_n:
-        # Get the direct children of the root
-        if "depth" in tree_df.columns:
-            children = tree_df[tree_df["depth"] == 1]
-            if not children.empty:
-                # We can consider each child as a branch for cross-selling
-                # For simplicity, we take the two largest branches (by count) and suggest cross-selling between them
-                if "count" in children.columns:
-                    children = children.sort_values("count", ascending=False)
-                    if len(children) >= 2:
+    if len(opportunities) < top_n and "depth" in tree_df.columns:
+        children = tree_df[tree_df["depth"] == 1]
+        if not children.empty and "count" in children.columns:
+            children = children.sort_values("count", ascending=False)
+            if len(children) >= 2:
                         child1 = children.iloc[0]
                         child2 = children.iloc[1]
                         opportunities.append(
@@ -97,7 +92,9 @@ def generate_cdt_opportunities(
                                     f"and branch '{child2['product']}' (count {child2.get('count', 0)}) "
                                     f"are in different branches of the CDT."
                                 ),
-                                value=abs(float(child1.get("count", 0)) - float(child2.get("count", 0))),
+                                value=abs(
+                                    float(child1.get("count", 0)) - float(child2.get("count", 0))
+                                ),
                                 confidence="low",
                             )
                         )
@@ -107,5 +104,7 @@ def generate_cdt_opportunities(
 
     table = opportunities_to_dataframe(opportunities)
     if not table.empty:
-        table = table.sort_values("value", ascending=False, na_position="last").reset_index(drop=True)
+        table = table.sort_values("value", ascending=False, na_position="last").reset_index(
+            drop=True
+        )
     return check(table, OPPORTUNITY_LIST, allow_empty=True)

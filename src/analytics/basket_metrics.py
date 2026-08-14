@@ -55,9 +55,7 @@ def basket_penetration_over_time(df: pd.DataFrame, period: str = "W") -> pd.Data
 def compute_basket_composition(df: pd.DataFrame) -> pd.DataFrame:
     """Distribution of baskets by number of distinct items."""
     sizes = df.groupby("transaction_id")["stockcode"].nunique().rename("basket_size")
-    table = (
-        sizes.groupby(sizes).size().rename("n_baskets").reset_index()
-    )
+    table = sizes.groupby(sizes).size().rename("n_baskets").reset_index()
     table["pct"] = table["n_baskets"] / table["n_baskets"].sum()
     return check(table, BASKET_COMPOSITION)
 
@@ -100,12 +98,16 @@ def compute_ipt_cv(df: pd.DataFrame) -> pd.DataFrame:
     prod_txn = df[["transaction_id", "stockcode"]].drop_duplicates()
     merged = prod_txn.merge(basket_sizes.rename("basket_size"), on="transaction_id", how="left")
 
-    agg = merged.groupby("stockcode")["basket_size"].agg(
-        mean_ipt="mean",
-        std_ipt=lambda s: float(s.std(ddof=0)),
-        cv_ipt=lambda s: float(variation(s)),
-        n_transactions="size",
-    ).reset_index()
+    agg = (
+        merged.groupby("stockcode")["basket_size"]
+        .agg(
+            mean_ipt="mean",
+            std_ipt=lambda s: float(s.std(ddof=0)),
+            cv_ipt=lambda s: float(variation(s)),
+            n_transactions="size",
+        )
+        .reset_index()
+    )
 
     table = agg.sort_values("cv_ipt", ascending=False).reset_index(drop=True)
     table["mean_ipt"] = table["mean_ipt"].astype(float)
@@ -140,8 +142,10 @@ def spc_revenue_trend(
     if len(values) == 0:
         return check(pd.DataFrame(columns=list(REVENUE_SPC.columns)), REVENUE_SPC, allow_empty=True)
 
-    series = pd.Series(values.to_numpy(dtype=float),
-                        index=pd.RangeIndex(len(values)) if index is None else pd.Index(index))
+    series = pd.Series(
+        values.to_numpy(dtype=float),
+        index=pd.RangeIndex(len(values)) if index is None else pd.Index(index),
+    )
     center = series.rolling(window, min_periods=min_periods).mean()
     std = series.rolling(window, min_periods=min_periods).std(ddof=1)
     ucl = center + k * std
@@ -191,7 +195,7 @@ def np_log(series: pd.Series) -> pd.Series:
             f"Entropy calculation: {zero_count} zero values replaced with 1 to avoid log(0). "
             "This may bias entropy estimates downward.",
             UserWarning,
-            stacklevel=2
+            stacklevel=2,
         )
     return series.replace(0, 1).apply(np.log)
 
@@ -199,6 +203,7 @@ def np_log(series: pd.Series) -> pd.Series:
 # ============================================================
 # Canonical Basket Metrics
 # ============================================================
+
 
 def compute_basket_metrics(df: pd.DataFrame) -> pd.DataFrame:
     """Compute canonical basket-level metrics per transaction.
@@ -215,12 +220,16 @@ def compute_basket_metrics(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df["revenue"] = df["price"] * df["quantity"]
 
-    agg = df.groupby("transaction_id").agg(
-        basket_units=("quantity", "sum"),
-        basket_lines=("stockcode", "nunique"),
-        basket_distinct_skus=("stockcode", "nunique"),
-        basket_revenue=("revenue", "sum"),
-    ).reset_index()
+    agg = (
+        df.groupby("transaction_id")
+        .agg(
+            basket_units=("quantity", "sum"),
+            basket_lines=("stockcode", "nunique"),
+            basket_distinct_skus=("stockcode", "nunique"),
+            basket_revenue=("revenue", "sum"),
+        )
+        .reset_index()
+    )
 
     return agg
 
@@ -229,42 +238,44 @@ def compute_basket_summary(df: pd.DataFrame) -> pd.DataFrame:
     """Summary statistics of canonical basket metrics across all transactions."""
     basket_metrics = compute_basket_metrics(df)
 
-    summary = pd.DataFrame({
-        "metric": [
-            "basket_units",
-            "basket_lines",
-            "basket_distinct_skus",
-            "basket_revenue",
-        ],
-        "mean": [
-            basket_metrics["basket_units"].mean(),
-            basket_metrics["basket_lines"].mean(),
-            basket_metrics["basket_distinct_skus"].mean(),
-            basket_metrics["basket_revenue"].mean(),
-        ],
-        "median": [
-            basket_metrics["basket_units"].median(),
-            basket_metrics["basket_lines"].median(),
-            basket_metrics["basket_distinct_skus"].median(),
-            basket_metrics["basket_revenue"].median(),
-        ],
-        "std": [
-            basket_metrics["basket_units"].std(),
-            basket_metrics["basket_lines"].std(),
-            basket_metrics["basket_distinct_skus"].std(),
-            basket_metrics["basket_revenue"].std(),
-        ],
-        "min": [
-            basket_metrics["basket_units"].min(),
-            basket_metrics["basket_lines"].min(),
-            basket_metrics["basket_distinct_skus"].min(),
-            basket_metrics["basket_revenue"].min(),
-        ],
-        "max": [
-            basket_metrics["basket_units"].max(),
-            basket_metrics["basket_lines"].max(),
-            basket_metrics["basket_distinct_skus"].max(),
-            basket_metrics["basket_revenue"].max(),
-        ],
-    })
+    summary = pd.DataFrame(
+        {
+            "metric": [
+                "basket_units",
+                "basket_lines",
+                "basket_distinct_skus",
+                "basket_revenue",
+            ],
+            "mean": [
+                basket_metrics["basket_units"].mean(),
+                basket_metrics["basket_lines"].mean(),
+                basket_metrics["basket_distinct_skus"].mean(),
+                basket_metrics["basket_revenue"].mean(),
+            ],
+            "median": [
+                basket_metrics["basket_units"].median(),
+                basket_metrics["basket_lines"].median(),
+                basket_metrics["basket_distinct_skus"].median(),
+                basket_metrics["basket_revenue"].median(),
+            ],
+            "std": [
+                basket_metrics["basket_units"].std(),
+                basket_metrics["basket_lines"].std(),
+                basket_metrics["basket_distinct_skus"].std(),
+                basket_metrics["basket_revenue"].std(),
+            ],
+            "min": [
+                basket_metrics["basket_units"].min(),
+                basket_metrics["basket_lines"].min(),
+                basket_metrics["basket_distinct_skus"].min(),
+                basket_metrics["basket_revenue"].min(),
+            ],
+            "max": [
+                basket_metrics["basket_units"].max(),
+                basket_metrics["basket_lines"].max(),
+                basket_metrics["basket_distinct_skus"].max(),
+                basket_metrics["basket_revenue"].max(),
+            ],
+        }
+    )
     return summary

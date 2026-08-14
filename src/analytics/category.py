@@ -24,7 +24,9 @@ from src.analytics.schemas import (
 def compute_category_kpis(df: pd.DataFrame, n_periods: int = 8) -> pd.DataFrame:
     """Per-category KPIs: revenue, transactions, customers, penetration, AOV, growth."""
     if "category" not in df.columns or df.empty:
-        return check(pd.DataFrame(columns=list(CATEGORY_KPIS.columns)), CATEGORY_KPIS, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(CATEGORY_KPIS.columns)), CATEGORY_KPIS, allow_empty=True
+        )
     df = df.copy()
     revenue = df["price"] * df["quantity"]
     n_baskets = df["transaction_id"].nunique()
@@ -54,12 +56,28 @@ def compute_category_scorecard(df: pd.DataFrame, n_periods: int = 8) -> pd.DataF
     """Category scorecard with role and RAG status."""
     kpis = compute_category_kpis(df, n_periods=n_periods)
     if kpis.empty:
-        return check(pd.DataFrame(columns=list(CATEGORY_SCORECARD.columns)), CATEGORY_SCORECARD, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(CATEGORY_SCORECARD.columns)),
+            CATEGORY_SCORECARD,
+            allow_empty=True,
+        )
     table = kpis.copy()
     table["role"] = table.apply(_suggest_category_role, axis=1)
     table["rag"] = table["growth_pct"].apply(_compute_rag)
     return check(
-        table[["category", "revenue", "revenue_share", "transactions", "customers", "aov", "growth_pct", "role", "rag"]],
+        table[
+            [
+                "category",
+                "revenue",
+                "revenue_share",
+                "transactions",
+                "customers",
+                "aov",
+                "growth_pct",
+                "role",
+                "rag",
+            ]
+        ],
         CATEGORY_SCORECARD,
     )
 
@@ -71,7 +89,11 @@ def infer_categories_nlp(
 ) -> pd.DataFrame:
     """Infer product categories by clustering product descriptions (TF-IDF + KMeans)."""
     if product_col not in df.columns:
-        return check(pd.DataFrame(columns=list(INFERRED_CATEGORIES.columns)), INFERRED_CATEGORIES, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(INFERRED_CATEGORIES.columns)),
+            INFERRED_CATEGORIES,
+            allow_empty=True,
+        )
     lookup = df[["stockcode", product_col]].drop_duplicates(subset="stockcode").copy()
     texts = lookup[product_col].fillna("").astype(str)
     vectorizer = TfidfVectorizer(stop_words="english", max_features=2000)
@@ -102,7 +124,12 @@ def _seasonality_diagnostics(monthly_series: pd.Series, min_cycles: int = 2) -> 
     n_observed = len(idx)
     # Need >= 2 annual cycles AND enough observed months to be meaningful.
     if n_cycles < min_cycles or n_observed < 8:
-        return {"amplitude": 0.0, "strength": 0.0, "significant": False, "n_cycles": n_cycles if n_cycles >= 2 else 0}
+        return {
+            "amplitude": 0.0,
+            "strength": 0.0,
+            "significant": False,
+            "n_cycles": n_cycles if n_cycles >= 2 else 0,
+        }
 
     # Reindex to the full calendar span (off-season months -> 0 demand).
     series_idx = pd.PeriodIndex(monthly_series.index, freq="M")
@@ -213,6 +240,7 @@ def compute_category_roles(
     # Auto-detect category source if not provided
     if category_source is None:
         from src.analytics.sample_data import THEMES as SAMPLE_THEMES
+
         all_cats = set(df["category"].unique())
         theme_cats = set()
         for theme in SAMPLE_THEMES:
@@ -232,7 +260,9 @@ def compute_category_roles(
     basket_cat_rev = df.groupby(["transaction_id", "category"])["revenue"].sum().reset_index()
     basket_total = basket_cat_rev.groupby("transaction_id")["revenue"].transform("sum")
     basket_cat_rev["rev_share"] = basket_cat_rev["revenue"] / basket_total
-    dominant_cat = basket_cat_rev.loc[basket_cat_rev.groupby("transaction_id")["rev_share"].idxmax()]
+    dominant_cat = basket_cat_rev.loc[
+        basket_cat_rev.groupby("transaction_id")["rev_share"].idxmax()
+    ]
     trip_gen = dominant_cat.groupby("category").size().rename("trip_count")
     total_baskets = df["transaction_id"].nunique()
     trip_generation_rate = (trip_gen / total_baskets).fillna(0.0)
@@ -266,14 +296,15 @@ def compute_category_roles(
 
     # --- 4. attachment_rate ---
     # First, identify Destination categories based on trip_generation and demand_cv
-    temp = pd.DataFrame({
-        "trip_generation_rate": trip_generation_rate,
-        "demand_cv": demand_cv,
-    })
+    temp = pd.DataFrame(
+        {
+            "trip_generation_rate": trip_generation_rate,
+            "demand_cv": demand_cv,
+        }
+    )
     temp = temp.fillna(0.0)
-    temp["is_destination"] = (
-        (temp["trip_generation_rate"] >= trip_gen_threshold)
-        & (temp["demand_cv"] <= demand_cv_threshold)
+    temp["is_destination"] = (temp["trip_generation_rate"] >= trip_gen_threshold) & (
+        temp["demand_cv"] <= demand_cv_threshold
     )
     destination_cats = set(temp[temp["is_destination"]].index)
 
@@ -317,19 +348,23 @@ def compute_category_roles(
 
         return "Routine"
 
-    result = pd.DataFrame({
-        "category": all_categories,
-        "trip_generation_rate": trip_generation_rate.values,
-        "demand_cv": demand_cv.values,
-        "seasonality_amplitude": seasonality_amplitude.values,
-        "seasonal_strength": seasonal_strength.values,
-        "seasonality_significant": seasonality_significant.values,
-        "seasonality_n_cycles": seasonality_n_cycles.values,
-        "attachment_rate": attachment_rate.values,
-        "category_source": category_source,
-    }).fillna(0.0)
+    result = pd.DataFrame(
+        {
+            "category": all_categories,
+            "trip_generation_rate": trip_generation_rate.values,
+            "demand_cv": demand_cv.values,
+            "seasonality_amplitude": seasonality_amplitude.values,
+            "seasonal_strength": seasonal_strength.values,
+            "seasonality_significant": seasonality_significant.values,
+            "seasonality_n_cycles": seasonality_n_cycles.values,
+            "attachment_rate": attachment_rate.values,
+            "category_source": category_source,
+        }
+    ).fillna(0.0)
 
-    result["destination_categories"] = ", ".join(sorted(destination_cats)) if destination_cats else ""
+    result["destination_categories"] = (
+        ", ".join(sorted(destination_cats)) if destination_cats else ""
+    )
     result["role"] = result.apply(_classify, axis=1)
 
     return check(result, CATEGORY_ROLES)
@@ -574,11 +609,7 @@ def compute_category_manager_scorecard(
 
         # YoY growth on weekly revenue
         weekly = (
-            cat_df.set_index("date")["_revenue"]
-            .resample("W")
-            .sum()
-            .replace(0, np.nan)
-            .dropna()
+            cat_df.set_index("date")["_revenue"].resample("W").sum().replace(0, np.nan).dropna()
         )
         yoy = _yoy_growth(weekly, yoy_window)
         if yoy is None:

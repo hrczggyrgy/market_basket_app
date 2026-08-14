@@ -197,4 +197,10 @@ def build_transaction_derived_attributes(
 
 def get_candidate_attributes() -> list[str]:
     """Column names available for CDT splitting."""
-    return ["price_tier", "velocity_tier", "seasonality_class", "basket_size_affinity", "substitution_tier"]
+    return [
+        "price_tier",
+        "velocity_tier",
+        "seasonality_class",
+        "basket_size_affinity",
+        "substitution_tier",
+    ]

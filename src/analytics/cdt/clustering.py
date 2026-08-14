@@ -10,9 +10,7 @@ from sklearn.metrics import silhouette_score
 from src.analytics.schemas import CDT_ASSIGNMENTS, CDT_OPTIMAL_K, CDT_QUALITY, check
 
 
-def similarity_to_distance(
-    similarity_matrix: pd.DataFrame, method: str = "phi"
-) -> np.ndarray:
+def similarity_to_distance(similarity_matrix: pd.DataFrame, method: str = "phi") -> np.ndarray:
     """Convert a similarity matrix to a distance matrix.
 
     ``phi`` distances are ``1 - sim`` (sim may be negative); ``jaccard`` /
@@ -85,7 +83,9 @@ def find_optimal_clusters_sklearn(
     distance = similarity_to_distance(similarity_matrix, method="jaccard")
     condensed = _square_to_condensed(distance)
     if len(condensed) < 1 or len(similarity_matrix) < 3:
-        return check(pd.DataFrame(columns=list(CDT_OPTIMAL_K.columns)), CDT_OPTIMAL_K, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(CDT_OPTIMAL_K.columns)), CDT_OPTIMAL_K, allow_empty=True
+        )
 
     # Use average linkage for non-Euclidean distances
     linkage_matrix = linkage(condensed, method="average")
@@ -119,9 +119,7 @@ def get_cluster_assignments(
         similarity_matrix, method="ward", n_clusters=n_clusters
     )
     _ = linkage_matrix
-    table = clusters.reset_index().rename(
-        columns={"index": "stockcode", "cluster": "cluster"}
-    )
+    table = clusters.reset_index().rename(columns={"index": "stockcode", "cluster": "cluster"})
     return check(table, CDT_ASSIGNMENTS)
 
 
@@ -149,7 +147,12 @@ def compute_cluster_quality(
             cross = similarity_matrix.loc[valid, other_products].to_numpy(dtype=float)
             across = float(np.nanmean(cross)) if cross.size else 0.0
         rows.append(
-            {"cluster": int(cluster), "size": len(valid), "within_similarity": within, "across_similarity": across}
+            {
+                "cluster": int(cluster),
+                "size": len(valid),
+                "within_similarity": within,
+                "across_similarity": across,
+            }
         )
 
     return check(pd.DataFrame(rows, columns=list(CDT_QUALITY.columns)), CDT_QUALITY)
@@ -169,9 +172,7 @@ def compute_cophenetic_correlation(
     return float(corr)
 
 
-def get_dendrogram_data(
-    linkage_matrix: np.ndarray, labels: list[str]
-) -> dict[str, object]:
+def get_dendrogram_data(linkage_matrix: np.ndarray, labels: list[str]) -> dict[str, object]:
     """Serializable dendrogram payload for plotly: linkage + leaf labels."""
     return {
         "linkage": linkage_matrix.tolist(),

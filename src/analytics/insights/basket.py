@@ -13,7 +13,7 @@ from src.analytics.intelligence import Insight, insights_to_dataframe
 from src.analytics.schemas import PRICING_INSIGHTS, check
 
 _LOW_PENETRATION_THRESHOLD = 0.05  # 5% of baskets
-_HIGH_PENETRATION_THRESHOLD = 0.5   # 50% of baskets
+_HIGH_PENETRATION_THRESHOLD = 0.5  # 50% of baskets
 
 
 def generate_basket_insights(df: pd.DataFrame) -> pd.DataFrame:

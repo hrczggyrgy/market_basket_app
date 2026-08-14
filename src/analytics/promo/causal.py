@@ -5,6 +5,11 @@ using Two-Way Fixed Effects (TWFE) and Event Study designs.
 
 All estimates are conditional on the parallel trends assumption.
 Results should be validated with pre-trend tests before causal interpretation.
+
+Note: This module requires `linearmodels` which currently has NumPy 2.x
+compatibility issues. If unavailable, functions will raise ImportError
+with a clear message. The descriptive promo engine in promo_core.py
+works without linearmodels.
 """
 
 from __future__ import annotations
@@ -12,11 +17,49 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-try:
-    from linearmodels.panel import PanelOLS
-    LINEARMODELS_AVAILABLE = True
-except ImportError:
-    LINEARMODELS_AVAILABLE = False
+# Lazy import to avoid NumPy 2.x compatibility warning at module load time
+_LINEARMODELS_AVAILABLE = None
+_LINEARMODELS_ERROR = None
+_PanelOLS = None
+_PanelEffectsResults = None
+
+
+def _require_linearmodels():
+    """Import linearmodels and raise clear ImportError if not available."""
+    global _LINEARMODELS_AVAILABLE, _LINEARMODELS_ERROR, _PanelOLS, _PanelEffectsResults
+    if _LINEARMODELS_AVAILABLE is not None:
+        if not _LINEARMODELS_AVAILABLE:
+            raise ImportError(
+                "linearmodels is required for causal promo estimation but is not available. "
+                f"Original error: {_LINEARMODELS_ERROR}. "
+                "Install with: pip install linearmodels --no-binary linearmodels "
+                "(requires NumPy < 2 or building from source). "
+                "Alternatively, use the descriptive promo engine in promo_core.py "
+                "which works without linearmodels."
+            )
+        return _PanelOLS, _PanelEffectsResults
+
+    try:
+        from linearmodels.panel import PanelOLS
+        from linearmodels.panel.results import PanelEffectsResults
+
+        _PanelOLS = PanelOLS
+        _PanelEffectsResults = PanelEffectsResults
+        _LINEARMODELS_AVAILABLE = True
+    except ImportError as e:
+        _LINEARMODELS_AVAILABLE = False
+        _LINEARMODELS_ERROR = e
+        raise ImportError(
+            "linearmodels is required for causal promo estimation but is not available. "
+            f"Original error: {e}. "
+            "Install with: pip install linearmodels --no-binary linearmodels "
+            "(requires NumPy < 2 or building from source). "
+            "Alternatively, use the descriptive promo engine in promo_core.py "
+            "which works without linearmodels."
+        )
+
+    return _PanelOLS, _PanelEffectsResults
+
 
 from src.analytics.promo_core import _expand_promo_weeks
 from src.analytics.schemas import (
@@ -108,8 +151,7 @@ def estimate_twfe_promo_effect(
     Returns:
         DataFrame with TWFE results validated against PROMO_TWFE_RESULT
     """
-    if not LINEARMODELS_AVAILABLE:
-        raise ImportError("linearmodels required for TWFE estimation. pip install linearmodels")
+    PanelOLS, _ = _require_linearmodels()
 
     panel = panel.copy()
     panel = panel.dropna(subset=["log_units", "log_price", "promo"]).copy()
@@ -152,21 +194,25 @@ def estimate_twfe_promo_effect(
         marginal_se = promo_se
 
     # Prepare result table
-    results = pd.DataFrame([{
-        "outcome": outcome,
-        "promo_coefficient": promo_coef,
-        "promo_se": promo_se,
-        "promo_p_value": promo_p,
-        "marginal_effect": marginal_effect,
-        "marginal_se": marginal_se,
-        "r_squared": results.rsquared,
-        "r_squared_within": results.rsquared_within,
-        "r_squared_between": results.rsquared_between,
-        "n_obs": results.nobs,
-        "n_entities": len(panel.index.get_level_values(0).unique()),
-        "n_periods": len(panel.index.get_level_values(1).unique()),
-        "price_control": price_control,
-    }])
+    results = pd.DataFrame(
+        [
+            {
+                "outcome": outcome,
+                "promo_coefficient": promo_coef,
+                "promo_se": promo_se,
+                "promo_p_value": promo_p,
+                "marginal_effect": marginal_effect,
+                "marginal_se": marginal_se,
+                "r_squared": results.rsquared,
+                "r_squared_within": results.rsquared_within,
+                "r_squared_between": results.rsquared_between,
+                "n_obs": results.nobs,
+                "n_entities": len(panel.index.get_level_values(0).unique()),
+                "n_periods": len(panel.index.get_level_values(1).unique()),
+                "price_control": price_control,
+            }
+        ]
+    )
 
     return check(results, PROMO_TWFE_RESULT, allow_empty=True)
 
@@ -198,8 +244,7 @@ def estimate_event_study(
     Returns:
         Event study coefficients with pre-trend test
     """
-    if not LINEARMODELS_AVAILABLE:
-        raise ImportError("linearmodels required for event study estimation")
+    PanelOLS, PanelEffectsResults = _require_linearmodels()
 
     # Build event-time indicators
     promo_starts = promo_periods.groupby("stockcode")["start_date"].min().reset_index()
@@ -235,31 +280,42 @@ def estimate_event_study(
     # Pre-trend test: joint F-test that all leads == 0
     lead_dummies = [f"D_{k}" for k in range(-leads, 0)]
     if len(lead_dummies) > 0:
-        f_stat, p_val = _joint_f_test(results, lead_dummies)
+        f_stat, p_val = _joint_f_test(PanelEffectsResults, results, lead_dummies)
         pretrend_p = p_val
     else:
         pretrend_p = np.nan
 
-    results_df = pd.DataFrame({
-        "period": [int(k) for k in range(-leads, lags + 1) if k != -1],
-        "coefficient": coefs.values,
-        "std_error": ses.values,
-        "p_value": pvals.values,
-        "is_pre": [k < 0 for k in range(-leads, lags + 1) if k != -1],
-    })
+    results_df = pd.DataFrame(
+        {
+            "period": [int(k) for k in range(-leads, lags + 1) if k != -1],
+            "coefficient": coefs.values,
+            "std_error": ses.values,
+            "p_value": pvals.values,
+            "is_pre": [k < 0 for k in range(-leads, lags + 1) if k != -1],
+        }
+    )
 
-    return check(pd.DataFrame([{
-        "outcome": outcome,
-        "leads": leads,
-        "lags": lags,
-        "pretrend_p_value": pretrend_p,
-        "coefficients": results_df.to_json(),
-    }]), PROMO_EVENT_STUDY, allow_empty=True)
+    return check(
+        pd.DataFrame(
+            [
+                {
+                    "outcome": outcome,
+                    "leads": leads,
+                    "lags": lags,
+                    "pretrend_p_value": pretrend_p,
+                    "coefficients": results_df.to_json(),
+                }
+            ]
+        ),
+        PROMO_EVENT_STUDY,
+        allow_empty=True,
+    )
 
 
-def _joint_f_test(results, restrictions: list[str]) -> tuple[float, float]:
+def _joint_f_test(
+    PanelEffectsResults, results, restrictions: list[str]
+) -> tuple[float, float]:
     """Joint F-test that specified coefficients are jointly zero."""
-    from linearmodels.panel.results import PanelEffectsResults
 
     if isinstance(results, PanelEffectsResults):
         try:
@@ -282,14 +338,20 @@ def estimate_cross_sku_effects(
     Returns DataFrame with columns:
     promo_product, peer_product, effect, se, p_value, effect_type (halo/cannibalization/none)
     """
+    _require_linearmodels()
     # Get promo products
     promo_skus = promo_periods["stockcode"].unique()
 
     # For each promo SKU, find peer SKUs in same category
     # This requires category info in panel
     if "category" not in panel.columns:
-        return check(pd.DataFrame(columns=["promo_product", "peer_product", "effect", "se", "p_value", "effect_type"]),
-                    pd.DataFrame(), allow_empty=True)
+        return check(
+            pd.DataFrame(
+                columns=["promo_product", "peer_product", "effect", "se", "p_value", "effect_type"]
+            ),
+            pd.DataFrame(),
+            allow_empty=True,
+        )
 
     panel = panel.reset_index()
     categories = panel.groupby("stockcode")["category"].first().to_dict()
@@ -310,9 +372,9 @@ def estimate_cross_sku_effects(
                 continue
 
             # Add promo indicator for this specific promo
-            promo_weeks = panel[
-                (panel["stockcode"] == promo_sku) & (panel["promo"] == 1)
-            ]["week"].unique()
+            promo_weeks = panel[(panel["stockcode"] == promo_sku) & (panel["promo"] == 1)][
+                "week"
+            ].unique()
 
             if len(promo_weeks) == 0:
                 continue
@@ -326,6 +388,7 @@ def estimate_cross_sku_effects(
             # This is a simplified version - in practice use PanelOLS
             try:
                 from statsmodels.formula.api import ols
+
                 model = ols("log_units ~ treated + log_price + C(week)", data=peer_data).fit()
                 effect = model.params.get("treated", np.nan)
                 se = model.bse.get("treated", np.nan)
@@ -336,14 +399,16 @@ def estimate_cross_sku_effects(
 
                 effect_type = "halo" if effect > 0 else "cannibalization"
 
-                results.append({
-                    "promo_product": promo_sku,
-                    "peer_product": peer_sku,
-                    "effect": effect,
-                    "se": se,
-                    "p_value": p_val,
-                    "effect_type": effect_type,
-                })
+                results.append(
+                    {
+                        "promo_product": promo_sku,
+                        "peer_product": peer_sku,
+                        "effect": effect,
+                        "se": se,
+                        "p_value": p_val,
+                        "effect_type": effect_type,
+                    }
+                )
             except Exception:
                 continue
 
@@ -394,10 +459,12 @@ def compute_causal_waterfall(
         # Approximate: effect * baseline * promo_weeks
         # This is simplified - in practice use SKU-specific TWFE
         direct_rev = 0  # Placeholder
-        direct_effects.append({
-            "stockcode": sku,
-            "direct_effect_revenue": direct_rev,
-        })
+        direct_effects.append(
+            {
+                "stockcode": sku,
+                "direct_effect_revenue": direct_rev,
+            }
+        )
 
     # 2. Halo effects (positive cross-SKU effects)
     cross_effects = estimate_cross_sku_effects(panel, promo_periods)
@@ -412,9 +479,7 @@ def compute_causal_waterfall(
 
     # 3. Stockpiling (post-promo dip)
     # From event study: negative lag coefficients
-    event_study = estimate_event_study(
-        panel, promo_periods, outcome="log_units", leads=4, lags=4
-    )
+    event_study = estimate_event_study(panel, promo_periods, outcome="log_units", leads=4, lags=4)
     stockpiling = 0
     if "coefficients" in event_study:
         coeffs = pd.read_json(event_study["coefficients"].iloc[0])
@@ -426,18 +491,22 @@ def compute_causal_waterfall(
     gross = total_direct + halo_revenue
     net = gross - cannibalization_revenue + stockpiling
 
-    result = pd.DataFrame([{
-        "stockcode": "ALL",
-        "baseline_revenue": 0,  # Fill in
-        "direct_effect_revenue": total_direct,
-        "incremental_revenue_qty": 0,  # Fill
-        "incremental_revenue_price": 0,  # Fill
-        "halo_revenue": halo_revenue,
-        "cannibalization_revenue": cannibalization_revenue,
-        "stockpiling_revenue": stockpiling,
-        "net_incremental_revenue": net,
-        "roi": 0,
-    }])
+    result = pd.DataFrame(
+        [
+            {
+                "stockcode": "ALL",
+                "baseline_revenue": 0,  # Fill in
+                "direct_effect_revenue": total_direct,
+                "incremental_revenue_qty": 0,  # Fill
+                "incremental_revenue_price": 0,  # Fill
+                "halo_revenue": halo_revenue,
+                "cannibalization_revenue": cannibalization_revenue,
+                "stockpiling_revenue": stockpiling,
+                "net_incremental_revenue": net,
+                "roi": 0,
+            }
+        ]
+    )
 
     return check(result, PROMO_CAUSAL_WATERFALL, allow_empty=True)
 
@@ -449,9 +518,7 @@ def _get_baseline_revenue_map(df: pd.DataFrame, promo_periods: pd.DataFrame) -> 
     df["date"] = pd.to_datetime(df["date"])
     df["revenue"] = df["price"] * df["quantity"]
     df["week"] = df["date"].dt.to_period("W")
-    weekly = df.groupby(["stockcode", "week"]).agg(
-        actual_revenue=("revenue", "sum")
-    ).reset_index()
+    weekly = df.groupby(["stockcode", "week"]).agg(actual_revenue=("revenue", "sum")).reset_index()
     promo_weekly = _expand_promo_weeks(promo_periods)
     weekly = weekly.merge(promo_weekly, on=["stockcode", "week"], how="left")
     weekly["is_promo"] = weekly["is_promo"].eq(True)

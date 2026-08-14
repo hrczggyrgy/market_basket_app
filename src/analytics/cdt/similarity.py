@@ -38,11 +38,12 @@ def _customer_product_matrix(
         top_products = support.sort_values(ascending=False).head(top_n_products).index
         cust_product = cust_product[top_products]
         import warnings
+
         warnings.warn(
             f"CDT similarity: Product count ({len(valid)}) exceeds top_n_products ({top_n_products}). "
             f"Using top {top_n_products} products by support.",
             UserWarning,
-            stacklevel=2
+            stacklevel=2,
         )
 
     return (cust_product > 0).astype(int)
@@ -66,15 +67,14 @@ def compute_phi_matrix(
     """Phi-coefficient matrix on the customer-product matrix (reuses affinity)."""
     if top_n_products is not None:
         import warnings
+
         warnings.warn(
             "Phi coefficient: top_n_products not directly supported for phi matrix. "
             "Consider using embedding method for large catalogs.",
             UserWarning,
-            stacklevel=2
+            stacklevel=2,
         )
-    matrix = compute_affinity_matrix(
-        transactions_df, min_cooccurrence=min_cooccurrence
-    )
+    matrix = compute_affinity_matrix(transactions_df, min_cooccurrence=min_cooccurrence)
     support = pd.crosstab(transactions_df[customer_col], transactions_df[product_col]).sum(axis=0)
     products = support[support >= min_product_support].index
     keep = [p for p in matrix.index if p in products]
@@ -90,7 +90,9 @@ def compute_jaccard_matrix(
     top_n_products: int | None = None,
 ) -> pd.DataFrame:
     """Jaccard similarity: |A∩B| / |A∪B| over shared customers."""
-    matrix = _customer_product_matrix(transactions_df, customer_col, product_col, min_product_support, top_n_products)
+    matrix = _customer_product_matrix(
+        transactions_df, customer_col, product_col, min_product_support, top_n_products
+    )
     cooccur, counts, _ = _pairwise_counts(matrix)
     union = counts[:, None] + counts[None, :] - cooccur
     sim = np.divide(cooccur, union, out=np.zeros_like(cooccur), where=union > 0)
@@ -114,7 +116,9 @@ def compute_pmi_matrix(
     PMI = log(P(a,b) / (P(a) P(b))), rescaled by -log P(a,b) so that the
     result lies in [0, 1] and is symmetric.
     """
-    matrix = _customer_product_matrix(transactions_df, customer_col, product_col, min_product_support, top_n_products)
+    matrix = _customer_product_matrix(
+        transactions_df, customer_col, product_col, min_product_support, top_n_products
+    )
     cooccur, counts, n = _pairwise_counts(matrix)
     pa = counts / n
     pab = cooccur / n
@@ -142,7 +146,9 @@ def compute_cosine_tfidf_matrix(
     IDF weight, so niche but consistent products are not drowned out by
     best-sellers.
     """
-    matrix = _customer_product_matrix(transactions_df, customer_col, product_col, min_product_support, top_n_products)
+    matrix = _customer_product_matrix(
+        transactions_df, customer_col, product_col, min_product_support, top_n_products
+    )
     tf = matrix.to_numpy().astype(float)
     n_customers = tf.shape[0]
     df_count = (tf > 0).sum(axis=0)
@@ -209,13 +215,30 @@ def build_similarity_matrix(
 ) -> pd.DataFrame:
     """Dispatch to the requested similarity method."""
     if method == "phi":
-        return compute_phi_matrix(transactions_df, min_cooccurrence=min_cooccurrence, min_product_support=min_product_support, top_n_products=top_n_products)
+        return compute_phi_matrix(
+            transactions_df,
+            min_cooccurrence=min_cooccurrence,
+            min_product_support=min_product_support,
+            top_n_products=top_n_products,
+        )
     if method == "jaccard":
-        return compute_jaccard_matrix(transactions_df, min_cooccurrence=min_cooccurrence, min_product_support=min_product_support, top_n_products=top_n_products)
+        return compute_jaccard_matrix(
+            transactions_df,
+            min_cooccurrence=min_cooccurrence,
+            min_product_support=min_product_support,
+            top_n_products=top_n_products,
+        )
     if method == "pmi":
-        return compute_pmi_matrix(transactions_df, min_cooccurrence=min_cooccurrence, min_product_support=min_product_support, top_n_products=top_n_products)
+        return compute_pmi_matrix(
+            transactions_df,
+            min_cooccurrence=min_cooccurrence,
+            min_product_support=min_product_support,
+            top_n_products=top_n_products,
+        )
     if method == "cosine_tfidf":
-        return compute_cosine_tfidf_matrix(transactions_df, min_product_support=min_product_support, top_n_products=top_n_products)
+        return compute_cosine_tfidf_matrix(
+            transactions_df, min_product_support=min_product_support, top_n_products=top_n_products
+        )
     if method == "embedding":
         return compute_embedding_matrix(
             transactions_df,
@@ -226,7 +249,9 @@ def build_similarity_matrix(
         )
     if method == "ensemble":
         return build_similarity_matrix_ensemble(
-            transactions_df, min_cooccurrence=min_cooccurrence, min_product_support=min_product_support
+            transactions_df,
+            min_cooccurrence=min_cooccurrence,
+            min_product_support=min_product_support,
         )
     raise ValueError(f"unknown similarity method {method!r}; expected one of {SIMILARITY_METHODS}")
 
@@ -359,7 +384,13 @@ def bootstrap_similarity_ci(
         idx = rng.integers(0, len(customers), size=len(customers))
         replicates.append(_pair_value(idx))
     if not replicates:
-        return {"estimate": point, "lower": point, "upper": point, "std_error": 0.0, "n_resamples": 0}
+        return {
+            "estimate": point,
+            "lower": point,
+            "upper": point,
+            "std_error": 0.0,
+            "n_resamples": 0,
+        }
     arr = np.asarray(replicates)
     alpha = 1.0 - ci_level
     return {

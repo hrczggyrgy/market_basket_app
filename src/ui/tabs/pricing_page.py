@@ -14,8 +14,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.analytics.category import enrich_with_categories
-from src.analytics.pricing import diagnose_price_curves_1d, run_pricing_analysis
+from src.analytics.cache import cached_enrich_categories, run_cached_pricing_analysis
+from src.analytics.pricing import diagnose_price_curves_1d
 from src.ui.components import (
     render_insight_cards,
     render_metric_row,
@@ -104,9 +104,17 @@ def _render_status_breakdown(status_df: pd.DataFrame) -> go.Figure:
     if status_df is None or status_df.empty:
         return empty_state("No elasticity status data")
     counts = (
-        status_df["elasticity_status"].value_counts().reindex(list(STATUS_COLORS.keys())).fillna(0).astype(int)
+        status_df["elasticity_status"]
+        .value_counts()
+        .reindex(list(STATUS_COLORS.keys()))
+        .fillna(0)
+        .astype(int)
     )
-    fig.add_trace(go.Bar(x=counts.index, y=counts.values, marker_color=[STATUS_COLORS[k] for k in counts.index]))
+    fig.add_trace(
+        go.Bar(
+            x=counts.index, y=counts.values, marker_color=[STATUS_COLORS[k] for k in counts.index]
+        )
+    )
     fig.update_layout(
         xaxis={"title": "Elasticity status"},
         yaxis={"title": "SKU count"},
@@ -154,12 +162,18 @@ def _render_decision_matrix(dm: pd.DataFrame) -> go.Figure:
                 text=unknown["stockcode"].astype(str),
                 customdata=unknown[["elasticity_status"]].to_numpy(),
                 hovertemplate="%{text}<br>KVI %{y:.2f}<br>insufficient evidence (%{customdata[0]})<extra></extra>",
-                marker={"size": 7, "color": DECISION_COLORS["insufficient_evidence"], "symbol": "x"},
+                marker={
+                    "size": 7,
+                    "color": DECISION_COLORS["insufficient_evidence"],
+                    "symbol": "x",
+                },
                 name="Insufficient evidence",
             )
         )
 
-    fig.add_vline(x=1.0, line_dash="dash", line_color="#888888", annotation_text="|e| = 1 (elastic)")
+    fig.add_vline(
+        x=1.0, line_dash="dash", line_color="#888888", annotation_text="|e| = 1 (elastic)"
+    )
     kvi_med = float(dm["kvi_score"].median())
     fig.add_hline(y=kvi_med, line_dash="dash", line_color="#888888", annotation_text="median KVI")
 
@@ -176,7 +190,9 @@ def _render_decision_matrix(dm: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def _simulate_price_change(base_price: float, base_qty: float, elasticity: float, pct: float) -> tuple[float, float, float]:
+def _simulate_price_change(
+    base_price: float, base_qty: float, elasticity: float, pct: float
+) -> tuple[float, float, float]:
     """Log-log response: new qty/price/revenue for a price change of `pct`."""
     new_qty = base_qty * (1 + elasticity * pct)
     new_price = base_price * (1 + pct)
@@ -193,13 +209,21 @@ def _render_price_simulation(analysis: object) -> None:
     # Get confidence information
     conf_map = {}
     if not analysis.confidence.empty:
-        conf_map = dict(zip(analysis.confidence["stockcode"], analysis.confidence["confidence"], strict=False))
+        conf_map = dict(
+            zip(analysis.confidence["stockcode"], analysis.confidence["confidence"], strict=False)
+        )
 
     # Get elasticity status information
     status_map = {}
     if not analysis.elasticity_status.empty:
-        status_map = dict(zip(analysis.elasticity_status["stockcode"], analysis.elasticity_status["elasticity_status"], strict=False))
-    
+        status_map = dict(
+            zip(
+                analysis.elasticity_status["stockcode"],
+                analysis.elasticity_status["elasticity_status"],
+                strict=False,
+            )
+        )
+
     # Filter SKUs by confidence - only high and medium allowed for simulation
     usable = []
     for sku in elast["stockcode"]:
@@ -207,9 +231,11 @@ def _render_price_simulation(analysis: object) -> None:
         status = status_map.get(sku, "estimated")
         if conf in ("high", "medium") and status in ("estimated", "weak"):
             usable.append(sku)
-    
+
     if not usable:
-        st.info("Elasticity estimates exist but none are reliable enough to simulate. Collect more price variation first.")
+        st.info(
+            "Elasticity estimates exist but none are reliable enough to simulate. Collect more price variation first."
+        )
         return
 
     sku = st.selectbox("Select an SKU to simulate", usable, key="price_sim_sku")
@@ -220,7 +246,7 @@ def _render_price_simulation(analysis: object) -> None:
     base_rev = base_price * base_qty
     conf = conf_map.get(sku, "medium")
     n_obs = int(row["n_obs"]) if "n_obs" in row else 0
-    
+
     # Confidence-based warning
     if conf == "medium":
         st.warning(
@@ -232,7 +258,7 @@ def _render_price_simulation(analysis: object) -> None:
             f"🔴 Low confidence estimate (n={n_obs} observations). "
             "Simulation results are unreliable. Do not act on these figures."
         )
-    
+
     scenarios = [(-0.05, "-5%"), (-0.02, "-2%"), (0.02, "+2%"), (0.05, "+5%")]
     sim_rows = []
     for pct, label in scenarios:
@@ -257,7 +283,7 @@ def _render_price_simulation(analysis: object) -> None:
         fig.add_trace(go.Bar(x=sim["Scenario"], y=sim["Revenue delta"], marker_color=colors))
         fig.update_layout(yaxis={"title": "Weekly revenue delta"}, hovermode="x unified")
         show(fig)
-    
+
     # Action recommendation based on confidence and sample size
     st.subheader("Recommended Action")
     if conf == "high" and n_obs >= 20:
@@ -272,15 +298,15 @@ def _render_price_simulation(analysis: object) -> None:
         )
     elif conf == "medium":
         st.warning(
-            f"⚠️ Medium confidence estimate. Use these figures for planning only. "
+            "⚠️ Medium confidence estimate. Use these figures for planning only. "
             "Validate with a controlled experiment before any price changes."
         )
     else:
         st.error(
-            f"🔴 Low confidence estimate. Do not act on these simulation results. "
+            "🔴 Low confidence estimate. Do not act on these simulation results. "
             "Collect more price variation data first."
         )
-    
+
     st.caption(
         f"Illustrative log-log response at elasticity {elasticity:.2f} on weekly averages. "
         f"Confidence: {conf.upper()}, Observations: {n_obs}. "
@@ -349,9 +375,7 @@ def _render_elasticity_confidence_detail(elast: pd.DataFrame) -> None:
     )
 
     st.dataframe(
-        filtered.sort_values(
-            "confidence", key=lambda c: c.map({"high": 0, "medium": 1, "low": 2})
-        ),
+        filtered.sort_values("confidence", key=lambda c: c.map({"high": 0, "medium": 1, "low": 2})),
         use_container_width=True,
         hide_index=True,
     )
@@ -405,8 +429,12 @@ def _render_kvi_quadrant(kvi: pd.DataFrame) -> go.Figure:
             },
         )
     )
-    fig.add_vline(x=x_thr, line_dash="dash", line_color="#888888", annotation_text="median revenue-share")
-    fig.add_hline(y=y_thr, line_dash="dash", line_color="#888888", annotation_text="median KVI score")
+    fig.add_vline(
+        x=x_thr, line_dash="dash", line_color="#888888", annotation_text="median revenue-share"
+    )
+    fig.add_hline(
+        y=y_thr, line_dash="dash", line_color="#888888", annotation_text="median KVI score"
+    )
     fig.update_layout(
         xaxis={"title": "Revenue Share of Category"},
         yaxis={"title": "KVI Score (0-1)"},
@@ -418,11 +446,15 @@ def _render_kvi_quadrant(kvi: pd.DataFrame) -> go.Figure:
 def render(df: pd.DataFrame) -> None:
     st.subheader(":material/price_check: Pricing & Elasticity")
 
-    df, category_inferred = enrich_with_categories(df)
+    with st.spinner("Preparing data..."):
+        df, category_inferred = cached_enrich_categories(df)
     if category_inferred:
-        st.info("A `category` column was not supplied; categories were inferred from product descriptions (TF-IDF + KMeans).")
+        st.info(
+            "A `category` column was not supplied; categories were inferred from product descriptions (TF-IDF + KMeans)."
+        )
 
-    analysis = run_pricing_analysis(df, min_periods=5)
+    with st.spinner("Computing pricing analysis (cached)..."):
+        analysis = run_cached_pricing_analysis(df, min_periods=5)
 
     st.subheader(":material/signal_cellular_alt: Signal")
     _render_scorecard(analysis)
@@ -453,8 +485,12 @@ def render(df: pd.DataFrame) -> None:
     st.subheader(":material/task_alt: Action — Ranked decisions")
     render_opportunity_table(analysis.opportunities)
 
-    with st.expander("Detail — elasticity CI, KVI drivers, price curves, decision cards", expanded=False):
-        detail_tab1, detail_tab2, detail_tab3, detail_tab4 = st.tabs(["Elasticity", "KVI Scores", "Price Curves", "Decision Cards"])
+    with st.expander(
+        "Detail — elasticity CI, KVI drivers, price curves, decision cards", expanded=False
+    ):
+        detail_tab1, detail_tab2, detail_tab3, detail_tab4 = st.tabs(
+            ["Elasticity", "KVI Scores", "Price Curves", "Decision Cards"]
+        )
         with detail_tab1:
             _render_elasticity_confidence_detail(analysis.elasticity)
         with detail_tab2:
@@ -501,14 +537,16 @@ def render(df: pd.DataFrame) -> None:
             else:
                 st.subheader("Product-Level Pricing Decision Cards")
                 st.caption("Select an SKU to view its complete pricing decision summary.")
-                
+
                 # Get SKUs with decision data
                 skus_with_decisions = []
                 if not analysis.decision_matrix.empty:
                     skus_with_decisions = analysis.decision_matrix["stockcode"].tolist()
-                
+
                 if skus_with_decisions:
-                    selected_sku = st.selectbox("Select SKU", skus_with_decisions, key="decision_card_sku")
+                    selected_sku = st.selectbox(
+                        "Select SKU", skus_with_decisions, key="decision_card_sku"
+                    )
                     render_pricing_decision_card(
                         stockcode=selected_sku,
                         kvi_data=analysis.kvi,

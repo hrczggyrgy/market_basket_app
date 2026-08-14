@@ -75,8 +75,18 @@ def compute_pair_trend(
     shared = pivot[(pivot[product_a] > 0) & (pivot[product_b] > 0)]
     if shared.empty:
         return pd.DataFrame(columns=["period", "cooccurrence"])
-    periods = both[both["transaction_id"].isin(shared["transaction_id"])].set_index("transaction_id")
-    trend = periods["date"].groupby(periods.index).first().dt.to_period(period).astype(str).value_counts().sort_index()
+    periods = both[both["transaction_id"].isin(shared["transaction_id"])].set_index(
+        "transaction_id"
+    )
+    trend = (
+        periods["date"]
+        .groupby(periods.index)
+        .first()
+        .dt.to_period(period)
+        .astype(str)
+        .value_counts()
+        .sort_index()
+    )
     return pd.DataFrame({"period": trend.index, "cooccurrence": trend.values})
 
 
@@ -107,14 +117,18 @@ def compute_pair_centrality(
 
     pagerank = nx.pagerank(graph, weight="weight")
     betweenness = nx.betweenness_centrality(graph, weight="weight")
-    return pd.DataFrame(
-        {
-            "stockcode": list(graph.nodes()),
-            "pagerank": [pagerank.get(n, 0.0) for n in graph.nodes()],
-            "betweenness": [betweenness.get(n, 0.0) for n in graph.nodes()],
-            "degree": [graph.degree(n) for n in graph.nodes()],
-        }
-    ).sort_values("pagerank", ascending=False).reset_index(drop=True)
+    return (
+        pd.DataFrame(
+            {
+                "stockcode": list(graph.nodes()),
+                "pagerank": [pagerank.get(n, 0.0) for n in graph.nodes()],
+                "betweenness": [betweenness.get(n, 0.0) for n in graph.nodes()],
+                "degree": [graph.degree(n) for n in graph.nodes()],
+            }
+        )
+        .sort_values("pagerank", ascending=False)
+        .reset_index(drop=True)
+    )
 
 
 def _affinity_and_cooccurrence(
@@ -136,9 +150,7 @@ def _affinity_and_cooccurrence(
     cooccur = (M.T @ M.astype(np.int64)).astype(int)
     counts = M.sum(axis=0).astype(float)
     numerator = cooccur * n - np.outer(counts, counts)
-    denominator = np.sqrt(
-        np.outer(counts, n - counts) * np.outer(n - counts, counts)
-    )
+    denominator = np.sqrt(np.outer(counts, n - counts) * np.outer(n - counts, counts))
     phi = np.divide(
         numerator,
         denominator,
@@ -210,7 +222,9 @@ def get_top_affinity_pairs(
             )
     pairs = pd.DataFrame(rows)
     if pairs.empty:
-        return check(pd.DataFrame(columns=list(AFFINITY_PAIRS.columns)), AFFINITY_PAIRS, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(AFFINITY_PAIRS.columns)), AFFINITY_PAIRS, allow_empty=True
+        )
     pairs = pairs[pairs["affinity"].ge(min_affinity)]
     pairs = pairs.sort_values("affinity", ascending=False).head(top_n).reset_index(drop=True)
     return check(pairs, AFFINITY_PAIRS)
@@ -226,12 +240,29 @@ def get_product_affinity_profile(
     mission_val: str | None = None,
 ) -> pd.DataFrame:
     """Top co-purchase partners for a single product."""
-    affinity = compute_affinity_matrix(df, min_cooccurrence=2, segment_col=segment_col, segment_val=segment_val, mission_col=mission_col, mission_val=mission_val)
+    affinity = compute_affinity_matrix(
+        df,
+        min_cooccurrence=2,
+        segment_col=segment_col,
+        segment_val=segment_val,
+        mission_col=mission_col,
+        mission_val=mission_val,
+    )
     if product not in affinity.index:
-        return check(pd.DataFrame(columns=list(AFFINITY_PAIRS.columns)), AFFINITY_PAIRS, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(AFFINITY_PAIRS.columns)), AFFINITY_PAIRS, allow_empty=True
+        )
     row = affinity.loc[product].drop(labels=[product]).dropna().sort_values(ascending=False)
     partners = row.head(top_n).index.tolist()
-    pairs = get_top_affinity_pairs(df, top_n=10_000, min_cooccurrence=2, segment_col=segment_col, segment_val=segment_val, mission_col=mission_col, mission_val=mission_val)
+    pairs = get_top_affinity_pairs(
+        df,
+        top_n=10_000,
+        min_cooccurrence=2,
+        segment_col=segment_col,
+        segment_val=segment_val,
+        mission_col=mission_col,
+        mission_val=mission_val,
+    )
     mask = ((pairs["product_a"] == product) & pairs["product_b"].isin(partners)) | (
         (pairs["product_b"] == product) & pairs["product_a"].isin(partners)
     )

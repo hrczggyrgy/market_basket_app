@@ -125,7 +125,9 @@ def render_bar_with_ci(
     )
 
     if color and color in df_sorted.columns:
-        marker_color = df_sorted[color].map(color_discrete_map) if color_discrete_map else PALETTE[0]
+        marker_color = (
+            df_sorted[color].map(color_discrete_map) if color_discrete_map else PALETTE[0]
+        )
     else:
         marker_color = PALETTE[0]
 
@@ -198,7 +200,11 @@ def render_line_with_ci(
     if color and color in df_sorted.columns:
         groups = df_sorted.groupby(color)
         for i, (name, group) in enumerate(groups):
-            line_color = color_discrete_map.get(name, PALETTE[i % len(PALETTE)]) if color_discrete_map else PALETTE[i % len(PALETTE)]
+            line_color = (
+                color_discrete_map.get(name, PALETTE[i % len(PALETTE)])
+                if color_discrete_map
+                else PALETTE[i % len(PALETTE)]
+            )
             group = group.sort_values(x_col)
 
             # CI band

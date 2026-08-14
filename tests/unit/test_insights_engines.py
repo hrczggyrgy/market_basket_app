@@ -62,7 +62,9 @@ def test_overview_insights_contract(sample_df: pd.DataFrame) -> None:
 
 
 def test_overview_insights_empty() -> None:
-    empty = pd.DataFrame(columns=["date", "customer_id", "transaction_id", "stockcode", "price", "quantity"])
+    empty = pd.DataFrame(
+        columns=["date", "customer_id", "transaction_id", "stockcode", "price", "quantity"]
+    )
     insights = generate_overview_insights(empty)
     _CONTRACT.validate(insights, allow_empty=True)
 
@@ -88,7 +90,9 @@ def test_switching_insights_empty() -> None:
 
 def test_switching_opportunities() -> None:
     sdp = _sdp_df()
-    opps = generate_switching_opportunities(sdp, revenue_by_product=pd.Series({"A": 100.0, "B": 200.0, "C": 50.0, "D": 40.0}))
+    opps = generate_switching_opportunities(
+        sdp, revenue_by_product=pd.Series({"A": 100.0, "B": 200.0, "C": 50.0, "D": 40.0})
+    )
     OPPORTUNITY_LIST.validate(opps)
     assert not opps.empty
     assert set(opps["domain"]) == {"switching"}
@@ -126,7 +130,10 @@ def test_classify_promo_score_buckets() -> None:
         }
     )
     assert rows.apply(classify_promo_score, axis=1).tolist() == [
-        "WIN", "MIXED", "INEFFECTIVE", "DESTROYS_VALUE",
+        "WIN",
+        "MIXED",
+        "INEFFECTIVE",
+        "DESTROYS_VALUE",
     ]
 
 
@@ -291,7 +298,13 @@ def test_decision_center_contract(sample_df: pd.DataFrame) -> None:
     assert analysis.n_signals == len(analysis.insights)
     assert analysis.n_opportunities == len(analysis.opportunities)
     assert set(analysis.insights["domain"]) <= {
-        "overview", "pricing", "product", "switching", "promotion", "customer", "assortment",
+        "overview",
+        "pricing",
+        "product",
+        "switching",
+        "promotion",
+        "customer",
+        "assortment",
     }
     assert analysis.domains_covered  # at least one engine fired
 

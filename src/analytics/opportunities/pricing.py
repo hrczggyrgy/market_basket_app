@@ -75,7 +75,11 @@ def generate_pricing_opportunities(
         return opportunities_to_dataframe(opportunities)
 
     for decision, (action, rationale) in _ACTION_TEMPLATES.items():
-        grp = work[work["decision"] == decision].sort_values("total_revenue", ascending=False).head(top_n)
+        grp = (
+            work[work["decision"] == decision]
+            .sort_values("total_revenue", ascending=False)
+            .head(top_n)
+        )
         for _, row in grp.iterrows():
             value: float | None = None
             if decision == "price_lever" and pd.notna(row["abs_elasticity"]):
@@ -85,7 +89,9 @@ def generate_pricing_opportunities(
             elif decision in ("invest", "protect"):
                 value = float(row["total_revenue"])
 
-            confidence = row["elasticity_confidence"] if pd.notna(row["elasticity_confidence"]) else "medium"
+            confidence = (
+                row["elasticity_confidence"] if pd.notna(row["elasticity_confidence"]) else "medium"
+            )
 
             opportunities.append(
                 Opportunity(
@@ -106,5 +112,7 @@ def generate_pricing_opportunities(
 
     table = opportunities_to_dataframe(opportunities)
     if not table.empty:
-        table = table.sort_values("value", ascending=False, na_position="last").reset_index(drop=True)
+        table = table.sort_values("value", ascending=False, na_position="last").reset_index(
+            drop=True
+        )
     return check(table, OPPORTUNITY_LIST, allow_empty=True)

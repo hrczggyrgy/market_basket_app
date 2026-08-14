@@ -126,7 +126,9 @@ def test_value_validator_warning_severity() -> None:
     c = DataContract(
         name="t",
         columns=("a",),
-        validators=(ValueValidator("a", lambda s: s >= 0, "a must be non-negative", severity="warning"),),
+        validators=(
+            ValueValidator("a", lambda s: s >= 0, "a must be non-negative", severity="warning"),
+        ),
     )
     df, warnings = c.validate(pd.DataFrame({"a": [-1]}))
     assert warnings and "a must be non-negative" in warnings[0]

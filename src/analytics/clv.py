@@ -78,7 +78,9 @@ def predict_clv_bg_nbd(
         calibration["frequency"], calibration["monetary_value"]
     )
     discount = _discount_factor(prediction_horizon_days, discount_rate_pct)
-    calibration["predicted_clv"] = calibration["predicted_purchases"] * calibration["expected_avg_value"] * discount
+    calibration["predicted_clv"] = (
+        calibration["predicted_purchases"] * calibration["expected_avg_value"] * discount
+    )
     calibration["p_alive"] = bgf.conditional_probability_alive(
         calibration["frequency"], calibration["recency"], calibration["T"]
     )
@@ -109,7 +111,16 @@ def predict_clv_bg_nbd(
     table["clv_segment"] = _segment_labels(table["predicted_clv"])
     predictions = check(table, CLV_PREDICTIONS)
     diagnostics = check(
-        _build_diagnostics(bgf, ggf, len(calibration), len(summary), bg_penalizer, gg_penalizer, purchases, discount_rate_pct),
+        _build_diagnostics(
+            bgf,
+            ggf,
+            len(calibration),
+            len(summary),
+            bg_penalizer,
+            gg_penalizer,
+            purchases,
+            discount_rate_pct,
+        ),
         CLV_DIAGNOSTICS,
     )
     return predictions, diagnostics
@@ -133,10 +144,11 @@ def _discount_factor(horizon_days: int, annual_rate_pct: float) -> float:
     # Validate input ranges
     if annual_rate_pct > 100:
         import warnings as _warnings
+
         _warnings.warn(
             f"Annual discount rate {annual_rate_pct}% exceeds 100%. Using 100% cap.",
             UserWarning,
-            stacklevel=2
+            stacklevel=2,
         )
         annual_rate_pct = 100.0
 
@@ -157,10 +169,11 @@ def _discount_factor(horizon_days: int, annual_rate_pct: float) -> float:
         return factor
     except (OverflowError, ZeroDivisionError) as e:
         import warnings as _warnings
+
         _warnings.warn(
             f"Numerical instability in discount factor calculation: {e}. Using 1.0 (no discounting).",
             UserWarning,
-            stacklevel=2
+            stacklevel=2,
         )
         return 1.0
 
@@ -196,7 +209,7 @@ def _bootstrap_clv_ci(
                 f"Bootstrap CI: Time budget ({time_budget_s}s) exhausted after {successful_resamples}/{n_resamples} resamples. "
                 "Consider increasing time_budget_s for more accurate confidence intervals.",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             break
         idx = rng.integers(0, n_customers, size=n_customers)
@@ -224,7 +237,7 @@ def _bootstrap_clv_ci(
             f"Bootstrap CI: Only {successful_resamples}/{n_resamples} resamples succeeded. "
             "Confidence intervals may be unreliable.",
             UserWarning,
-            stacklevel=2
+            stacklevel=2,
         )
 
     lower, upper, status = [], [], []
@@ -244,7 +257,11 @@ def _bootstrap_clv_ci(
             lower.append(np.nan)
             upper.append(np.nan)
             status.append("fit_failed")
-    return pd.Series(lower, index=calibration.index), pd.Series(upper, index=calibration.index), pd.Series(status, index=calibration.index)
+    return (
+        pd.Series(lower, index=calibration.index),
+        pd.Series(upper, index=calibration.index),
+        pd.Series(status, index=calibration.index),
+    )
 
 
 def _fit_bg_nbd(calibration: pd.DataFrame) -> tuple[BetaGeoFitter, float]:
@@ -324,7 +341,12 @@ def _build_diagnostics(
             pearson_corr, spearman_corr = _monetary_frequency_correlations(customers)
             rows.append(("gg_freq_value_pearson", float(pearson_corr)))
             rows.append(("gg_freq_value_spearman", float(spearman_corr)))
-            rows.append(("gg_independence_status", float(_gg_independence_status(pearson_corr, spearman_corr))))
+            rows.append(
+                (
+                    "gg_independence_status",
+                    float(_gg_independence_status(pearson_corr, spearman_corr)),
+                )
+            )
             if len(customers) >= 10:
                 stationarity = _avg_order_value_stationarity(purchases)
                 if np.isfinite(stationarity):
@@ -416,12 +438,16 @@ def compute_clv_customer_df(
         .reset_index()
     )
     metrics["avg_order_value"] = metrics["total_revenue"] / metrics["frequency"].replace(0, np.nan)
-    metrics["customer_lifetime_days"] = (metrics["last_purchase"] - metrics["first_purchase"]).dt.days
+    metrics["customer_lifetime_days"] = (
+        metrics["last_purchase"] - metrics["first_purchase"]
+    ).dt.days
     metrics["recency_days"] = (df["date"].max() - metrics["last_purchase"]).dt.days
 
     entropy = compute_customer_entropy(df)[["customer_id", "entropy", "normalized_entropy"]]
 
-    predictions = predictions.drop(columns=["frequency", "recency", "T", "monetary_value"], errors="ignore")
+    predictions = predictions.drop(
+        columns=["frequency", "recency", "T", "monetary_value"], errors="ignore"
+    )
     result = predictions.merge(metrics, on="customer_id", how="left")
     result = result.merge(entropy, on="customer_id", how="left")
 

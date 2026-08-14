@@ -72,13 +72,53 @@ def _two_week_fixture() -> pd.DataFrame:
     w2 = pd.date_range("2025-01-06", periods=5, freq="D")
     rows = []
     for i, dd in enumerate(w1):
-        rows.append({"date": dd, "stockcode": "A", "transaction_id": f"T{i}", "product": "p", "customer_id": "c", "price": 10.0, "quantity": 1})
+        rows.append(
+            {
+                "date": dd,
+                "stockcode": "A",
+                "transaction_id": f"T{i}",
+                "product": "p",
+                "customer_id": "c",
+                "price": 10.0,
+                "quantity": 1,
+            }
+        )
     for i, dd in enumerate(w2):
-        rows.append({"date": dd, "stockcode": "A", "transaction_id": f"T{i + 10}", "product": "p", "customer_id": "c", "price": 15.0, "quantity": 1})
+        rows.append(
+            {
+                "date": dd,
+                "stockcode": "A",
+                "transaction_id": f"T{i + 10}",
+                "product": "p",
+                "customer_id": "c",
+                "price": 15.0,
+                "quantity": 1,
+            }
+        )
     for i in range(3):
-        rows.append({"date": w1[i], "stockcode": "B", "transaction_id": f"B{i}", "product": "p", "customer_id": "c", "price": 10.0, "quantity": 1})
+        rows.append(
+            {
+                "date": w1[i],
+                "stockcode": "B",
+                "transaction_id": f"B{i}",
+                "product": "p",
+                "customer_id": "c",
+                "price": 10.0,
+                "quantity": 1,
+            }
+        )
     for i in range(2):
-        rows.append({"date": w2[i], "stockcode": "C", "transaction_id": f"C{i}", "product": "p", "customer_id": "c", "price": 10.0, "quantity": 1})
+        rows.append(
+            {
+                "date": w2[i],
+                "stockcode": "C",
+                "transaction_id": f"C{i}",
+                "product": "p",
+                "customer_id": "c",
+                "price": 10.0,
+                "quantity": 1,
+            }
+        )
     return pd.DataFrame(rows)
 
 

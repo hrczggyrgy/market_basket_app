@@ -39,9 +39,7 @@ def generate_retention_opportunities(
     work["p_alive"] = pd.to_numeric(work["p_alive"], errors="coerce")
 
     at_risk = work[
-        work["p_alive"].notna()
-        & (work["predicted_clv"].notna())
-        & (work["p_alive"] < p_alive_risk)
+        work["p_alive"].notna() & (work["predicted_clv"].notna()) & (work["p_alive"] < p_alive_risk)
     ]
     at_risk = at_risk.sort_values("predicted_clv", ascending=False).head(top_n)
 
@@ -69,5 +67,7 @@ def generate_retention_opportunities(
 
     table = opportunities_to_dataframe(opportunities)
     if not table.empty:
-        table = table.sort_values("value", ascending=False, na_position="last").reset_index(drop=True)
+        table = table.sort_values("value", ascending=False, na_position="last").reset_index(
+            drop=True
+        )
     return check(table, OPPORTUNITY_LIST, allow_empty=True)

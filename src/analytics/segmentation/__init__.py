@@ -1,5 +1,5 @@
 """Customer Segmentation package.
- 
+
 Public API
 ----------
 - rfm: compute_rfm_features, rfm_segmentation
@@ -26,19 +26,19 @@ from src.analytics.segmentation.core import (
     MIN_CLUSTER_SIZE,
     _label_behavioral_clusters,
     _label_rfm_clusters,
+    calculate_segment_basket_metrics,
+    calculate_segment_concentration_metrics,
+    calculate_segment_distinctiveness,
+    calculate_segment_engagement_metrics,
+    calculate_segment_growth_metrics,
+    calculate_segment_price_behavior_metrics,
+    calculate_segment_retention_metrics,
+    calculate_segment_stability_score,
+    calculate_segment_value_metrics,
     compute_cluster_quality_metrics,
     compute_cluster_stability,
     format_quality_metrics,
     format_stability_metrics,
-    calculate_segment_value_metrics,
-    calculate_segment_engagement_metrics,
-    calculate_segment_retention_metrics,
-    calculate_segment_basket_metrics,
-    calculate_segment_price_behavior_metrics,
-    calculate_segment_growth_metrics,
-    calculate_segment_concentration_metrics,
-    calculate_segment_stability_score,
-    calculate_segment_distinctiveness,
 )
 from src.analytics.segmentation.rfm import compute_rfm_features, rfm_segmentation
 from src.analytics.segmentation.survival import kaplan_meier_estimates, survival_analysis

@@ -18,10 +18,26 @@ from src.ui.registry import ModeSpec
 def _render_scorecard(analysis: object) -> None:
     render_metric_row(
         [
-            {"label": "Today's Signals", "value": str(analysis.n_signals), "help": "Structured insights across modules."},
-            {"label": "Ranked decisions", "value": str(analysis.n_opportunities), "help": "Actionable opportunities, value-ranked."},
-            {"label": "Illustrative opportunity value", "value": f"€{analysis.total_opportunity_value:,.0f}", "help": "Sum of opportunity values (see each card for semantics)."},
-            {"label": "Open risks", "value": str(analysis.n_risks), "help": "Insights flagged as risks."},
+            {
+                "label": "Today's Signals",
+                "value": str(analysis.n_signals),
+                "help": "Structured insights across modules.",
+            },
+            {
+                "label": "Ranked decisions",
+                "value": str(analysis.n_opportunities),
+                "help": "Actionable opportunities, value-ranked.",
+            },
+            {
+                "label": "Illustrative opportunity value",
+                "value": f"€{analysis.total_opportunity_value:,.0f}",
+                "help": "Sum of opportunity values (see each card for semantics).",
+            },
+            {
+                "label": "Open risks",
+                "value": str(analysis.n_risks),
+                "help": "Insights flagged as risks.",
+            },
         ]
     )
 
@@ -35,11 +51,13 @@ def render(df: pd.DataFrame) -> None:
 
     with st.expander("Engines", expanded=False):
         include_clv = st.checkbox(
-            "Include customer CLV engine (slow)", value=False,
+            "Include customer CLV engine (slow)",
+            value=False,
             help="Runs the BG/NBD model fit; adds retention opportunities.",
         )
         include_assortment = st.checkbox(
-            "Include assortment scenario engine (slow)", value=False,
+            "Include assortment scenario engine (slow)",
+            value=False,
             help="Runs the assortment scenario simulator.",
         )
 

@@ -35,7 +35,11 @@ def test_category_kpis_contract_and_totals(sample_df: pd.DataFrame) -> None:
 
 
 def test_category_kpis_empty_input() -> None:
-    table = compute_category_kpis(pd.DataFrame(columns=["date", "price", "quantity", "transaction_id", "customer_id", "category"]))
+    table = compute_category_kpis(
+        pd.DataFrame(
+            columns=["date", "price", "quantity", "transaction_id", "customer_id", "category"]
+        )
+    )
     assert table.empty
 
 
@@ -91,7 +95,11 @@ def test_category_kpis_contract_and_totals(sample_df: pd.DataFrame) -> None:
 
 
 def test_category_kpis_empty_input() -> None:
-    table = compute_category_kpis(pd.DataFrame(columns=["date", "price", "quantity", "transaction_id", "customer_id", "category"]))
+    table = compute_category_kpis(
+        pd.DataFrame(
+            columns=["date", "price", "quantity", "transaction_id", "customer_id", "category"]
+        )
+    )
     assert table.empty
 
 
@@ -141,7 +149,9 @@ def test_enrich_with_categories_infers_when_missing(sample_df: pd.DataFrame) -> 
 def test_enrich_with_categories_empty_or_no_product() -> None:
     df, was_inferred = enrich_with_categories(pd.DataFrame(), n_categories=3)
     assert not was_inferred
-    df2, was2 = enrich_with_categories(pd.DataFrame({"stockcode": ["A"], "category": ["X"]}), n_categories=3)
+    df2, was2 = enrich_with_categories(
+        pd.DataFrame({"stockcode": ["A"], "category": ["X"]}), n_categories=3
+    )
     assert not was2
     assert "category" in df2.columns
 
@@ -164,33 +174,35 @@ def test_compute_category_roles_contract_and_classification(sample_df: pd.DataFr
 def test_compute_category_roles_synthetic_fixture() -> None:
     """Test with a synthetic fixture designed to produce all 4 roles."""
     import numpy as np
-    
+
     rng = np.random.default_rng(42)
     n_customers = 200
     n_days = 730  # Two full years: seasonality requires >= 2 annual cycles
-    
+
     categories = ["Destination_Cat", "Routine_Cat", "Seasonal_Cat", "Convenience_Cat"]
     products = []
     for i, cat in enumerate(categories):
         for j in range(5):
-            products.append({
-                "stockcode": f"SKU{i:02d}{j:02d}",
-                "product": f"{cat} Prod{j}",
-                "category": cat,
-            })
-    
+            products.append(
+                {
+                    "stockcode": f"SKU{i:02d}{j:02d}",
+                    "product": f"{cat} Prod{j}",
+                    "category": cat,
+                }
+            )
+
     products_df = pd.DataFrame(products)
-    
+
     # Generate transactions
     rows = []
     txn_id = 0
     days = pd.date_range("2024-01-01", periods=n_days, freq="D")
-    
+
     # Destination: high trip generation, low CV, low seasonality - appears as dominant in many baskets EVERY day
     # Routine: moderate trip gen, low CV, low seasonality - consistent weekly
     # Seasonal: low trip gen, moderate CV, HIGH seasonality (summer only)
     # Convenience: low trip gen, high attachment to Destination - appears WITH Destination
-    
+
     for day_idx, date in enumerate(days):
         day_of_year = day_idx % 365  # seasonal pattern repeats across years
         for cust in range(n_customers):
@@ -198,97 +210,196 @@ def test_compute_category_roles_synthetic_fixture() -> None:
             if rng.random() < 0.25:
                 txn_id += 1
                 for cat in ["Destination_Cat"]:
-                    for prod in products_df[products_df["category"] == cat]["product"].sample(2, random_state=rng).values:
-                        rows.append((
-                            date, f"TXN{txn_id}", f"SKU{cat[:3]}{rng.integers(0,5):02d}",
-                            prod, f"CUST{cust:04d}",
-                            rng.uniform(10, 20), rng.integers(1, 3),
-                            cat, "Brand", "M", "Flavor", False, 5.0
-                        ))
-            
+                    for prod in (
+                        products_df[products_df["category"] == cat]["product"]
+                        .sample(2, random_state=rng)
+                        .values
+                    ):
+                        rows.append(
+                            (
+                                date,
+                                f"TXN{txn_id}",
+                                f"SKU{cat[:3]}{rng.integers(0, 5):02d}",
+                                prod,
+                                f"CUST{cust:04d}",
+                                rng.uniform(10, 20),
+                                rng.integers(1, 3),
+                                cat,
+                                "Brand",
+                                "M",
+                                "Flavor",
+                                False,
+                                5.0,
+                            )
+                        )
+
             # Routine - consistent weekly purchases (only on weekdays, consistent) - LOWER frequency
             if rng.random() < 0.08 and date.weekday() < 5:
                 txn_id += 1
                 for cat in ["Routine_Cat"]:
-                    for prod in products_df[products_df["category"] == cat]["product"].sample(1, random_state=rng).values:
-                        rows.append((
-                            date, f"TXN{txn_id}", f"SKU{cat[:3]}{rng.integers(0,5):02d}",
-                            prod, f"CUST{cust:04d}",
-                            rng.uniform(5, 15), rng.integers(1, 2),
-                            cat, "Brand", "M", "Flavor", False, 3.0
-                        ))
-            
+                    for prod in (
+                        products_df[products_df["category"] == cat]["product"]
+                        .sample(1, random_state=rng)
+                        .values
+                    ):
+                        rows.append(
+                            (
+                                date,
+                                f"TXN{txn_id}",
+                                f"SKU{cat[:3]}{rng.integers(0, 5):02d}",
+                                prod,
+                                f"CUST{cust:04d}",
+                                rng.uniform(5, 15),
+                                rng.integers(1, 2),
+                                cat,
+                                "Brand",
+                                "M",
+                                "Flavor",
+                                False,
+                                3.0,
+                            )
+                        )
+
             # Seasonal - ONLY in summer (June-August), very strong seasonal pattern
             is_summer = 150 < day_of_year < 250
             seasonal_mult = 1.0 if is_summer else 0.01  # Almost zero in off-season
             if rng.random() < 0.2 * seasonal_mult:
                 txn_id += 1
                 for cat in ["Seasonal_Cat"]:
-                    for prod in products_df[products_df["category"] == cat]["product"].sample(1, random_state=rng).values:
-                        rows.append((
-                            date, f"TXN{txn_id}", f"SKU{cat[:3]}{rng.integers(0,5):02d}",
-                            prod, f"CUST{cust:04d}",
-                            rng.uniform(8, 18), rng.integers(1, 2),
-                            cat, "Brand", "M", "Flavor", False, 4.0
-                        ))
-            
+                    for prod in (
+                        products_df[products_df["category"] == cat]["product"]
+                        .sample(1, random_state=rng)
+                        .values
+                    ):
+                        rows.append(
+                            (
+                                date,
+                                f"TXN{txn_id}",
+                                f"SKU{cat[:3]}{rng.integers(0, 5):02d}",
+                                prod,
+                                f"CUST{cust:04d}",
+                                rng.uniform(8, 18),
+                                rng.integers(1, 2),
+                                cat,
+                                "Brand",
+                                "M",
+                                "Flavor",
+                                False,
+                                4.0,
+                            )
+                        )
+
             # Convenience - ONLY appears WITH Destination (high attachment)
             if rng.random() < 0.12:
                 txn_id += 1
                 # Add a Destination item first
-                dest_prod = products_df[products_df["category"] == "Destination_Cat"]["product"].sample(1, random_state=rng).values[0]
-                rows.append((
-                    date, f"TXN{txn_id}", f"SKUDest{rng.integers(0,5):02d}",
-                    dest_prod, f"CUST{cust:04d}",
-                    rng.uniform(10, 20), rng.integers(1, 2),
-                    "Destination_Cat", "Brand", "M", "Flavor", False, 5.0
-                ))
+                dest_prod = (
+                    products_df[products_df["category"] == "Destination_Cat"]["product"]
+                    .sample(1, random_state=rng)
+                    .values[0]
+                )
+                rows.append(
+                    (
+                        date,
+                        f"TXN{txn_id}",
+                        f"SKUDest{rng.integers(0, 5):02d}",
+                        dest_prod,
+                        f"CUST{cust:04d}",
+                        rng.uniform(10, 20),
+                        rng.integers(1, 2),
+                        "Destination_Cat",
+                        "Brand",
+                        "M",
+                        "Flavor",
+                        False,
+                        5.0,
+                    )
+                )
                 # Then add Convenience
-                for prod in products_df[products_df["category"] == "Convenience_Cat"]["product"].sample(1, random_state=rng).values:
-                    rows.append((
-                        date, f"TXN{txn_id}", f"SKUConv{rng.integers(0,5):02d}",
-                        prod, f"CUST{cust:04d}",
-                        rng.uniform(2, 8), rng.integers(1, 2),
-                        "Convenience_Cat", "Brand", "M", "Flavor", False, 1.5
-                    ))
-    
-    df = pd.DataFrame(rows, columns=[
-        "date", "transaction_id", "stockcode", "product",
-        "customer_id", "price", "quantity", "category", "brand",
-        "size", "flavor", "promo_flag", "cost"
-    ])
+                for prod in (
+                    products_df[products_df["category"] == "Convenience_Cat"]["product"]
+                    .sample(1, random_state=rng)
+                    .values
+                ):
+                    rows.append(
+                        (
+                            date,
+                            f"TXN{txn_id}",
+                            f"SKUConv{rng.integers(0, 5):02d}",
+                            prod,
+                            f"CUST{cust:04d}",
+                            rng.uniform(2, 8),
+                            rng.integers(1, 2),
+                            "Convenience_Cat",
+                            "Brand",
+                            "M",
+                            "Flavor",
+                            False,
+                            1.5,
+                        )
+                    )
+
+    df = pd.DataFrame(
+        rows,
+        columns=[
+            "date",
+            "transaction_id",
+            "stockcode",
+            "product",
+            "customer_id",
+            "price",
+            "quantity",
+            "category",
+            "brand",
+            "size",
+            "flavor",
+            "promo_flag",
+            "cost",
+        ],
+    )
     df["date"] = pd.to_datetime(df["date"])
-    
+
     roles = compute_category_roles(df)
     check(roles, CATEGORY_ROLES)
-    
+
     # Should have all 4 categories
     assert set(roles["category"]) == set(categories)
-    
+
     # Print for debugging
     print("Roles:")
-    print(roles[["category", "role", "trip_generation_rate", "demand_cv", "seasonality_amplitude", "attachment_rate"]].to_string())
-    
+    print(
+        roles[
+            [
+                "category",
+                "role",
+                "trip_generation_rate",
+                "demand_cv",
+                "seasonality_amplitude",
+                "attachment_rate",
+            ]
+        ].to_string()
+    )
+
     # Check roles are assigned (at least 3 of 4 roles should appear given the synthetic design)
     unique_roles = set(roles["role"].unique())
     assert len(unique_roles) >= 3, f"Expected at least 3 roles, got {unique_roles}"
-    
+
     # Destination should have high trip_generation_rate and low demand_cv
     dest_row = roles[roles["category"] == "Destination_Cat"].iloc[0]
     assert dest_row["role"] == "Destination"
     assert dest_row["trip_generation_rate"] > 0.15
     assert dest_row["demand_cv"] < 0.25
-    
+
     # Seasonal should have high seasonality
     seas_row = roles[roles["category"] == "Seasonal_Cat"].iloc[0]
     assert seas_row["role"] == "Seasonal"
     assert seas_row["seasonality_amplitude"] > 0.50
-    
+
     # Convenience should have high attachment to Destination
     conv_row = roles[roles["category"] == "Convenience_Cat"].iloc[0]
     assert conv_row["role"] == "Convenience"
     assert conv_row["attachment_rate"] > 0.20
-    
+
     # Routine should be the fallback
     routine_row = roles[roles["category"] == "Routine_Cat"].iloc[0]
     assert routine_row["role"] == "Routine"
@@ -305,18 +416,43 @@ def _tiny_two_role_fixture() -> pd.DataFrame:
         if 60 <= d.dayofyear <= 240:
             for _ in range(10):
                 rows.append(
-                    (d, f"T{rng.integers(0, 99999)}", f"A{rng.integers(0, 5)}", "a",
-                     f"C{rng.integers(0, 30)}", round(rng.uniform(3, 9), 2), 1, "CatA")
+                    (
+                        d,
+                        f"T{rng.integers(0, 99999)}",
+                        f"A{rng.integers(0, 5)}",
+                        "a",
+                        f"C{rng.integers(0, 30)}",
+                        round(rng.uniform(3, 9), 2),
+                        1,
+                        "CatA",
+                    )
                 )
         if rng.random() < 0.18:
             rows.append(
-                (d, f"T{rng.integers(0, 99999)}", f"B{rng.integers(0, 5)}", "b",
-                 f"C{rng.integers(0, 30)}", round(rng.uniform(3, 9), 2), 1, "CatB")
+                (
+                    d,
+                    f"T{rng.integers(0, 99999)}",
+                    f"B{rng.integers(0, 5)}",
+                    "b",
+                    f"C{rng.integers(0, 30)}",
+                    round(rng.uniform(3, 9), 2),
+                    1,
+                    "CatB",
+                )
             )
-    df = pd.DataFrame(rows, columns=[
-        "date", "transaction_id", "stockcode", "product",
-        "customer_id", "price", "quantity", "category",
-    ])
+    df = pd.DataFrame(
+        rows,
+        columns=[
+            "date",
+            "transaction_id",
+            "stockcode",
+            "product",
+            "customer_id",
+            "price",
+            "quantity",
+            "category",
+        ],
+    )
     df["date"] = pd.to_datetime(df["date"])
     return df
 
@@ -370,7 +506,9 @@ def test_category_trend_contract_and_penetration(sample_df: pd.DataFrame) -> Non
 
 
 def test_category_trend_empty_input() -> None:
-    trend = compute_category_trend(pd.DataFrame(columns=["date", "price", "quantity", "transaction_id", "category"]))
+    trend = compute_category_trend(
+        pd.DataFrame(columns=["date", "price", "quantity", "transaction_id", "category"])
+    )
     assert trend.empty
     check(trend, CATEGORY_TREND, allow_empty=True)
 
@@ -424,7 +562,9 @@ def test_assortment_efficiency_labels_sanity(sample_df: pd.DataFrame) -> None:
 
 
 def test_assortment_efficiency_empty_input() -> None:
-    eff = compute_assortment_efficiency(pd.DataFrame(columns=["date", "price", "quantity", "stockcode"]))
+    eff = compute_assortment_efficiency(
+        pd.DataFrame(columns=["date", "price", "quantity", "stockcode"])
+    )
     assert eff.empty
     check(eff, ASSORTMENT_EFFICIENCY, allow_empty=True)
 
@@ -441,14 +581,14 @@ def test_growth_matrix_median_split() -> None:
     """Synthetic data across several weeks exercises the four median-split quadrants."""
     cats_profiles = [
         # (name, weekly_base, weekly_growth)  -> revenue share and growth spread
-        ("Cat0", 50, 5),   # high base, rising  -> star-ish
-        ("Cat1", 40, 4),   # high base, rising
+        ("Cat0", 50, 5),  # high base, rising  -> star-ish
+        ("Cat1", 40, 4),  # high base, rising
         ("Cat2", 60, -2),  # high base, falling -> cash cow
         ("Cat3", 45, -3),  # high base, falling
-        ("Cat4", 8, 6),    # low base, rising   -> question mark
-        ("Cat5", 6, 5),    # low base, rising
-        ("Cat6", 7, -4),   # low base, falling  -> dog
-        ("Cat7", 5, -5),   # low base, falling
+        ("Cat4", 8, 6),  # low base, rising   -> question mark
+        ("Cat5", 6, 5),  # low base, rising
+        ("Cat6", 7, -4),  # low base, falling  -> dog
+        ("Cat7", 5, -5),  # low base, falling
     ]
     weeks = pd.date_range("2024-01-01", periods=26, freq="W")
     tx_id = 0
@@ -495,6 +635,8 @@ def test_growth_matrix_median_split() -> None:
 
 
 def test_growth_matrix_empty_input() -> None:
-    gm = compute_category_growth_matrix(pd.DataFrame(columns=["date", "price", "quantity", "stockcode"]))
+    gm = compute_category_growth_matrix(
+        pd.DataFrame(columns=["date", "price", "quantity", "stockcode"])
+    )
     assert gm.empty
     check(gm, CATEGORY_GROWTH_MATRIX, allow_empty=True)

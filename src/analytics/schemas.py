@@ -144,6 +144,7 @@ def check(
     validated, warnings = c.validate(df, allow_empty=allow_empty, check_values=check_values)
     if warnings:
         import warnings as _warnings
+
         for w in warnings:
             _warnings.warn(w, UserWarning, stacklevel=2)
     return validated
@@ -161,6 +162,7 @@ def make_empty_result(
 # ---------------------------------------------------------------------------
 # Cross-contract referential integrity validators
 # ---------------------------------------------------------------------------
+
 
 def validate_referential_integrity(
     outputs: dict[str, pd.DataFrame],
@@ -192,9 +194,13 @@ def validate_referential_integrity(
         missing_from = set(dt["from_product"].unique()) - stockcodes
         missing_to = set(dt["to_product"].unique()) - stockcodes
         if missing_from:
-            warnings.append(f"demand_transference: {len(missing_from)} from_products not in transactions")
+            warnings.append(
+                f"demand_transference: {len(missing_from)} from_products not in transactions"
+            )
         if missing_to:
-            warnings.append(f"demand_transference: {len(missing_to)} to_products not in transactions")
+            warnings.append(
+                f"demand_transference: {len(missing_to)} to_products not in transactions"
+            )
 
     # Validate switching references
     if "switching_matrix" in outputs and not is_empty_result(outputs["switching_matrix"]):
@@ -202,7 +208,9 @@ def validate_referential_integrity(
         missing_from = set(sw["from_product"].unique()) - stockcodes
         missing_to = set(sw["to_product"].unique()) - stockcodes
         if missing_from:
-            warnings.append(f"switching_matrix: {len(missing_from)} from_products not in transactions")
+            warnings.append(
+                f"switching_matrix: {len(missing_from)} from_products not in transactions"
+            )
         if missing_to:
             warnings.append(f"switching_matrix: {len(missing_to)} to_products not in transactions")
 
@@ -224,14 +232,23 @@ def validate_referential_integrity(
             warnings.append(f"cdt_tree_products: {len(missing)} products not in transactions")
 
     # Validate customer-level outputs
-    for contract_name in ("customer_entropy", "rfm_features", "rfm_segments", "behavioral_features",
-                          "behavioral_segments", "clv_customer", "uplift_scores"):
+    for contract_name in (
+        "customer_entropy",
+        "rfm_features",
+        "rfm_segments",
+        "behavioral_features",
+        "behavioral_segments",
+        "clv_customer",
+        "uplift_scores",
+    ):
         if contract_name in outputs and not is_empty_result(outputs[contract_name]):
             df = outputs[contract_name]
             if "customer_id" in df.columns:
                 missing = set(df["customer_id"].unique()) - customer_ids
                 if missing:
-                    warnings.append(f"{contract_name}: {len(missing)} customer_ids not in transactions")
+                    warnings.append(
+                        f"{contract_name}: {len(missing)} customer_ids not in transactions"
+                    )
 
     return warnings
 
@@ -283,8 +300,12 @@ RULES = DataContract(
         ValueValidator("support", lambda s: (s > 0) & (s <= 1), "support must be in (0, 1]"),
         ValueValidator("confidence", lambda s: (s >= 0) & (s <= 1), "confidence must be in [0, 1]"),
         ValueValidator("lift", lambda s: s > 0, "lift must be positive"),
-        ValueValidator("lift_ci_lower", lambda s: s.isna() | (s > 0), "lift CI lower must be positive or NaN"),
-        ValueValidator("lift_ci_upper", lambda s: s.isna() | (s > 0), "lift CI upper must be positive or NaN"),
+        ValueValidator(
+            "lift_ci_lower", lambda s: s.isna() | (s > 0), "lift CI lower must be positive or NaN"
+        ),
+        ValueValidator(
+            "lift_ci_upper", lambda s: s.isna() | (s > 0), "lift CI upper must be positive or NaN"
+        ),
     ),
 )
 
@@ -379,8 +400,14 @@ LOYALTY_METRICS = DataContract(
     ),
     validators=(
         ValueValidator("n_transactions", lambda s: s > 0, "n_transactions must be positive"),
-        ValueValidator("repeat_purchase_rate", lambda s: (s >= 0) & (s <= 1), "repeat_purchase_rate must be in [0, 1]"),
-        ValueValidator("switching_rate", lambda s: (s >= 0) & (s <= 1), "switching_rate must be in [0, 1]"),
+        ValueValidator(
+            "repeat_purchase_rate",
+            lambda s: (s >= 0) & (s <= 1),
+            "repeat_purchase_rate must be in [0, 1]",
+        ),
+        ValueValidator(
+            "switching_rate", lambda s: (s >= 0) & (s <= 1), "switching_rate must be in [0, 1]"
+        ),
     ),
 )
 
@@ -473,9 +500,15 @@ SWITCHING_SUBSTITUTION = DataContract(
         "confidence",
     ),
     validators=(
-        ValueValidator("switch_rate", lambda s: (s >= 0) & (s <= 1), "switch_rate must be in [0, 1]"),
-        ValueValidator("switch_rate_ci_lower", lambda s: (s >= 0) & (s <= 1), "ci_lower must be in [0, 1]"),
-        ValueValidator("switch_rate_ci_upper", lambda s: (s >= 0) & (s <= 1), "ci_upper must be in [0, 1]"),
+        ValueValidator(
+            "switch_rate", lambda s: (s >= 0) & (s <= 1), "switch_rate must be in [0, 1]"
+        ),
+        ValueValidator(
+            "switch_rate_ci_lower", lambda s: (s >= 0) & (s <= 1), "ci_lower must be in [0, 1]"
+        ),
+        ValueValidator(
+            "switch_rate_ci_upper", lambda s: (s >= 0) & (s <= 1), "ci_upper must be in [0, 1]"
+        ),
         ValueValidator("revenue_at_risk", lambda s: s >= 0, "revenue_at_risk must be non-negative"),
         ValueValidator("recovery_proxy", lambda s: s >= 0, "recovery_proxy must be non-negative"),
         ValueValidator(
@@ -511,7 +544,9 @@ HIGH_VALUE_SWITCHING = DataContract(
     validators=(
         ValueValidator("high_value_customers_switched", lambda s: s >= 0, "must be non-negative"),
         ValueValidator("high_value_revenue_at_risk", lambda s: s >= 0, "must be non-negative"),
-        ValueValidator("high_value_switch_rate", lambda s: (s >= 0) & (s <= 1), "must be in [0, 1]"),
+        ValueValidator(
+            "high_value_switch_rate", lambda s: (s >= 0) & (s <= 1), "must be in [0, 1]"
+        ),
         ValueValidator("avg_clv_of_switchers", lambda s: s >= 0, "must be non-negative"),
     ),
 )
@@ -535,7 +570,9 @@ SWITCHING_OPPORTUNITY = DataContract(
         ValueValidator("recoverable_revenue", lambda s: s >= 0, "must be non-negative"),
         ValueValidator(
             "opportunity_type",
-            lambda s: s.isin({"protect", "win_back", "steal_share", "consolidate", "delist_candidate"}),
+            lambda s: s.isin(
+                {"protect", "win_back", "steal_share", "consolidate", "delist_candidate"}
+            ),
             "opportunity_type must be protect/win_back/steal_share/consolidate/delist_candidate",
         ),
         ValueValidator(
@@ -555,8 +592,12 @@ BASKET_PENETRATION = DataContract(
     columns=("stockcode", "basket_count", "penetration", "revenue_share"),
     validators=(
         ValueValidator("basket_count", lambda s: s > 0, "basket_count must be positive"),
-        ValueValidator("penetration", lambda s: (s >= 0) & (s <= 1), "penetration must be in [0, 1]"),
-        ValueValidator("revenue_share", lambda s: (s >= 0) & (s <= 1), "revenue_share must be in [0, 1]"),
+        ValueValidator(
+            "penetration", lambda s: (s >= 0) & (s <= 1), "penetration must be in [0, 1]"
+        ),
+        ValueValidator(
+            "revenue_share", lambda s: (s >= 0) & (s <= 1), "revenue_share must be in [0, 1]"
+        ),
     ),
 )
 
@@ -566,7 +607,9 @@ BASKET_OVER_TIME = DataContract(
     validators=(
         ValueValidator("n_baskets", lambda s: s >= 0, "n_baskets must be non-negative"),
         ValueValidator("avg_basket_size", lambda s: s > 0, "avg_basket_size must be positive"),
-        ValueValidator("avg_basket_value", lambda s: s >= 0, "avg_basket_value must be non-negative"),
+        ValueValidator(
+            "avg_basket_value", lambda s: s >= 0, "avg_basket_value must be non-negative"
+        ),
     ),
 )
 
@@ -585,7 +628,11 @@ REVENUE_SPC = DataContract(
     columns=("period", "revenue", "center", "ucl", "lcl", "anomaly", "rule"),
     validators=(
         ValueValidator("revenue", lambda s: s >= 0, "revenue must be non-negative"),
-        ValueValidator("center", lambda s: s.isna() | (s >= 0), "center (control mean) must be non-negative or NaN"),
+        ValueValidator(
+            "center",
+            lambda s: s.isna() | (s >= 0),
+            "center (control mean) must be non-negative or NaN",
+        ),
         ValueValidator("anomaly", lambda s: s.isin({False, True}), "anomaly must be a boolean"),
     ),
 )
@@ -594,10 +641,16 @@ CUSTOMER_ENTROPY = DataContract(
     name="customer_entropy",
     columns=("customer_id", "n_distinct_products", "n_purchases", "entropy", "normalized_entropy"),
     validators=(
-        ValueValidator("n_distinct_products", lambda s: s > 0, "n_distinct_products must be positive"),
+        ValueValidator(
+            "n_distinct_products", lambda s: s > 0, "n_distinct_products must be positive"
+        ),
         ValueValidator("n_purchases", lambda s: s > 0, "n_purchases must be positive"),
         ValueValidator("entropy", lambda s: s >= 0, "entropy must be non-negative"),
-        ValueValidator("normalized_entropy", lambda s: (s >= 0) & (s <= 1), "normalized_entropy must be in [0, 1]"),
+        ValueValidator(
+            "normalized_entropy",
+            lambda s: (s >= 0) & (s <= 1),
+            "normalized_entropy must be in [0, 1]",
+        ),
     ),
 )
 
@@ -622,7 +675,9 @@ COHORT_RETENTION = DataContract(
     validators=(
         ValueValidator("retained", lambda s: s >= 0, "retained must be non-negative"),
         ValueValidator("cohort_size", lambda s: s > 0, "cohort_size must be positive"),
-        ValueValidator("retention_rate", lambda s: (s >= 0) & (s <= 1), "retention_rate must be in [0, 1]"),
+        ValueValidator(
+            "retention_rate", lambda s: (s >= 0) & (s <= 1), "retention_rate must be in [0, 1]"
+        ),
     ),
 )
 
@@ -632,7 +687,9 @@ ROLE_RETENTION = DataContract(
     validators=(
         ValueValidator("retained", lambda s: s >= 0, "retained must be non-negative"),
         ValueValidator("cohort_size", lambda s: s > 0, "cohort_size must be positive"),
-        ValueValidator("retention_rate", lambda s: (s >= 0) & (s <= 1), "retention_rate must be in [0, 1]"),
+        ValueValidator(
+            "retention_rate", lambda s: (s >= 0) & (s <= 1), "retention_rate must be in [0, 1]"
+        ),
     ),
 )
 
@@ -648,7 +705,15 @@ COHORT_SIZES = DataContract(
 
 POP_COMPARISON = DataContract(
     name="period_over_period",
-    columns=("period", "revenue", "transactions", "customers", "aov", "revenue_growth", "aov_growth"),
+    columns=(
+        "period",
+        "revenue",
+        "transactions",
+        "customers",
+        "aov",
+        "revenue_growth",
+        "aov_growth",
+    ),
     validators=(
         ValueValidator("revenue", lambda s: s >= 0, "revenue must be non-negative"),
         ValueValidator("transactions", lambda s: s >= 0, "transactions must be non-negative"),
@@ -683,8 +748,12 @@ COHORT_LTV = DataContract(
     name="cohort_ltv_curve",
     columns=("cohort", "period_index", "cumulative_revenue", "ltv_per_customer"),
     validators=(
-        ValueValidator("cumulative_revenue", lambda s: s >= 0, "cumulative_revenue must be non-negative"),
-        ValueValidator("ltv_per_customer", lambda s: s >= 0, "ltv_per_customer must be non-negative"),
+        ValueValidator(
+            "cumulative_revenue", lambda s: s >= 0, "cumulative_revenue must be non-negative"
+        ),
+        ValueValidator(
+            "ltv_per_customer", lambda s: s >= 0, "ltv_per_customer must be non-negative"
+        ),
     ),
 )
 
@@ -692,7 +761,11 @@ COHORT_DECAY = DataContract(
     name="cohort_decay",
     columns=("cohort", "decay_rate"),
     validators=(
-        ValueValidator("decay_rate", lambda s: s.notna(), "decay_rate must not be NaN (negative implies retention growth)"),
+        ValueValidator(
+            "decay_rate",
+            lambda s: s.notna(),
+            "decay_rate must not be NaN (negative implies retention growth)",
+        ),
     ),
 )
 
@@ -702,23 +775,48 @@ COHORT_DECAY = DataContract(
 
 CATEGORY_KPIS = DataContract(
     name="category_kpis",
-    columns=("category", "revenue", "transactions", "customers", "penetration", "aov", "revenue_share", "growth_pct"),
+    columns=(
+        "category",
+        "revenue",
+        "transactions",
+        "customers",
+        "penetration",
+        "aov",
+        "revenue_share",
+        "growth_pct",
+    ),
     validators=(
         ValueValidator("revenue", lambda s: s >= 0, "revenue must be non-negative"),
         ValueValidator("transactions", lambda s: s >= 0, "transactions must be non-negative"),
         ValueValidator("customers", lambda s: s >= 0, "customers must be non-negative"),
-        ValueValidator("penetration", lambda s: (s >= 0) & (s <= 1), "penetration must be in [0, 1]"),
+        ValueValidator(
+            "penetration", lambda s: (s >= 0) & (s <= 1), "penetration must be in [0, 1]"
+        ),
         ValueValidator("aov", lambda s: s >= 0, "aov must be non-negative"),
-        ValueValidator("revenue_share", lambda s: (s >= 0) & (s <= 1), "revenue_share must be in [0, 1]"),
+        ValueValidator(
+            "revenue_share", lambda s: (s >= 0) & (s <= 1), "revenue_share must be in [0, 1]"
+        ),
     ),
 )
 
 CATEGORY_SCORECARD = DataContract(
     name="category_scorecard",
-    columns=("category", "revenue", "revenue_share", "transactions", "customers", "aov", "growth_pct", "role", "rag"),
+    columns=(
+        "category",
+        "revenue",
+        "revenue_share",
+        "transactions",
+        "customers",
+        "aov",
+        "growth_pct",
+        "role",
+        "rag",
+    ),
     validators=(
         ValueValidator("revenue", lambda s: s >= 0, "revenue must be non-negative"),
-        ValueValidator("revenue_share", lambda s: (s >= 0) & (s <= 1), "revenue_share must be in [0, 1]"),
+        ValueValidator(
+            "revenue_share", lambda s: (s >= 0) & (s <= 1), "revenue_share must be in [0, 1]"
+        ),
         ValueValidator("transactions", lambda s: s >= 0, "transactions must be non-negative"),
         ValueValidator("customers", lambda s: s >= 0, "customers must be non-negative"),
         ValueValidator("aov", lambda s: s >= 0, "aov must be non-negative"),
@@ -735,7 +833,11 @@ CATEGORY_TREND = DataContract(
     columns=("category", "period", "revenue", "basket_penetration"),
     validators=(
         ValueValidator("revenue", lambda s: s >= 0, "revenue must be non-negative"),
-        ValueValidator("basket_penetration", lambda s: (s >= 0) & (s <= 1), "basket_penetration must be in [0, 1]"),
+        ValueValidator(
+            "basket_penetration",
+            lambda s: (s >= 0) & (s <= 1),
+            "basket_penetration must be in [0, 1]",
+        ),
     ),
 )
 
@@ -755,10 +857,20 @@ CATEGORY_MANAGER_SCORECARD = DataContract(
     ),
     validators=(
         ValueValidator("total_revenue", lambda s: s >= 0, "total_revenue must be non-negative"),
-        ValueValidator("basket_penetration", lambda s: (s >= 0) & (s <= 1), "basket_penetration must be in [0, 1]"),
-        ValueValidator("repeat_purchase_rate", lambda s: (s >= 0) & (s <= 1), "repeat_purchase_rate must be in [0, 1]"),
+        ValueValidator(
+            "basket_penetration",
+            lambda s: (s >= 0) & (s <= 1),
+            "basket_penetration must be in [0, 1]",
+        ),
+        ValueValidator(
+            "repeat_purchase_rate",
+            lambda s: (s >= 0) & (s <= 1),
+            "repeat_purchase_rate must be in [0, 1]",
+        ),
         ValueValidator("sku_share", lambda s: (s >= 0) & (s <= 1), "sku_share must be in [0, 1]"),
-        ValueValidator("revenue_share", lambda s: (s >= 0) & (s <= 1), "revenue_share must be in [0, 1]"),
+        ValueValidator(
+            "revenue_share", lambda s: (s >= 0) & (s <= 1), "revenue_share must be in [0, 1]"
+        ),
         ValueValidator("kvi_count", lambda s: s >= 0, "kvi_count must be non-negative"),
         ValueValidator("kvi_share", lambda s: (s >= 0) & (s <= 1), "kvi_share must be in [0, 1]"),
     ),
@@ -777,9 +889,13 @@ ASSORTMENT_EFFICIENCY = DataContract(
     ),
     validators=(
         ValueValidator("sku_share", lambda s: (s >= 0) & (s <= 1), "sku_share must be in [0, 1]"),
-        ValueValidator("revenue_share", lambda s: (s >= 0) & (s <= 1), "revenue_share must be in [0, 1]"),
+        ValueValidator(
+            "revenue_share", lambda s: (s >= 0) & (s <= 1), "revenue_share must be in [0, 1]"
+        ),
         ValueValidator("total_revenue", lambda s: s >= 0, "total_revenue must be non-negative"),
-        ValueValidator("efficiency_index", lambda s: s >= 0, "efficiency_index must be non-negative"),
+        ValueValidator(
+            "efficiency_index", lambda s: s >= 0, "efficiency_index must be non-negative"
+        ),
     ),
 )
 
@@ -794,9 +910,15 @@ CATEGORY_GROWTH_MATRIX = DataContract(
         "quadrant",
     ),
     validators=(
-        ValueValidator("revenue_share", lambda s: (s >= 0) & (s <= 1), "revenue_share must be in [0, 1]"),
+        ValueValidator(
+            "revenue_share", lambda s: (s >= 0) & (s <= 1), "revenue_share must be in [0, 1]"
+        ),
         ValueValidator("total_revenue", lambda s: s >= 0, "total_revenue must be non-negative"),
-        ValueValidator("quadrant", lambda s: s.isin({"star", "cash_cow", "question_mark", "dog"}), "quadrant must be star/cash_cow/question_mark/avoid"),
+        ValueValidator(
+            "quadrant",
+            lambda s: s.isin({"star", "cash_cow", "question_mark", "dog"}),
+            "quadrant must be star/cash_cow/question_mark/avoid",
+        ),
     ),
 )
 
@@ -816,12 +938,26 @@ CATEGORY_ROLES = DataContract(
         "category_source",
     ),
     validators=(
-        ValueValidator("trip_generation_rate", lambda s: (s >= 0) & (s <= 1), "trip_generation_rate must be in [0, 1]"),
+        ValueValidator(
+            "trip_generation_rate",
+            lambda s: (s >= 0) & (s <= 1),
+            "trip_generation_rate must be in [0, 1]",
+        ),
         ValueValidator("demand_cv", lambda s: s >= 0, "demand_cv must be non-negative"),
-        ValueValidator("seasonality_amplitude", lambda s: s >= 0, "seasonality_amplitude must be non-negative"),
-        ValueValidator("seasonal_strength", lambda s: (s >= 0) & (s <= 1), "seasonal_strength must be in [0, 1]"),
-        ValueValidator("seasonality_n_cycles", lambda s: s >= 0, "seasonality_n_cycles must be non-negative"),
-        ValueValidator("attachment_rate", lambda s: (s >= 0) & (s <= 1), "attachment_rate must be in [0, 1]"),
+        ValueValidator(
+            "seasonality_amplitude", lambda s: s >= 0, "seasonality_amplitude must be non-negative"
+        ),
+        ValueValidator(
+            "seasonal_strength",
+            lambda s: (s >= 0) & (s <= 1),
+            "seasonal_strength must be in [0, 1]",
+        ),
+        ValueValidator(
+            "seasonality_n_cycles", lambda s: s >= 0, "seasonality_n_cycles must be non-negative"
+        ),
+        ValueValidator(
+            "attachment_rate", lambda s: (s >= 0) & (s <= 1), "attachment_rate must be in [0, 1]"
+        ),
     ),
 )
 
@@ -838,22 +974,36 @@ SCENARIO_GRID = DataContract(
         "guard_note",
     ),
     validators=(
-        ValueValidator("weekly_growth_pct", lambda s: s.notna(), "weekly_growth_pct must not be NaN"),
-        ValueValidator("projected_revenue", lambda s: s >= 0, "projected_revenue must be non-negative"),
+        ValueValidator(
+            "weekly_growth_pct", lambda s: s.notna(), "weekly_growth_pct must not be NaN"
+        ),
+        ValueValidator(
+            "projected_revenue", lambda s: s >= 0, "projected_revenue must be non-negative"
+        ),
         ValueValidator("feasible", lambda s: s.isin({True, False}), "feasible must be boolean"),
     ),
 )
 
 PRODUCT_METRICS = DataContract(
     name="product_metrics",
-    columns=("stockcode", "revenue", "units", "transactions", "customers", "avg_price", "penetration"),
+    columns=(
+        "stockcode",
+        "revenue",
+        "units",
+        "transactions",
+        "customers",
+        "avg_price",
+        "penetration",
+    ),
     validators=(
         ValueValidator("revenue", lambda s: s >= 0, "revenue must be non-negative"),
         ValueValidator("units", lambda s: s >= 0, "units must be non-negative"),
         ValueValidator("transactions", lambda s: s >= 0, "transactions must be non-negative"),
         ValueValidator("customers", lambda s: s >= 0, "customers must be non-negative"),
         ValueValidator("avg_price", lambda s: s > 0, "avg_price must be positive"),
-        ValueValidator("penetration", lambda s: (s >= 0) & (s <= 1), "penetration must be in [0, 1]"),
+        ValueValidator(
+            "penetration", lambda s: (s >= 0) & (s <= 1), "penetration must be in [0, 1]"
+        ),
     ),
 )
 
@@ -862,7 +1012,9 @@ ABC_CLASSES = DataContract(
     columns=("stockcode", "revenue", "cumulative_share", "abc_class"),
     validators=(
         ValueValidator("revenue", lambda s: s >= 0, "revenue must be non-negative"),
-        ValueValidator("cumulative_share", lambda s: (s >= 0) & (s <= 1), "cumulative_share must be in [0, 1]"),
+        ValueValidator(
+            "cumulative_share", lambda s: (s >= 0) & (s <= 1), "cumulative_share must be in [0, 1]"
+        ),
     ),
 )
 
@@ -885,7 +1037,9 @@ XYZ_CLASSES = DataContract(
         ValueValidator("cv", lambda s: s >= 0, "cv must be non-negative"),
         ValueValidator("n_periods", lambda s: s > 0, "n_periods must be positive"),
         ValueValidator("nonzero_periods", lambda s: s >= 0, "nonzero_periods must be non-negative"),
-        ValueValidator("zero_demand_rate", lambda s: (s >= 0) & (s <= 1), "zero_demand_rate must be in [0, 1]"),
+        ValueValidator(
+            "zero_demand_rate", lambda s: (s >= 0) & (s <= 1), "zero_demand_rate must be in [0, 1]"
+        ),
     ),
 )
 
@@ -913,8 +1067,12 @@ REPEAT_RATE = DataContract(
     columns=("stockcode", "n_customers", "repeat_customers", "repeat_rate"),
     validators=(
         ValueValidator("n_customers", lambda s: s > 0, "n_customers must be positive"),
-        ValueValidator("repeat_customers", lambda s: s >= 0, "repeat_customers must be non-negative"),
-        ValueValidator("repeat_rate", lambda s: (s >= 0) & (s <= 1), "repeat_rate must be in [0, 1]"),
+        ValueValidator(
+            "repeat_customers", lambda s: s >= 0, "repeat_customers must be non-negative"
+        ),
+        ValueValidator(
+            "repeat_rate", lambda s: (s >= 0) & (s <= 1), "repeat_rate must be in [0, 1]"
+        ),
     ),
 )
 
@@ -922,9 +1080,15 @@ SECOND_PURCHASE = DataContract(
     name="second_purchase",
     columns=("stockcode", "n_second_purchasers", "median_days_to_second", "mean_days_to_second"),
     validators=(
-        ValueValidator("n_second_purchasers", lambda s: s >= 0, "n_second_purchasers must be non-negative"),
-        ValueValidator("median_days_to_second", lambda s: s >= 0, "median_days_to_second must be non-negative"),
-        ValueValidator("mean_days_to_second", lambda s: s >= 0, "mean_days_to_second must be non-negative"),
+        ValueValidator(
+            "n_second_purchasers", lambda s: s >= 0, "n_second_purchasers must be non-negative"
+        ),
+        ValueValidator(
+            "median_days_to_second", lambda s: s >= 0, "median_days_to_second must be non-negative"
+        ),
+        ValueValidator(
+            "mean_days_to_second", lambda s: s >= 0, "mean_days_to_second must be non-negative"
+        ),
     ),
 )
 
@@ -934,7 +1098,9 @@ SKU_RATIONALIZATION = DataContract(
     validators=(
         ValueValidator("revenue", lambda s: s >= 0, "revenue must be non-negative"),
         ValueValidator("velocity", lambda s: s >= 0, "velocity must be non-negative"),
-        ValueValidator("repeat_rate", lambda s: (s >= 0) & (s <= 1), "repeat_rate must be in [0, 1]"),
+        ValueValidator(
+            "repeat_rate", lambda s: (s >= 0) & (s <= 1), "repeat_rate must be in [0, 1]"
+        ),
     ),
 )
 
@@ -990,9 +1156,15 @@ CATEGORY_PROMO_TIMELINE = DataContract(
     ),
     validators=(
         ValueValidator("promo_revenue", lambda s: s >= 0, "promo_revenue must be non-negative"),
-        ValueValidator("non_promo_revenue", lambda s: s >= 0, "non_promo_revenue must be non-negative"),
+        ValueValidator(
+            "non_promo_revenue", lambda s: s >= 0, "non_promo_revenue must be non-negative"
+        ),
         ValueValidator("n_promos", lambda s: s >= 0, "n_promos must be non-negative"),
-        ValueValidator("avg_discount_pct", lambda s: (s >= 0) & (s <= 100), "avg_discount_pct must be in [0, 100]"),
+        ValueValidator(
+            "avg_discount_pct",
+            lambda s: (s >= 0) & (s <= 100),
+            "avg_discount_pct must be in [0, 100]",
+        ),
     ),
 )
 
@@ -1020,13 +1192,19 @@ PROMO_PERIODS = DataContract(
     ),
     validators=(
         ValueValidator("duration_days", lambda s: s > 0, "duration_days must be positive"),
-        ValueValidator("avg_discount_pct", lambda s: s >= 0, "avg_discount_pct must be non-negative"),
+        ValueValidator(
+            "avg_discount_pct", lambda s: s >= 0, "avg_discount_pct must be non-negative"
+        ),
         ValueValidator("promo_revenue", lambda s: s >= 0, "promo_revenue must be non-negative"),
-        ValueValidator("baseline_revenue", lambda s: s >= 0, "baseline_revenue must be non-negative"),
+        ValueValidator(
+            "baseline_revenue", lambda s: s >= 0, "baseline_revenue must be non-negative"
+        ),
         ValueValidator("promo_qty", lambda s: s >= 0, "promo_qty must be non-negative"),
         ValueValidator("baseline_qty", lambda s: s >= 0, "baseline_qty must be non-negative"),
         ValueValidator("avg_promo_price", lambda s: s > 0, "avg_promo_price must be positive"),
-        ValueValidator("avg_baseline_price", lambda s: s > 0, "avg_baseline_price must be positive"),
+        ValueValidator(
+            "avg_baseline_price", lambda s: s > 0, "avg_baseline_price must be positive"
+        ),
     ),
 )
 
@@ -1053,7 +1231,9 @@ PROMO_BASELINE = DataContract(
         ValueValidator("actual_revenue", lambda s: s >= 0, "actual_revenue must be non-negative"),
         ValueValidator("avg_price", lambda s: s > 0, "avg_price must be positive"),
         ValueValidator("baseline_units", lambda s: s >= 0, "baseline_units must be non-negative"),
-        ValueValidator("baseline_revenue", lambda s: s >= 0, "baseline_revenue must be non-negative"),
+        ValueValidator(
+            "baseline_revenue", lambda s: s >= 0, "baseline_revenue must be non-negative"
+        ),
         ValueValidator("baseline_price", lambda s: s > 0, "baseline_price must be positive"),
     ),
 )
@@ -1102,7 +1282,9 @@ PROMO_WATERFALL = DataContract(
         "roi",
     ),
     validators=(
-        ValueValidator("baseline_revenue", lambda s: s >= 0, "baseline_revenue must be non-negative"),
+        ValueValidator(
+            "baseline_revenue", lambda s: s >= 0, "baseline_revenue must be non-negative"
+        ),
     ),
 )
 
@@ -1117,9 +1299,7 @@ PROMO_ROI = DataContract(
         "promo_cost",
         "roi_pct",
     ),
-    validators=(
-        ValueValidator("promo_cost", lambda s: s >= 0, "promo_cost must be non-negative"),
-    ),
+    validators=(ValueValidator("promo_cost", lambda s: s >= 0, "promo_cost must be non-negative"),),
 )
 
 PROMO_TIMING_DOW = DataContract(
@@ -1143,7 +1323,15 @@ PROMO_TIMING_DOW = DataContract(
 
 PROMO_TIMING_MONTH = DataContract(
     name="promo_timing_month",
-    columns=("month", "month_name", "promo_revenue", "base_revenue", "promo_orders", "base_orders", "revenue_lift"),
+    columns=(
+        "month",
+        "month_name",
+        "promo_revenue",
+        "base_revenue",
+        "promo_orders",
+        "base_orders",
+        "revenue_lift",
+    ),
     validators=(
         ValueValidator("promo_revenue", lambda s: s >= 0, "promo_revenue must be non-negative"),
         ValueValidator("base_revenue", lambda s: s >= 0, "base_revenue must be non-negative"),
@@ -1154,7 +1342,15 @@ PROMO_TIMING_MONTH = DataContract(
 
 PROMO_HALO = DataContract(
     name="promo_halo",
-    columns=("promo_product", "halo_product", "halo_revenue", "base_revenue", "halo_orders", "base_orders", "revenue_lift"),
+    columns=(
+        "promo_product",
+        "halo_product",
+        "halo_revenue",
+        "base_revenue",
+        "halo_orders",
+        "base_orders",
+        "revenue_lift",
+    ),
     validators=(
         ValueValidator("halo_revenue", lambda s: s >= 0, "halo_revenue must be non-negative"),
         ValueValidator("base_revenue", lambda s: s >= 0, "base_revenue must be non-negative"),
@@ -1181,7 +1377,9 @@ PROMO_CANNIBALIZATION = DataContract(
         ValueValidator("base_revenue", lambda s: s >= 0, "base_revenue must be non-negative"),
         ValueValidator("promo_orders", lambda s: s >= 0, "promo_orders must be non-negative"),
         ValueValidator("base_orders", lambda s: s >= 0, "base_orders must be non-negative"),
-        ValueValidator("cannibalized_revenue", lambda s: s >= 0, "cannibalized_revenue must be non-negative"),
+        ValueValidator(
+            "cannibalized_revenue", lambda s: s >= 0, "cannibalized_revenue must be non-negative"
+        ),
     ),
 )
 
@@ -1199,18 +1397,36 @@ CATEGORY_CANNIBALIZATION = DataContract(
     validators=(
         ValueValidator("n_promos", lambda s: s > 0, "n_promos must be positive"),
         ValueValidator("promo_revenue", lambda s: s >= 0, "promo_revenue must be non-negative"),
-ValueValidator("base_revenue", lambda s: s > 0, "base_revenue must be positive"),
-        ValueValidator("cannibalized_revenue", lambda s: s >= 0, "cannibalized_revenue must be non-negative"),
-        ValueValidator("cannibalization_index", lambda s: (s >= 0) & (s <= 1), "cannibalization_index must be in [0, 1]"),
+        ValueValidator("base_revenue", lambda s: s > 0, "base_revenue must be positive"),
+        ValueValidator(
+            "cannibalized_revenue", lambda s: s >= 0, "cannibalized_revenue must be non-negative"
+        ),
+        ValueValidator(
+            "cannibalization_index",
+            lambda s: (s >= 0) & (s <= 1),
+            "cannibalization_index must be in [0, 1]",
+        ),
     ),
 )
 
 PROMO_CAUSAL_PANEL = DataContract(
     name="promo_causal_panel",
     columns=(
-        "stockcode", "week", "units", "revenue", "avg_price",
-        "n_customers", "n_orders", "promo", "log_units", "log_price",
-        "log_revenue", "week_num", "month", "year", "log_units_lag1",
+        "stockcode",
+        "week",
+        "units",
+        "revenue",
+        "avg_price",
+        "n_customers",
+        "n_orders",
+        "promo",
+        "log_units",
+        "log_price",
+        "log_revenue",
+        "week_num",
+        "month",
+        "year",
+        "log_units_lag1",
     ),
     validators=(
         ValueValidator("units", lambda s: s >= 0, "units must be non-negative"),
@@ -1221,43 +1437,82 @@ PROMO_CAUSAL_PANEL = DataContract(
 PROMO_TWFE_RESULT = DataContract(
     name="promo_twfe_result",
     columns=(
-        "outcome", "promo_coefficient", "promo_se", "promo_p_value",
-        "marginal_effect", "marginal_se", "r_squared", "r_squared_within",
-        "r_squared_between", "n_obs", "n_entities", "n_periods", "price_control",
+        "outcome",
+        "promo_coefficient",
+        "promo_se",
+        "promo_p_value",
+        "marginal_effect",
+        "marginal_se",
+        "r_squared",
+        "r_squared_within",
+        "r_squared_between",
+        "n_obs",
+        "n_entities",
+        "n_periods",
+        "price_control",
     ),
     validators=(
-        ValueValidator("promo_p_value", lambda s: s.isna() | ((s >= 0) & (s <= 1)), "promo_p_value must be in [0, 1] or NaN"),
+        ValueValidator(
+            "promo_p_value",
+            lambda s: s.isna() | ((s >= 0) & (s <= 1)),
+            "promo_p_value must be in [0, 1] or NaN",
+        ),
     ),
 )
 
 PROMO_EVENT_STUDY = DataContract(
     name="promo_event_study",
     columns=(
-        "outcome", "leads", "lags", "pretrend_p_value", "coefficients",
+        "outcome",
+        "leads",
+        "lags",
+        "pretrend_p_value",
+        "coefficients",
     ),
 )
 
 PROMO_CAUSAL_WATERFALL = DataContract(
     name="promo_causal_waterfall",
     columns=(
-        "stockcode", "baseline_revenue", "direct_effect_revenue",
-        "incremental_revenue_qty", "incremental_revenue_price",
-        "halo_revenue", "cannibalization_revenue", "stockpiling_revenue",
-        "net_incremental_revenue", "roi",
+        "stockcode",
+        "baseline_revenue",
+        "direct_effect_revenue",
+        "incremental_revenue_qty",
+        "incremental_revenue_price",
+        "halo_revenue",
+        "cannibalization_revenue",
+        "stockpiling_revenue",
+        "net_incremental_revenue",
+        "roi",
     ),
     validators=(
-        ValueValidator("baseline_revenue", lambda s: s >= 0, "baseline_revenue must be non-negative"),
-        ValueValidator("cannibalization_revenue", lambda s: s >= 0, "cannibalization_revenue must be non-negative"),
+        ValueValidator(
+            "baseline_revenue", lambda s: s >= 0, "baseline_revenue must be non-negative"
+        ),
+        ValueValidator(
+            "cannibalization_revenue",
+            lambda s: s >= 0,
+            "cannibalization_revenue must be non-negative",
+        ),
     ),
 )
 
 PROMO_CROSS_EFFECTS = DataContract(
     name="promo_cross_effects",
     columns=(
-        "promo_product", "peer_product", "effect", "se", "p_value", "effect_type",
+        "promo_product",
+        "peer_product",
+        "effect",
+        "se",
+        "p_value",
+        "effect_type",
     ),
     validators=(
-        ValueValidator("effect_type", lambda s: s.isin(["halo", "cannibalization", "none"]), "effect_type must be halo/cannibalization/none"),
+        ValueValidator(
+            "effect_type",
+            lambda s: s.isin(["halo", "cannibalization", "none"]),
+            "effect_type must be halo/cannibalization/none",
+        ),
     ),
 )
 
@@ -1265,7 +1520,11 @@ PROMO_PARALLEL_TRENDS = DataContract(
     name="promo_parallel_trends",
     columns=("pretrend_p_value", "method", "n_skus"),
     validators=(
-        ValueValidator("pretrend_p_value", lambda s: s.isna() | ((s >= 0) & (s <= 1)), "pretrend_p_value must be in [0, 1] or NaN"),
+        ValueValidator(
+            "pretrend_p_value",
+            lambda s: s.isna() | ((s >= 0) & (s <= 1)),
+            "pretrend_p_value must be in [0, 1] or NaN",
+        ),
     ),
 )
 
@@ -1297,16 +1556,18 @@ UPLIFT_SCORES = DataContract(
         "stockpiling_uplift",
     ),
     validators=(
-        ValueValidator("propensity_score", lambda s: s.isna() | ((s >= 0) & (s <= 1)), "propensity_score must be in [0, 1] or NaN"),
+        ValueValidator(
+            "propensity_score",
+            lambda s: s.isna() | ((s >= 0) & (s <= 1)),
+            "propensity_score must be in [0, 1] or NaN",
+        ),
     ),
 )
 
 QINI_CURVE = DataContract(
     name="qini_curve",
     columns=("x", "qini_y", "random_y", "ci_lower", "ci_upper", "qini_coefficient", "auuc"),
-    validators=(
-        ValueValidator("x", lambda s: (s >= 0) & (s <= 1), "x must be in [0, 1]"),
-    ),
+    validators=(ValueValidator("x", lambda s: (s >= 0) & (s <= 1), "x must be in [0, 1]"),),
 )
 
 # ---------------------------------------------------------------------------
@@ -1335,12 +1596,24 @@ CLV_PREDICTIONS = DataContract(
         ValueValidator("recency", lambda s: s >= 0, "recency must be non-negative"),
         ValueValidator("T", lambda s: s > 0, "T must be positive"),
         ValueValidator("monetary_value", lambda s: s >= 0, "monetary_value must be non-negative"),
-        ValueValidator("predicted_purchases", lambda s: s >= 0, "predicted_purchases must be non-negative"),
-        ValueValidator("expected_avg_value", lambda s: s >= 0, "expected_avg_value must be non-negative"),
+        ValueValidator(
+            "predicted_purchases", lambda s: s >= 0, "predicted_purchases must be non-negative"
+        ),
+        ValueValidator(
+            "expected_avg_value", lambda s: s >= 0, "expected_avg_value must be non-negative"
+        ),
         ValueValidator("predicted_clv", lambda s: s >= 0, "predicted_clv must be non-negative"),
-        ValueValidator("ci_lower", lambda s: s.isna() | (s >= 0), "ci_lower must be non-negative or NaN"),
-        ValueValidator("ci_upper", lambda s: s.isna() | (s >= 0), "ci_upper must be non-negative or NaN"),
-        ValueValidator("ci_status", lambda s: s.isin({"valid", "insufficient_resamples", "fit_failed"}), "ci_status must be valid/insufficient_resamples/fit_failed"),
+        ValueValidator(
+            "ci_lower", lambda s: s.isna() | (s >= 0), "ci_lower must be non-negative or NaN"
+        ),
+        ValueValidator(
+            "ci_upper", lambda s: s.isna() | (s >= 0), "ci_upper must be non-negative or NaN"
+        ),
+        ValueValidator(
+            "ci_status",
+            lambda s: s.isin({"valid", "insufficient_resamples", "fit_failed"}),
+            "ci_status must be valid/insufficient_resamples/fit_failed",
+        ),
         ValueValidator("p_alive", lambda s: (s >= 0) & (s <= 1), "p_alive must be in [0, 1]"),
     ),
 )
@@ -1349,7 +1622,11 @@ CLV_DIAGNOSTICS = DataContract(
     name="clv_diagnostics",
     columns=("metric", "value"),
     validators=(
-        ValueValidator("value", lambda s: s.apply(lambda v: isinstance(v, (int, float))), "value must be numeric"),
+        ValueValidator(
+            "value",
+            lambda s: s.apply(lambda v: isinstance(v, (int, float))),
+            "value must be numeric",
+        ),
     ),
 )
 
@@ -1378,11 +1655,19 @@ CLV_CUSTOMER = DataContract(
         ValueValidator("total_revenue", lambda s: s >= 0, "total_revenue must be non-negative"),
         ValueValidator("avg_order_value", lambda s: s >= 0, "avg_order_value must be non-negative"),
         ValueValidator("p_alive", lambda s: (s >= 0) & (s <= 1), "p_alive must be in [0, 1]"),
-        ValueValidator("predicted_purchases", lambda s: s >= 0, "predicted_purchases must be non-negative"),
-        ValueValidator("expected_avg_value", lambda s: s >= 0, "expected_avg_value must be non-negative"),
+        ValueValidator(
+            "predicted_purchases", lambda s: s >= 0, "predicted_purchases must be non-negative"
+        ),
+        ValueValidator(
+            "expected_avg_value", lambda s: s >= 0, "expected_avg_value must be non-negative"
+        ),
         ValueValidator("predicted_clv", lambda s: s >= 0, "predicted_clv must be non-negative"),
         ValueValidator("clv_12m", lambda s: s >= 0, "clv_12m must be non-negative"),
-        ValueValidator("normalized_entropy", lambda s: (s >= 0) & (s <= 1), "normalized_entropy must be in [0, 1]"),
+        ValueValidator(
+            "normalized_entropy",
+            lambda s: (s >= 0) & (s <= 1),
+            "normalized_entropy must be in [0, 1]",
+        ),
     ),
 )
 
@@ -1401,19 +1686,31 @@ DEMAND_TRANSFERENCE = DataContract(
         "observed_switching_transfer_revenue",
     ),
     validators=(
-        ValueValidator("switch_rate", lambda s: (s >= 0) & (s <= 1), "switch_rate must be in [0, 1]"),
-        ValueValidator("revenue_share_from", lambda s: (s >= 0) & (s <= 1), "revenue_share_from must be in [0, 1]"),
-        ValueValidator("observed_switching_transference", lambda s: s >= 0, "observed_switching_transference must be non-negative"),
-        ValueValidator("observed_switching_transfer_revenue", lambda s: s >= 0, "observed_switching_transfer_revenue must be non-negative"),
+        ValueValidator(
+            "switch_rate", lambda s: (s >= 0) & (s <= 1), "switch_rate must be in [0, 1]"
+        ),
+        ValueValidator(
+            "revenue_share_from",
+            lambda s: (s >= 0) & (s <= 1),
+            "revenue_share_from must be in [0, 1]",
+        ),
+        ValueValidator(
+            "observed_switching_transference",
+            lambda s: s >= 0,
+            "observed_switching_transference must be non-negative",
+        ),
+        ValueValidator(
+            "observed_switching_transfer_revenue",
+            lambda s: s >= 0,
+            "observed_switching_transfer_revenue must be non-negative",
+        ),
     ),
 )
 
 SDP_SCORES = DataContract(
     name="substitutable_demand_percentage",
     columns=("stockcode", "sdp"),
-    validators=(
-        ValueValidator("sdp", lambda s: (s >= 0) & (s <= 1), "sdp must be in [0, 1]"),
-    ),
+    validators=(ValueValidator("sdp", lambda s: (s >= 0) & (s <= 1), "sdp must be in [0, 1]"),),
 )
 
 DELIST_IMPACT = DataContract(
@@ -1427,7 +1724,11 @@ DELIST_IMPACT = DataContract(
     ),
     validators=(
         ValueValidator("product_revenue", lambda s: s >= 0, "product_revenue must be non-negative"),
-        ValueValidator("estimated_revenue_recovered", lambda s: s >= 0, "estimated_revenue_recovered must be non-negative"),
+        ValueValidator(
+            "estimated_revenue_recovered",
+            lambda s: s >= 0,
+            "estimated_revenue_recovered must be non-negative",
+        ),
     ),
 )
 
@@ -1443,10 +1744,20 @@ NODE_DELIST_IMPACT = DataContract(
     ),
     validators=(
         ValueValidator("n_products", lambda s: s > 0, "n_products must be positive"),
-        ValueValidator("total_node_revenue", lambda s: s >= 0, "total_node_revenue must be non-negative"),
-        ValueValidator("internal_recovery", lambda s: s >= 0, "internal_recovery must be non-negative"),
-        ValueValidator("external_leakage", lambda s: s >= 0, "external_leakage must be non-negative"),
-        ValueValidator("node_sdp", lambda s: s.isna() | ((s >= 0) & (s <= 1)), "node_sdp must be in [0, 1] or NaN"),
+        ValueValidator(
+            "total_node_revenue", lambda s: s >= 0, "total_node_revenue must be non-negative"
+        ),
+        ValueValidator(
+            "internal_recovery", lambda s: s >= 0, "internal_recovery must be non-negative"
+        ),
+        ValueValidator(
+            "external_leakage", lambda s: s >= 0, "external_leakage must be non-negative"
+        ),
+        ValueValidator(
+            "node_sdp",
+            lambda s: s.isna() | ((s >= 0) & (s <= 1)),
+            "node_sdp must be in [0, 1] or NaN",
+        ),
     ),
 )
 
@@ -1467,8 +1778,12 @@ CROSS_ELASTICITY = DataContract(
         "avg_price_b",
     ),
     validators=(
-        ValueValidator("own_elasticity_se", lambda s: s >= 0, "own_elasticity_se must be non-negative"),
-        ValueValidator("cross_elasticity_se", lambda s: s >= 0, "cross_elasticity_se must be non-negative"),
+        ValueValidator(
+            "own_elasticity_se", lambda s: s >= 0, "own_elasticity_se must be non-negative"
+        ),
+        ValueValidator(
+            "cross_elasticity_se", lambda s: s >= 0, "cross_elasticity_se must be non-negative"
+        ),
         ValueValidator("r_squared", lambda s: (s >= 0) & (s <= 1), "r_squared must be in [0, 1]"),
         ValueValidator("n_obs", lambda s: s > 0, "n_obs must be positive"),
         ValueValidator("avg_price_a", lambda s: s > 0, "avg_price_a must be positive"),
@@ -1487,9 +1802,13 @@ RECOVERY_HHI = DataContract(
         "top_share",
     ),
     validators=(
-        ValueValidator("recovery_hhi", lambda s: (s >= 0) & (s <= 1), "recovery_hhi must be in [0, 1]"),
+        ValueValidator(
+            "recovery_hhi", lambda s: (s >= 0) & (s <= 1), "recovery_hhi must be in [0, 1]"
+        ),
         ValueValidator("n_substitutes", lambda s: s > 0, "n_substitutes must be positive"),
-        ValueValidator("total_revenue_at_risk", lambda s: s >= 0, "total_revenue_at_risk must be non-negative"),
+        ValueValidator(
+            "total_revenue_at_risk", lambda s: s >= 0, "total_revenue_at_risk must be non-negative"
+        ),
         ValueValidator("top_share", lambda s: (s >= 0) & (s <= 1), "top_share must be in [0, 1]"),
     ),
 )
@@ -1536,12 +1855,18 @@ ASSORTMENT_SCENARIO = DataContract(
     validators=(
         ValueValidator("n_skus", lambda s: s > 0, "n_skus must be positive"),
         ValueValidator("kept_revenue", lambda s: s >= 0, "kept_revenue must be non-negative"),
-        ValueValidator("recovered_revenue", lambda s: s >= 0, "recovered_revenue must be non-negative"),
+        ValueValidator(
+            "recovered_revenue", lambda s: s >= 0, "recovered_revenue must be non-negative"
+        ),
         ValueValidator("lost_revenue", lambda s: s >= 0, "lost_revenue must be non-negative"),
         ValueValidator("unmet_demand", lambda s: s >= 0, "unmet_demand must be non-negative"),
-        ValueValidator("expected_revenue", lambda s: s >= 0, "expected_revenue must be non-negative"),
+        ValueValidator(
+            "expected_revenue", lambda s: s >= 0, "expected_revenue must be non-negative"
+        ),
         ValueValidator("coverage", lambda s: (s >= 0) & (s <= 1), "coverage must be in [0, 1]"),
-        ValueValidator("recovery_rate", lambda s: (s >= 0) & (s <= 1), "recovery_rate must be in [0, 1]"),
+        ValueValidator(
+            "recovery_rate", lambda s: (s >= 0) & (s <= 1), "recovery_rate must be in [0, 1]"
+        ),
     ),
 )
 
@@ -1564,14 +1889,24 @@ ASSORTMENT_EVALUATION = DataContract(
     validators=(
         ValueValidator("selected_skus", lambda s: s > 0, "selected_skus must be positive"),
         ValueValidator("kept_revenue", lambda s: s >= 0, "kept_revenue must be non-negative"),
-        ValueValidator("recovered_revenue", lambda s: s >= 0, "recovered_revenue must be non-negative"),
+        ValueValidator(
+            "recovered_revenue", lambda s: s >= 0, "recovered_revenue must be non-negative"
+        ),
         ValueValidator("lost_revenue", lambda s: s >= 0, "lost_revenue must be non-negative"),
         ValueValidator("unmet_demand", lambda s: s >= 0, "unmet_demand must be non-negative"),
-        ValueValidator("expected_revenue", lambda s: s >= 0, "expected_revenue must be non-negative"),
+        ValueValidator(
+            "expected_revenue", lambda s: s >= 0, "expected_revenue must be non-negative"
+        ),
         ValueValidator("coverage", lambda s: (s >= 0) & (s <= 1), "coverage must be in [0, 1]"),
-        ValueValidator("recovery_rate", lambda s: (s >= 0) & (s <= 1), "recovery_rate must be in [0, 1]"),
-        ValueValidator("n_categories_covered", lambda s: s >= 0, "n_categories_covered must be non-negative"),
-        ValueValidator("n_categories_total", lambda s: s >= 0, "n_categories_total must be non-negative"),
+        ValueValidator(
+            "recovery_rate", lambda s: (s >= 0) & (s <= 1), "recovery_rate must be in [0, 1]"
+        ),
+        ValueValidator(
+            "n_categories_covered", lambda s: s >= 0, "n_categories_covered must be non-negative"
+        ),
+        ValueValidator(
+            "n_categories_total", lambda s: s >= 0, "n_categories_total must be non-negative"
+        ),
     ),
 )
 
@@ -1601,8 +1936,16 @@ CDT_QUALITY = DataContract(
     columns=("cluster", "size", "within_similarity", "across_similarity"),
     validators=(
         ValueValidator("size", lambda s: s > 0, "size must be positive"),
-        ValueValidator("within_similarity", lambda s: s.isna() | ((s >= -1) & (s <= 1)), "within_similarity must be in [-1, 1] or NaN"),
-        ValueValidator("across_similarity", lambda s: s.isna() | ((s >= -1) & (s <= 1)), "across_similarity must be in [-1, 1] or NaN"),
+        ValueValidator(
+            "within_similarity",
+            lambda s: s.isna() | ((s >= -1) & (s <= 1)),
+            "within_similarity must be in [-1, 1] or NaN",
+        ),
+        ValueValidator(
+            "across_similarity",
+            lambda s: s.isna() | ((s >= -1) & (s <= 1)),
+            "across_similarity must be in [-1, 1] or NaN",
+        ),
     ),
 )
 
@@ -1611,7 +1954,9 @@ CDT_OPTIMAL_K = DataContract(
     columns=("n_clusters", "silhouette"),
     validators=(
         ValueValidator("n_clusters", lambda s: s > 0, "n_clusters must be positive"),
-        ValueValidator("silhouette", lambda s: (s >= -1) & (s <= 1), "silhouette must be in [-1, 1]"),
+        ValueValidator(
+            "silhouette", lambda s: (s >= -1) & (s <= 1), "silhouette must be in [-1, 1]"
+        ),
     ),
 )
 
@@ -1622,14 +1967,38 @@ CDT_COMMUNITY = DataContract(
 
 CDT_TREE_NODES = DataContract(
     name="cdt_tree_nodes",
-    columns=("node_id", "name", "attribute", "attribute_value", "size", "is_leaf", "similarity_within", "parent_id", "split_score", "split_stability", "shopper_decision_rule"),
+    columns=(
+        "node_id",
+        "name",
+        "attribute",
+        "attribute_value",
+        "size",
+        "is_leaf",
+        "similarity_within",
+        "parent_id",
+        "split_score",
+        "split_stability",
+        "shopper_decision_rule",
+    ),
     validators=(
         ValueValidator("size", lambda s: s >= 0, "size must be non-negative"),
         ValueValidator("is_leaf", lambda s: s.isin([0, 1]), "is_leaf must be boolean (0/1)"),
-        ValueValidator("similarity_within", lambda s: s.isna() | ((s >= 0) & (s <= 1)), "similarity_within must be in [0, 1] or NaN"),
-        ValueValidator("split_score", lambda s: s.isna() | (s >= 0), "split_score must be non-negative or NaN"),
-        ValueValidator("split_stability", lambda s: s.isna() | ((s >= 0) & (s <= 1)), "split_stability must be in [0, 1] or NaN"),
-        ValueValidator("shopper_decision_rule", lambda s: s.notna(), "shopper_decision_rule must not be NaN"),
+        ValueValidator(
+            "similarity_within",
+            lambda s: s.isna() | ((s >= 0) & (s <= 1)),
+            "similarity_within must be in [0, 1] or NaN",
+        ),
+        ValueValidator(
+            "split_score", lambda s: s.isna() | (s >= 0), "split_score must be non-negative or NaN"
+        ),
+        ValueValidator(
+            "split_stability",
+            lambda s: s.isna() | ((s >= 0) & (s <= 1)),
+            "split_stability must be in [0, 1] or NaN",
+        ),
+        ValueValidator(
+            "shopper_decision_rule", lambda s: s.notna(), "shopper_decision_rule must not be NaN"
+        ),
     ),
 )
 
@@ -1685,7 +2054,11 @@ RFM_FEATURES = DataContract(
         ValueValidator("max_order_value", lambda s: s >= 0, "max_order_value must be non-negative"),
         ValueValidator("n_items", lambda s: s > 0, "n_items must be positive"),
         ValueValidator("n_unique_products", lambda s: s > 0, "n_unique_products must be positive"),
-        ValueValidator("customer_lifetime_days", lambda s: s >= 0, "customer_lifetime_days must be non-negative"),
+        ValueValidator(
+            "customer_lifetime_days",
+            lambda s: s >= 0,
+            "customer_lifetime_days must be non-negative",
+        ),
         ValueValidator("avg_price_paid", lambda s: s > 0, "avg_price_paid must be positive"),
         ValueValidator("order_value_cv", lambda s: s >= 0, "order_value_cv must be non-negative"),
     ),
@@ -1709,9 +2082,17 @@ RFM_SEGMENTS = DataContract(
         ValueValidator("recency_days", lambda s: s >= 0, "recency_days must be non-negative"),
         ValueValidator("frequency", lambda s: s > 0, "frequency must be positive"),
         ValueValidator("monetary", lambda s: s >= 0, "monetary must be non-negative"),
-        ValueValidator("recency_score", lambda s: s.isin([1, 2, 3, 4]), "recency_score must be in {1,2,3,4}"),
-        ValueValidator("frequency_score", lambda s: s.isin([1, 2, 3, 4]), "frequency_score must be in {1,2,3,4}"),
-        ValueValidator("monetary_score", lambda s: s.isin([1, 2, 3, 4]), "monetary_score must be in {1,2,3,4}"),
+        ValueValidator(
+            "recency_score", lambda s: s.isin([1, 2, 3, 4]), "recency_score must be in {1,2,3,4}"
+        ),
+        ValueValidator(
+            "frequency_score",
+            lambda s: s.isin([1, 2, 3, 4]),
+            "frequency_score must be in {1,2,3,4}",
+        ),
+        ValueValidator(
+            "monetary_score", lambda s: s.isin([1, 2, 3, 4]), "monetary_score must be in {1,2,3,4}"
+        ),
     ),
 )
 
@@ -1735,7 +2116,9 @@ BEHAVIORAL_FEATURES = DataContract(
     ),
     validators=(
         ValueValidator("days_active", lambda s: s >= 0, "days_active must be non-negative"),
-        ValueValidator("purchase_frequency", lambda s: s >= 0, "purchase_frequency must be non-negative"),
+        ValueValidator(
+            "purchase_frequency", lambda s: s >= 0, "purchase_frequency must be non-negative"
+        ),
         ValueValidator("total_revenue", lambda s: s >= 0, "total_revenue must be non-negative"),
         ValueValidator("avg_order_value", lambda s: s >= 0, "avg_order_value must be non-negative"),
         ValueValidator("n_products", lambda s: s > 0, "n_products must be positive"),
@@ -1743,7 +2126,9 @@ BEHAVIORAL_FEATURES = DataContract(
         ValueValidator("avg_basket_size", lambda s: s > 0, "avg_basket_size must be positive"),
         ValueValidator("avg_price", lambda s: s > 0, "avg_price must be positive"),
         ValueValidator("price_cv", lambda s: s >= 0, "price_cv must be non-negative"),
-        ValueValidator("weekend_ratio", lambda s: (s >= 0) & (s <= 1), "weekend_ratio must be in [0, 1]"),
+        ValueValidator(
+            "weekend_ratio", lambda s: (s >= 0) & (s <= 1), "weekend_ratio must be in [0, 1]"
+        ),
     ),
 )
 
@@ -1757,8 +2142,14 @@ BEHAVIORAL_SEGMENTS = DataContract(
         "cluster_confidence",
     ),
     validators=(
-        ValueValidator("cluster_distance", lambda s: s >= 0, "cluster_distance must be non-negative"),
-        ValueValidator("cluster_confidence", lambda s: (s >= 0) & (s <= 1), "cluster_confidence must be in [0, 1]"),
+        ValueValidator(
+            "cluster_distance", lambda s: s >= 0, "cluster_distance must be non-negative"
+        ),
+        ValueValidator(
+            "cluster_confidence",
+            lambda s: (s >= 0) & (s <= 1),
+            "cluster_confidence must be in [0, 1]",
+        ),
     ),
 )
 
@@ -1772,7 +2163,9 @@ SEGMENT_RADAR = DataContract(
     ),
     validators=(
         ValueValidator("mean_value", lambda s: s >= 0, "mean_value must be non-negative"),
-        ValueValidator("normalized_value", lambda s: (s >= 0) & (s <= 1), "normalized_value must be in [0, 1]"),
+        ValueValidator(
+            "normalized_value", lambda s: (s >= 0) & (s <= 1), "normalized_value must be in [0, 1]"
+        ),
     ),
 )
 
@@ -1788,7 +2181,9 @@ SEGMENT_MIGRATION = DataContract(
     ),
     validators=(
         ValueValidator("customers", lambda s: s >= 0, "customers must be non-negative"),
-        ValueValidator("retention_rate", lambda s: (s >= 0) & (s <= 1), "retention_rate must be in [0, 1]"),
+        ValueValidator(
+            "retention_rate", lambda s: (s >= 0) & (s <= 1), "retention_rate must be in [0, 1]"
+        ),
     ),
 )
 
@@ -1796,7 +2191,9 @@ SURVIVAL_PREDICTIONS = DataContract(
     name="survival_predictions",
     columns=("customer_id", "survival_prob", "churn_risk"),
     validators=(
-        ValueValidator("survival_prob", lambda s: (s >= 0) & (s <= 1), "survival_prob must be in [0, 1]"),
+        ValueValidator(
+            "survival_prob", lambda s: (s >= 0) & (s <= 1), "survival_prob must be in [0, 1]"
+        ),
         ValueValidator("churn_risk", lambda s: (s >= 0) & (s <= 1), "churn_risk must be in [0, 1]"),
     ),
 )
@@ -1875,15 +2272,45 @@ SEGMENT_VALUE_METRICS = DataContract(
         ValueValidator("revenue", lambda s: s >= 0, "revenue must be non-negative"),
         ValueValidator("transactions", lambda s: s >= 0, "transactions must be non-negative"),
         ValueValidator("units", lambda s: s >= 0, "units must be non-negative"),
-        ValueValidator("customer_share_pct", lambda s: (s >= 0) & (s <= 100), "customer_share_pct must be in [0, 100]"),
-        ValueValidator("revenue_share_pct", lambda s: (s >= 0) & (s <= 100), "revenue_share_pct must be in [0, 100]"),
-        ValueValidator("transaction_share_pct", lambda s: (s >= 0) & (s <= 100), "transaction_share_pct must be in [0, 100]"),
-        ValueValidator("unit_share_pct", lambda s: (s >= 0) & (s <= 100), "unit_share_pct must be in [0, 100]"),
-        ValueValidator("revenue_per_customer", lambda s: s >= 0, "revenue_per_customer must be non-negative"),
-        ValueValidator("transactions_per_customer", lambda s: s >= 0, "transactions_per_customer must be non-negative"),
-        ValueValidator("units_per_customer", lambda s: s >= 0, "units_per_customer must be non-negative"),
-        ValueValidator("revenue_per_transaction", lambda s: s >= 0, "revenue_per_transaction must be non-negative"),
-        ValueValidator("value_concentration_index", lambda s: s >= 0, "value_concentration_index must be non-negative"),
+        ValueValidator(
+            "customer_share_pct",
+            lambda s: (s >= 0) & (s <= 100),
+            "customer_share_pct must be in [0, 100]",
+        ),
+        ValueValidator(
+            "revenue_share_pct",
+            lambda s: (s >= 0) & (s <= 100),
+            "revenue_share_pct must be in [0, 100]",
+        ),
+        ValueValidator(
+            "transaction_share_pct",
+            lambda s: (s >= 0) & (s <= 100),
+            "transaction_share_pct must be in [0, 100]",
+        ),
+        ValueValidator(
+            "unit_share_pct", lambda s: (s >= 0) & (s <= 100), "unit_share_pct must be in [0, 100]"
+        ),
+        ValueValidator(
+            "revenue_per_customer", lambda s: s >= 0, "revenue_per_customer must be non-negative"
+        ),
+        ValueValidator(
+            "transactions_per_customer",
+            lambda s: s >= 0,
+            "transactions_per_customer must be non-negative",
+        ),
+        ValueValidator(
+            "units_per_customer", lambda s: s >= 0, "units_per_customer must be non-negative"
+        ),
+        ValueValidator(
+            "revenue_per_transaction",
+            lambda s: s >= 0,
+            "revenue_per_transaction must be non-negative",
+        ),
+        ValueValidator(
+            "value_concentration_index",
+            lambda s: s >= 0,
+            "value_concentration_index must be non-negative",
+        ),
     ),
 )
 
@@ -1901,14 +2328,26 @@ SEGMENT_ENGAGEMENT_METRICS = DataContract(
         "dormancy_rate_pct",
     ),
     validators=(
-        ValueValidator("purchase_frequency", lambda s: s >= 0, "purchase_frequency must be non-negative"),
+        ValueValidator(
+            "purchase_frequency", lambda s: s >= 0, "purchase_frequency must be non-negative"
+        ),
         ValueValidator("recency_days", lambda s: s >= 0, "recency_days must be non-negative"),
-        ValueValidator("avg_days_between", lambda s: s >= 0, "avg_days_between must be non-negative"),
+        ValueValidator(
+            "avg_days_between", lambda s: s >= 0, "avg_days_between must be non-negative"
+        ),
         ValueValidator("active_weeks", lambda s: s >= 0, "active_weeks must be non-negative"),
         ValueValidator("active_months", lambda s: s >= 0, "active_months must be non-negative"),
         ValueValidator("purchase_streak", lambda s: s >= 0, "purchase_streak must be non-negative"),
-        ValueValidator("active_customer_rate_pct", lambda s: (s >= 0) & (s <= 100), "active_customer_rate_pct must be in [0, 100]"),
-        ValueValidator("dormancy_rate_pct", lambda s: (s >= 0) & (s <= 100), "dormancy_rate_pct must be in [0, 100]"),
+        ValueValidator(
+            "active_customer_rate_pct",
+            lambda s: (s >= 0) & (s <= 100),
+            "active_customer_rate_pct must be in [0, 100]",
+        ),
+        ValueValidator(
+            "dormancy_rate_pct",
+            lambda s: (s >= 0) & (s <= 100),
+            "dormancy_rate_pct must be in [0, 100]",
+        ),
     ),
 )
 
@@ -1923,11 +2362,25 @@ SEGMENT_RETENTION_METRICS = DataContract(
         "reactivation_rate_pct",
     ),
     validators=(
-        ValueValidator("customer_lifetime_days", lambda s: s >= 0, "customer_lifetime_days must be non-negative"),
+        ValueValidator(
+            "customer_lifetime_days",
+            lambda s: s >= 0,
+            "customer_lifetime_days must be non-negative",
+        ),
         ValueValidator("tenure", lambda s: s >= 0, "tenure must be non-negative"),
-        ValueValidator("repeat_purchase_rate_pct", lambda s: (s >= 0) & (s <= 100), "repeat_purchase_rate_pct must be in [0, 100]"),
-        ValueValidator("lapse_rate_pct", lambda s: (s >= 0) & (s <= 100), "lapse_rate_pct must be in [0, 100]"),
-        ValueValidator("reactivation_rate_pct", lambda s: (s >= 0) & (s <= 100), "reactivation_rate_pct must be in [0, 100]"),
+        ValueValidator(
+            "repeat_purchase_rate_pct",
+            lambda s: (s >= 0) & (s <= 100),
+            "repeat_purchase_rate_pct must be in [0, 100]",
+        ),
+        ValueValidator(
+            "lapse_rate_pct", lambda s: (s >= 0) & (s <= 100), "lapse_rate_pct must be in [0, 100]"
+        ),
+        ValueValidator(
+            "reactivation_rate_pct",
+            lambda s: (s >= 0) & (s <= 100),
+            "reactivation_rate_pct must be in [0, 100]",
+        ),
     ),
 )
 
@@ -1945,14 +2398,40 @@ SEGMENT_BASKET_METRICS = DataContract(
         "small_basket_rate_pct",
     ),
     validators=(
-        ValueValidator("avg_basket_value", lambda s: s >= 0, "avg_basket_value must be non-negative"),
-        ValueValidator("avg_units_per_basket", lambda s: s >= 0, "avg_units_per_basket must be non-negative"),
-        ValueValidator("avg_skus_per_basket", lambda s: s >= 0, "avg_skus_per_basket must be non-negative"),
-        ValueValidator("avg_categories_per_basket", lambda s: s >= 0, "avg_categories_per_basket must be non-negative"),
-        ValueValidator("basket_concentration_gini", lambda s: (s >= 0) & (s <= 1), "basket_concentration_gini must be in [0, 1]"),
-        ValueValidator("basket_diversity_entropy", lambda s: s >= 0, "basket_diversity_entropy must be non-negative"),
-        ValueValidator("large_basket_rate_pct", lambda s: (s >= 0) & (s <= 100), "large_basket_rate_pct must be in [0, 100]"),
-        ValueValidator("small_basket_rate_pct", lambda s: (s >= 0) & (s <= 100), "small_basket_rate_pct must be in [0, 100]"),
+        ValueValidator(
+            "avg_basket_value", lambda s: s >= 0, "avg_basket_value must be non-negative"
+        ),
+        ValueValidator(
+            "avg_units_per_basket", lambda s: s >= 0, "avg_units_per_basket must be non-negative"
+        ),
+        ValueValidator(
+            "avg_skus_per_basket", lambda s: s >= 0, "avg_skus_per_basket must be non-negative"
+        ),
+        ValueValidator(
+            "avg_categories_per_basket",
+            lambda s: s >= 0,
+            "avg_categories_per_basket must be non-negative",
+        ),
+        ValueValidator(
+            "basket_concentration_gini",
+            lambda s: (s >= 0) & (s <= 1),
+            "basket_concentration_gini must be in [0, 1]",
+        ),
+        ValueValidator(
+            "basket_diversity_entropy",
+            lambda s: s >= 0,
+            "basket_diversity_entropy must be non-negative",
+        ),
+        ValueValidator(
+            "large_basket_rate_pct",
+            lambda s: (s >= 0) & (s <= 100),
+            "large_basket_rate_pct must be in [0, 100]",
+        ),
+        ValueValidator(
+            "small_basket_rate_pct",
+            lambda s: (s >= 0) & (s <= 100),
+            "small_basket_rate_pct must be in [0, 100]",
+        ),
     ),
 )
 
@@ -1973,11 +2452,31 @@ SEGMENT_PRICE_BEHAVIOR_METRICS = DataContract(
         ValueValidator("avg_price_paid", lambda s: s >= 0, "avg_price_paid must be non-negative"),
         ValueValidator("price_cv", lambda s: s >= 0, "price_cv must be non-negative"),
         ValueValidator("price_range", lambda s: s >= 0, "price_range must be non-negative"),
-        ValueValidator("price_index_vs_overall", lambda s: s >= 0, "price_index_vs_overall must be non-negative"),
-        ValueValidator("price_orientation_index", lambda s: s >= -100, "price_orientation_index must be >= -100"),
-        ValueValidator("premium_product_share_pct", lambda s: (s >= 0) & (s <= 100), "premium_product_share_pct must be in [0, 100]"),
-        ValueValidator("value_product_share_pct", lambda s: (s >= 0) & (s <= 100), "value_product_share_pct must be in [0, 100]"),
-        ValueValidator("kvi_penetration_pct", lambda s: (s >= 0) & (s <= 100), "kvi_penetration_pct must be in [0, 100]"),
+        ValueValidator(
+            "price_index_vs_overall",
+            lambda s: s >= 0,
+            "price_index_vs_overall must be non-negative",
+        ),
+        ValueValidator(
+            "price_orientation_index",
+            lambda s: s >= -100,
+            "price_orientation_index must be >= -100",
+        ),
+        ValueValidator(
+            "premium_product_share_pct",
+            lambda s: (s >= 0) & (s <= 100),
+            "premium_product_share_pct must be in [0, 100]",
+        ),
+        ValueValidator(
+            "value_product_share_pct",
+            lambda s: (s >= 0) & (s <= 100),
+            "value_product_share_pct must be in [0, 100]",
+        ),
+        ValueValidator(
+            "kvi_penetration_pct",
+            lambda s: (s >= 0) & (s <= 100),
+            "kvi_penetration_pct must be in [0, 100]",
+        ),
     ),
 )
 
@@ -1992,11 +2491,25 @@ SEGMENT_GROWTH_METRICS = DataContract(
         "segment_share_change_pct",
     ),
     validators=(
-        ValueValidator("revenue_growth_pct", lambda s: s >= -100, "revenue_growth_pct must be >= -100"),
-        ValueValidator("customer_growth_pct", lambda s: s >= -100, "customer_growth_pct must be >= -100"),
-        ValueValidator("frequency_growth_pct", lambda s: s >= -100, "frequency_growth_pct must be >= -100"),
-        ValueValidator("avg_order_value_growth_pct", lambda s: s >= -100, "avg_order_value_growth_pct must be >= -100"),
-        ValueValidator("segment_share_change_pct", lambda s: s >= -100, "segment_share_change_pct must be >= -100"),
+        ValueValidator(
+            "revenue_growth_pct", lambda s: s >= -100, "revenue_growth_pct must be >= -100"
+        ),
+        ValueValidator(
+            "customer_growth_pct", lambda s: s >= -100, "customer_growth_pct must be >= -100"
+        ),
+        ValueValidator(
+            "frequency_growth_pct", lambda s: s >= -100, "frequency_growth_pct must be >= -100"
+        ),
+        ValueValidator(
+            "avg_order_value_growth_pct",
+            lambda s: s >= -100,
+            "avg_order_value_growth_pct must be >= -100",
+        ),
+        ValueValidator(
+            "segment_share_change_pct",
+            lambda s: s >= -100,
+            "segment_share_change_pct must be >= -100",
+        ),
     ),
 )
 
@@ -2013,10 +2526,26 @@ SEGMENT_CONCENTRATION_METRICS = DataContract(
         "revenue_std",
     ),
     validators=(
-        ValueValidator("revenue_concentration_gini", lambda s: (s >= 0) & (s <= 1), "revenue_concentration_gini must be in [0, 1]"),
-        ValueValidator("top_1pct_revenue_share", lambda s: (s >= 0) & (s <= 100), "top_1pct_revenue_share must be in [0, 100]"),
-        ValueValidator("top_5pct_revenue_share", lambda s: (s >= 0) & (s <= 100), "top_5pct_revenue_share must be in [0, 100]"),
-        ValueValidator("top_10pct_revenue_share", lambda s: (s >= 0) & (s <= 100), "top_10pct_revenue_share must be in [0, 100]"),
+        ValueValidator(
+            "revenue_concentration_gini",
+            lambda s: (s >= 0) & (s <= 1),
+            "revenue_concentration_gini must be in [0, 1]",
+        ),
+        ValueValidator(
+            "top_1pct_revenue_share",
+            lambda s: (s >= 0) & (s <= 100),
+            "top_1pct_revenue_share must be in [0, 100]",
+        ),
+        ValueValidator(
+            "top_5pct_revenue_share",
+            lambda s: (s >= 0) & (s <= 100),
+            "top_5pct_revenue_share must be in [0, 100]",
+        ),
+        ValueValidator(
+            "top_10pct_revenue_share",
+            lambda s: (s >= 0) & (s <= 100),
+            "top_10pct_revenue_share must be in [0, 100]",
+        ),
         ValueValidator("revenue_mean", lambda s: s >= 0, "revenue_mean must be non-negative"),
         ValueValidator("revenue_median", lambda s: s >= 0, "revenue_median must be non-negative"),
         ValueValidator("revenue_std", lambda s: s >= 0, "revenue_std must be non-negative"),
@@ -2033,8 +2562,16 @@ SEGMENT_STABILITY_SCORE = DataContract(
     ),
     validators=(
         ValueValidator("customer_count", lambda s: s >= 0, "customer_count must be non-negative"),
-        ValueValidator("stability_score", lambda s: (s >= 0) & (s <= 100), "stability_score must be in [0, 100]"),
-        ValueValidator("evidence_level", lambda s: s.isin([1, 2, 3, 4, 5]), "evidence_level must be in [1, 2, 3, 4, 5]"),
+        ValueValidator(
+            "stability_score",
+            lambda s: (s >= 0) & (s <= 100),
+            "stability_score must be in [0, 100]",
+        ),
+        ValueValidator(
+            "evidence_level",
+            lambda s: s.isin([1, 2, 3, 4, 5]),
+            "evidence_level must be in [1, 2, 3, 4, 5]",
+        ),
     ),
 )
 
@@ -2046,7 +2583,11 @@ SEGMENT_DISTINCTIVENESS = DataContract(
         "defining_characteristics",
     ),
     validators=(
-        ValueValidator("distinctiveness_score", lambda s: (s >= 0) & (s <= 100), "distinctiveness_score must be in [0, 100]"),
+        ValueValidator(
+            "distinctiveness_score",
+            lambda s: (s >= 0) & (s <= 100),
+            "distinctiveness_score must be in [0, 100]",
+        ),
     ),
 )
 
@@ -2097,9 +2638,19 @@ ELASTICITY_CONFIDENCE = DataContract(
     validators=(
         ValueValidator("ci_width", lambda s: s >= 0, "ci_width must be non-negative"),
         ValueValidator("p_value", lambda s: (s >= 0) & (s <= 1), "p_value must be in [0, 1]"),
-        ValueValidator("significant", lambda s: s.isin({True, False}), "significant must be boolean"),
-        ValueValidator("confidence", lambda s: s.isin({"high", "medium", "low"}), "confidence must be high/medium/low"),
-        ValueValidator("direction", lambda s: s.isin({"elastic", "unit_elastic", "inelastic"}), "direction must be elastic/unit_elastic/inelastic"),
+        ValueValidator(
+            "significant", lambda s: s.isin({True, False}), "significant must be boolean"
+        ),
+        ValueValidator(
+            "confidence",
+            lambda s: s.isin({"high", "medium", "low"}),
+            "confidence must be high/medium/low",
+        ),
+        ValueValidator(
+            "direction",
+            lambda s: s.isin({"elastic", "unit_elastic", "inelastic"}),
+            "direction must be elastic/unit_elastic/inelastic",
+        ),
         ValueValidator("n_obs", lambda s: s > 0, "n_obs must be positive"),
     ),
 )
@@ -2143,7 +2694,9 @@ ELASTICITY_STATUS = DataContract(
             "confidence must be high/medium/low or NaN",
         ),
         ValueValidator("n_obs", lambda s: s.isna() | (s > 0), "n_obs must be positive or NaN"),
-        ValueValidator("price_cv", lambda s: s.isna() | (s >= 0), "price_cv must be non-negative or NaN"),
+        ValueValidator(
+            "price_cv", lambda s: s.isna() | (s >= 0), "price_cv must be non-negative or NaN"
+        ),
         ValueValidator(
             "r_squared",
             lambda s: s.isna() | ((s >= 0) & (s <= 1)),
@@ -2168,7 +2721,9 @@ HIERARCHICAL_ELASTICITY = DataContract(
         "std_err",
     ),
     validators=(
-        ValueValidator("shrink_weight", lambda s: (s >= 0) & (s <= 1), "shrink_weight must be in [0, 1]"),
+        ValueValidator(
+            "shrink_weight", lambda s: (s >= 0) & (s <= 1), "shrink_weight must be in [0, 1]"
+        ),
         ValueValidator("r_squared", lambda s: (s >= 0) & (s <= 1), "r_squared must be in [0, 1]"),
         ValueValidator("p_value", lambda s: (s >= 0) & (s <= 1), "p_value must be in [0, 1]"),
         ValueValidator("n_obs", lambda s: s > 0, "n_obs must be positive"),
@@ -2194,8 +2749,12 @@ CROSS_ELASTICITY = DataContract(
         "avg_price_b",
     ),
     validators=(
-        ValueValidator("own_elasticity_se", lambda s: s >= 0, "own_elasticity_se must be non-negative"),
-        ValueValidator("cross_elasticity_se", lambda s: s >= 0, "cross_elasticity_se must be non-negative"),
+        ValueValidator(
+            "own_elasticity_se", lambda s: s >= 0, "own_elasticity_se must be non-negative"
+        ),
+        ValueValidator(
+            "cross_elasticity_se", lambda s: s >= 0, "cross_elasticity_se must be non-negative"
+        ),
         ValueValidator("r_squared", lambda s: (s >= 0) & (s <= 1), "r_squared must be in [0, 1]"),
         ValueValidator("n_obs", lambda s: s > 0, "n_obs must be positive"),
         ValueValidator("avg_price_a", lambda s: s > 0, "avg_price_a must be positive"),
@@ -2218,8 +2777,14 @@ KVI_SCORES = DataContract(
     validators=(
         ValueValidator("kvi_score", lambda s: s >= 0, "kvi_score must be non-negative"),
         ValueValidator("total_revenue", lambda s: s >= 0, "total_revenue must be non-negative"),
-        ValueValidator("basket_penetration", lambda s: (s >= 0) & (s <= 1), "basket_penetration must be in [0, 1]"),
-        ValueValidator("trip_incidence", lambda s: (s >= 0) & (s <= 1), "trip_incidence must be in [0, 1]"),
+        ValueValidator(
+            "basket_penetration",
+            lambda s: (s >= 0) & (s <= 1),
+            "basket_penetration must be in [0, 1]",
+        ),
+        ValueValidator(
+            "trip_incidence", lambda s: (s >= 0) & (s <= 1), "trip_incidence must be in [0, 1]"
+        ),
         ValueValidator(
             "abs_elasticity",
             lambda s: s.isna() | (s >= 0),
@@ -2345,7 +2910,9 @@ PRICING_DECISION_MATRIX = DataContract(
         ),
         ValueValidator(
             "decision",
-            lambda s: s.isin({"invest", "protect", "price_lever", "review", "insufficient_evidence"}),
+            lambda s: s.isin(
+                {"invest", "protect", "price_lever", "review", "insufficient_evidence"}
+            ),
             "decision must be invest/protect/price_lever/review/insufficient_evidence",
         ),
         ValueValidator("total_revenue", lambda s: s >= 0, "total_revenue must be non-negative"),
@@ -2373,7 +2940,9 @@ PRICING_INSIGHTS = DataContract(
     validators=(
         ValueValidator(
             "kind",
-            lambda s: s.isin({"opportunity", "risk", "growth", "leakage", "anomaly", "efficiency", "watch"}),
+            lambda s: s.isin(
+                {"opportunity", "risk", "growth", "leakage", "anomaly", "efficiency", "watch"}
+            ),
             "kind must be a valid insight category",
         ),
         ValueValidator(
@@ -2403,7 +2972,7 @@ PRICING_INSIGHTS = DataContract(
         ),
         ValueValidator(
             "impact_value",
-            lambda s: s.isna() | pd.to_numeric(s, errors='coerce').notna(),
+            lambda s: s.isna() | pd.to_numeric(s, errors="coerce").notna(),
             "impact_value must be numeric or NaN",
         ),
         ValueValidator(
@@ -2458,7 +3027,9 @@ PRICE_CURVE_1D = DataContract(
         ValueValidator("median_price", lambda s: s > 0, "median_price must be positive"),
         ValueValidator("pack_size_numeric", lambda s: s > 0, "pack_size_numeric must be positive"),
         ValueValidator("price_per_unit", lambda s: s > 0, "price_per_unit must be positive"),
-        ValueValidator("has_violation", lambda s: s.isin([True, False]), "has_violation must be boolean"),
+        ValueValidator(
+            "has_violation", lambda s: s.isin([True, False]), "has_violation must be boolean"
+        ),
     ),
 )
 
@@ -2484,9 +3055,17 @@ PRICE_CURVE_MULTI = DataContract(
         ValueValidator("median_price", lambda s: s > 0, "median_price must be positive"),
         ValueValidator("pack_size_numeric", lambda s: s > 0, "pack_size_numeric must be positive"),
         ValueValidator("price_per_unit", lambda s: s > 0, "price_per_unit must be positive"),
-        ValueValidator("basket_penetration", lambda s: (s >= 0) & (s <= 1), "basket_penetration must be in [0, 1]"),
-        ValueValidator("trip_incidence", lambda s: (s >= 0) & (s <= 1), "trip_incidence must be in [0, 1]"),
-        ValueValidator("has_violation", lambda s: s.isin([True, False]), "has_violation must be boolean"),
+        ValueValidator(
+            "basket_penetration",
+            lambda s: (s >= 0) & (s <= 1),
+            "basket_penetration must be in [0, 1]",
+        ),
+        ValueValidator(
+            "trip_incidence", lambda s: (s >= 0) & (s <= 1), "trip_incidence must be in [0, 1]"
+        ),
+        ValueValidator(
+            "has_violation", lambda s: s.isin([True, False]), "has_violation must be boolean"
+        ),
     ),
 )
 
@@ -2506,11 +3085,19 @@ IV_ELASTICITY = DataContract(
         "avg_instrument",
     ),
     validators=(
-        ValueValidator("iv_elasticity_se", lambda s: s >= 0, "iv_elasticity_se must be non-negative"),
-        ValueValidator("iv_elasticity_p", lambda s: (s >= 0) & (s <= 1), "iv_elasticity_p must be in [0, 1]"),
-        ValueValidator("iv_r_squared", lambda s: (s >= 0) & (s <= 1), "iv_r_squared must be in [0, 1]"),
+        ValueValidator(
+            "iv_elasticity_se", lambda s: s >= 0, "iv_elasticity_se must be non-negative"
+        ),
+        ValueValidator(
+            "iv_elasticity_p", lambda s: (s >= 0) & (s <= 1), "iv_elasticity_p must be in [0, 1]"
+        ),
+        ValueValidator(
+            "iv_r_squared", lambda s: (s >= 0) & (s <= 1), "iv_r_squared must be in [0, 1]"
+        ),
         ValueValidator("first_stage_f", lambda s: s >= 0, "first_stage_f must be non-negative"),
-        ValueValidator("weak_instrument", lambda s: s.isin([True, False]), "weak_instrument must be boolean"),
+        ValueValidator(
+            "weak_instrument", lambda s: s.isin([True, False]), "weak_instrument must be boolean"
+        ),
         ValueValidator("n_obs", lambda s: s > 0, "n_obs must be positive"),
         ValueValidator("avg_price", lambda s: s > 0, "avg_price must be positive"),
         ValueValidator("avg_weekly_qty", lambda s: s >= 0, "avg_weekly_qty must be non-negative"),
@@ -2533,11 +3120,19 @@ IV_ELASTICITY_EXTERNAL = DataContract(
         "avg_instrument",
     ),
     validators=(
-        ValueValidator("iv_elasticity_se", lambda s: s >= 0, "iv_elasticity_se must be non-negative"),
-        ValueValidator("iv_elasticity_p", lambda s: (s >= 0) & (s <= 1), "iv_elasticity_p must be in [0, 1]"),
-        ValueValidator("iv_r_squared", lambda s: (s >= 0) & (s <= 1), "iv_r_squared must be in [0, 1]"),
+        ValueValidator(
+            "iv_elasticity_se", lambda s: s >= 0, "iv_elasticity_se must be non-negative"
+        ),
+        ValueValidator(
+            "iv_elasticity_p", lambda s: (s >= 0) & (s <= 1), "iv_elasticity_p must be in [0, 1]"
+        ),
+        ValueValidator(
+            "iv_r_squared", lambda s: (s >= 0) & (s <= 1), "iv_r_squared must be in [0, 1]"
+        ),
         ValueValidator("first_stage_f", lambda s: s >= 0, "first_stage_f must be non-negative"),
-        ValueValidator("weak_instrument", lambda s: s.isin([True, False]), "weak_instrument must be boolean"),
+        ValueValidator(
+            "weak_instrument", lambda s: s.isin([True, False]), "weak_instrument must be boolean"
+        ),
         ValueValidator("n_obs", lambda s: s > 0, "n_obs must be positive"),
         ValueValidator("avg_price", lambda s: s > 0, "avg_price must be positive"),
         ValueValidator("avg_weekly_qty", lambda s: s >= 0, "avg_weekly_qty must be non-negative"),
@@ -2614,20 +3209,30 @@ CAUSAL_UPLIFT = DataContract(
 EVIDENCE_QUALITY = DataContract(
     name="evidence_quality",
     columns=(
-        "evidence_level",      # 1-5: exploratory, descriptive, predictive, quasi-causal, causal
+        "evidence_level",  # 1-5: exploratory, descriptive, predictive, quasi-causal, causal
         "sample_size_transitions",  # number of switching transitions
-        "sample_size_customers",    # number of switching customers
-        "coverage",             # fraction of population covered (0-1)
-        "method",               # method used (e.g., "OLS", "heuristic", "experimental")
-        "causal_status",        # "observed_correlation", "quasi_causal", "counterfactual_estimate", "experimental"
-        "confidence_gate",      # boolean: whether insight meets minimum evidence threshold for action
-        "financial_materiality" # minimum revenue impact to consider (optional)
+        "sample_size_customers",  # number of switching customers
+        "coverage",  # fraction of population covered (0-1)
+        "method",  # method used (e.g., "OLS", "heuristic", "experimental")
+        "causal_status",  # "observed_correlation", "quasi_causal", "counterfactual_estimate", "experimental"
+        "confidence_gate",  # boolean: whether insight meets minimum evidence threshold for action
+        "financial_materiality",  # minimum revenue impact to consider (optional)
     ),
     validators=(
-        ValueValidator("evidence_level", lambda s: s.isin([1, 2, 3, 4, 5]), "evidence_level must be 1-5"),
-        ValueValidator("sample_size_transitions", lambda s: s >= 0, "sample_size_transitions must be non-negative"),
-        ValueValidator("sample_size_customers", lambda s: s >= 0, "sample_size_customers must be non-negative"),
+        ValueValidator(
+            "evidence_level", lambda s: s.isin([1, 2, 3, 4, 5]), "evidence_level must be 1-5"
+        ),
+        ValueValidator(
+            "sample_size_transitions",
+            lambda s: s >= 0,
+            "sample_size_transitions must be non-negative",
+        ),
+        ValueValidator(
+            "sample_size_customers", lambda s: s >= 0, "sample_size_customers must be non-negative"
+        ),
         ValueValidator("coverage", lambda s: (s >= 0) & (s <= 1), "coverage must be in [0, 1]"),
-        ValueValidator("confidence_gate", lambda s: s.isin([True, False]), "confidence_gate must be boolean"),
+        ValueValidator(
+            "confidence_gate", lambda s: s.isin([True, False]), "confidence_gate must be boolean"
+        ),
     ),
 )

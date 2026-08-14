@@ -18,7 +18,6 @@ import streamlit as st
 from src.analytics.basket_metrics import spc_revenue_trend
 from src.analytics.data import get_data_summary
 from src.analytics.data_quality import generate_quality_summary
-from src.analytics.insights import generate_overview_insights
 from src.ui.components import render_insight_cards, render_metric_row
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
@@ -124,7 +123,9 @@ def _render_spc_trend(df: pd.DataFrame) -> None:
     work = df.copy()
     work["date"] = pd.to_datetime(work["date"])
     work["revenue"] = work["price"] * work["quantity"]
-    series = work["revenue"].groupby(work["date"].dt.to_period("W").dt.start_time).sum().sort_index()
+    series = (
+        work["revenue"].groupby(work["date"].dt.to_period("W").dt.start_time).sum().sort_index()
+    )
     series.index = pd.to_datetime(series.index)
 
     try:
@@ -136,35 +137,116 @@ def _render_spc_trend(df: pd.DataFrame) -> None:
     fig = new_fig()
     fig.add_trace(
         go.Scatter(
-            x=spc["period"], y=spc["ucl"], mode="lines",
-            line={"color": PALETTE[2], "width": 1, "dash": "dash"}, name="UCL",
+            x=spc["period"],
+            y=spc["ucl"],
+            mode="lines",
+            line={"color": PALETTE[2], "width": 1, "dash": "dash"},
+            name="UCL",
         )
     )
     fig.add_trace(
         go.Scatter(
-            x=spc["period"], y=spc["lcl"], mode="lines",
-            line={"color": PALETTE[2], "width": 1, "dash": "dash"}, name="LCL",
-            fill="tonexty", fillcolor="rgba(255, 0, 0, 0.08)",
+            x=spc["period"],
+            y=spc["lcl"],
+            mode="lines",
+            line={"color": PALETTE[2], "width": 1, "dash": "dash"},
+            name="LCL",
+            fill="tonexty",
+            fillcolor="rgba(255, 0, 0, 0.08)",
         )
     )
     fig.add_trace(
         go.Scatter(
-            x=spc["period"], y=spc["center"], mode="lines",
-            line={"color": PALETTE[1], "width": 2, "dash": "dot"}, name="Center (trailing mean)",
+            x=spc["period"],
+            y=spc["center"],
+            mode="lines",
+            line={"color": PALETTE[1], "width": 2, "dash": "dot"},
+            name="Center (trailing mean)",
         )
     )
     fig.add_trace(
         go.Scatter(
-            x=spc["period"], y=spc["revenue"], mode="lines",
-            line={"color": PALETTE[0], "width": 2}, name="Revenue",
+            x=spc["period"],
+            y=spc["revenue"],
+            mode="lines",
+            line={"color": PALETTE[0], "width": 2},
+            name="Revenue",
         )
     )
     anomalies = spc[spc["anomaly"]]
     if not anomalies.empty:
         fig.add_trace(
             go.Scatter(
-                x=anomalies["period"], y=anomalies["revenue"], mode="markers",
-                name="Anomaly", marker={"color": "red", "size": 10, "symbol": "x"},
+                x=anomalies["period"],
+                y=anomalies["revenue"],
+                mode="markers",
+                name="Anomaly",
+                marker={"color": "red", "size": 10, "symbol": "x"},
+                customdata=anomalies["rule"],
+                hovertemplate="Anomaly (rule: %{customdata})<br>Revenue: %{y:.2f}<extra></extra>",
+            )
+        )
+    fig.update_layout(yaxis={"title": "Revenue"}, xaxis={"title": "Week"})
+    show(fig)
+    st.caption(
+        "SPC control limits: trailing rolling mean ± 2σ (Rule 1: outside limits; "
+        "Rule 3: 7 consecutive points on one side). Red X = anomaly — investigate "
+        "before extrapolating the trend."
+    )
+
+
+def _render_spc_trend_cached(spc: pd.DataFrame) -> None:
+    """Render SPC trend from precomputed data."""
+    st.subheader(":material/trending_up: Revenue Trend (SPC)")
+
+    fig = new_fig()
+    fig.add_trace(
+        go.Scatter(
+            x=spc["period"],
+            y=spc["ucl"],
+            mode="lines",
+            line={"color": PALETTE[2], "width": 1, "dash": "dash"},
+            name="UCL",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=spc["period"],
+            y=spc["lcl"],
+            mode="lines",
+            line={"color": PALETTE[2], "width": 1, "dash": "dash"},
+            name="LCL",
+            fill="tonexty",
+            fillcolor="rgba(255, 0, 0, 0.08)",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=spc["period"],
+            y=spc["center"],
+            mode="lines",
+            line={"color": PALETTE[1], "width": 2, "dash": "dot"},
+            name="Center (trailing mean)",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=spc["period"],
+            y=spc["revenue"],
+            mode="lines",
+            line={"color": PALETTE[0], "width": 2},
+            name="Revenue",
+        )
+    )
+    anomalies = spc[spc["anomaly"]]
+    if not anomalies.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=anomalies["period"],
+                y=anomalies["revenue"],
+                mode="markers",
+                name="Anomaly",
+                marker={"color": "red", "size": 10, "symbol": "x"},
                 customdata=anomalies["rule"],
                 hovertemplate="Anomaly (rule: %{customdata})<br>Revenue: %{y:.2f}<extra></extra>",
             )
@@ -190,7 +272,9 @@ def _render_calendar_heatmap(df: pd.DataFrame) -> None:
     if daily.empty:
         show(empty_state("No revenue data"))
         return
-    pivot = daily.pivot_table(index="week_of_year", columns="day_of_week", values="revenue", fill_value=0)
+    pivot = daily.pivot_table(
+        index="week_of_year", columns="day_of_week", values="revenue", fill_value=0
+    )
     for d in range(7):
         if d not in pivot.columns:
             pivot[d] = 0
@@ -216,7 +300,12 @@ def _render_calendar_heatmap(df: pd.DataFrame) -> None:
 def _render_concentration(df: pd.DataFrame) -> None:
     st.subheader(":material/pie_chart: Revenue Concentration (Pareto)")
     work = df.copy()
-    revenue = (work["price"] * work["quantity"]).groupby(work["stockcode"]).sum().sort_values(ascending=False)
+    revenue = (
+        (work["price"] * work["quantity"])
+        .groupby(work["stockcode"])
+        .sum()
+        .sort_values(ascending=False)
+    )
     total = revenue.sum()
     if total <= 0:
         show(empty_state("No revenue data"))
@@ -234,15 +323,21 @@ def _render_concentration(df: pd.DataFrame) -> None:
     fig = new_fig()
     fig.add_trace(
         go.Bar(
-            x=pareto["product"], y=pareto["revenue_share_pct"], name="Revenue share (%)",
+            x=pareto["product"],
+            y=pareto["revenue_share_pct"],
+            name="Revenue share (%)",
             marker={"color": PALETTE[4]},
             hovertemplate="%{x}<br>Share: %{y:.1f}%<extra></extra>",
         )
     )
     fig.add_trace(
         go.Scatter(
-            x=pareto["product"], y=pareto["cumulative_share_pct"], name="Cumulative (%)",
-            yaxis="y2", mode="lines+markers", line={"color": PALETTE[1], "width": 2},
+            x=pareto["product"],
+            y=pareto["cumulative_share_pct"],
+            name="Cumulative (%)",
+            yaxis="y2",
+            mode="lines+markers",
+            line={"color": PALETTE[1], "width": 2},
         )
     )
     fig.update_layout(
@@ -256,8 +351,8 @@ def _render_concentration(df: pd.DataFrame) -> None:
         f"Top-10 products = {top10:.0%} of revenue (HHI {hhi:.2f}). "
         + (
             "Concentrated: protect the top products' availability and pricing."
-            if top10 >= 50 else
-            "Healthy spread: no single product dominates."
+            if top10 >= 50
+            else "Healthy spread: no single product dominates."
         )
     )
 
@@ -288,16 +383,30 @@ def _render_new_vs_returning(df: pd.DataFrame) -> None:
         return
     fig = new_fig()
     fig.add_trace(
-        go.Scatter(x=split.index, y=split["new"], mode="lines", stackgroup="one",
-                   name="New customers", line={"color": PALETTE[0]})
+        go.Scatter(
+            x=split.index,
+            y=split["new"],
+            mode="lines",
+            stackgroup="one",
+            name="New customers",
+            line={"color": PALETTE[0]},
+        )
     )
     fig.add_trace(
-        go.Scatter(x=split.index, y=split["returning"], mode="lines", stackgroup="one",
-                   name="Returning customers", line={"color": PALETTE[2]})
+        go.Scatter(
+            x=split.index,
+            y=split["returning"],
+            mode="lines",
+            stackgroup="one",
+            name="Returning customers",
+            line={"color": PALETTE[2]},
+        )
     )
     fig.update_layout(yaxis={"title": "Transactions"}, xaxis={"title": "Week"})
     show(fig)
-    st.caption("New = first-ever transaction week. If returning is flat while new grows, retention is the lever.")
+    st.caption(
+        "New = first-ever transaction week. If returning is flat while new grows, retention is the lever."
+    )
 
 
 def _render_basket_distribution(df: pd.DataFrame) -> None:
@@ -309,13 +418,36 @@ def _render_basket_distribution(df: pd.DataFrame) -> None:
     fig = new_fig()
     fig.add_trace(
         go.Histogram(
-            x=sizes, nbinsx=max(5, int(sizes.max())),
-            marker={"color": PALETTE[0]}, opacity=0.9,
+            x=sizes,
+            nbinsx=max(5, int(sizes.max())),
+            marker={"color": PALETTE[0]},
+            opacity=0.9,
         )
     )
-    fig.update_layout(yaxis={"title": "Transactions"}, xaxis={"title": "Distinct products per basket"})
+    fig.update_layout(
+        yaxis={"title": "Transactions"}, xaxis={"title": "Distinct products per basket"}
+    )
     show(fig)
-    st.caption("Distribution shape tells you where to push: raising the tail (cross-sell) beats raising the mode.")
+    st.caption(
+        "Distribution shape tells you where to push: raising the tail (cross-sell) beats raising the mode."
+    )
+
+
+@st.cache_data(show_spinner="Computing SPC trend...", max_entries=5)
+def _cached_spc_trend(df: pd.DataFrame) -> pd.DataFrame:
+    from src.analytics.basket_metrics import spc_revenue_trend
+    work = df.copy()
+    work["date"] = pd.to_datetime(work["date"])
+    work["revenue"] = work["price"] * work["quantity"]
+    series = work["revenue"].groupby(work["date"].dt.to_period("W").dt.start_time).sum().sort_index()
+    series.index = pd.to_datetime(series.index)
+    return spc_revenue_trend(series)
+
+
+@st.cache_data(show_spinner="Generating insights...", max_entries=5)
+def _cached_overview_insights(df: pd.DataFrame) -> pd.DataFrame:
+    from src.analytics.insights import generate_overview_insights
+    return generate_overview_insights(df)
 
 
 def render(df: pd.DataFrame) -> None:
@@ -331,13 +463,18 @@ def render(df: pd.DataFrame) -> None:
             {"label": "Revenue", "value": f"€{work['revenue'].sum():,.0f}"},
         ]
     )
-    st.caption(f"Date range: {summary['date_range']} | Avg basket value: €{summary['avg_basket_value']:.2f}")
+    st.caption(
+        f"Date range: {summary['date_range']} | Avg basket value: €{summary['avg_basket_value']:.2f}"
+    )
 
     st.divider()
     _render_revenue_decomposition(df)
 
     st.divider()
-    _render_spc_trend(df)
+    with st.spinner("Loading trend analysis..."):
+        spc_data = _cached_spc_trend(df)
+    # Render SPC trend from cached data
+    _render_spc_trend_cached(spc_data)
 
     st.divider()
     c1, c2 = st.columns(2)
@@ -354,7 +491,8 @@ def render(df: pd.DataFrame) -> None:
 
     st.divider()
     st.subheader(":material/radar: Top Insights")
-    insights = generate_overview_insights(df)
+    with st.spinner("Loading insights..."):
+        insights = _cached_overview_insights(df)
     render_insight_cards(insights)
 
     st.divider()
@@ -363,12 +501,17 @@ def render(df: pd.DataFrame) -> None:
     if quality_report:
         st.markdown(generate_quality_summary(quality_report))
         if quality_report.low_freq_products:
-            with st.expander(f"Low-frequency products ({len(quality_report.low_freq_products)})", expanded=False):
+            with st.expander(
+                f"Low-frequency products ({len(quality_report.low_freq_products)})", expanded=False
+            ):
                 st.dataframe(
                     pd.DataFrame(
                         {
                             "stockcode": quality_report.low_freq_products,
-                            "transactions": [quality_report.low_freq_counts.get(p, 0) for p in quality_report.low_freq_products],
+                            "transactions": [
+                                quality_report.low_freq_counts.get(p, 0)
+                                for p in quality_report.low_freq_products
+                            ],
                         }
                     ),
                     use_container_width=True,
@@ -380,12 +523,18 @@ def render(df: pd.DataFrame) -> None:
                     f"Threshold: {quality_report.basket_outlier_threshold} items "
                     f"(above {quality_report.basket_size_percentile:.0%} percentile)"
                 )
-                st.write(f"Outlier transaction IDs: {', '.join(quality_report.basket_outlier_txn_ids[:50])}")
+                st.write(
+                    f"Outlier transaction IDs: {', '.join(quality_report.basket_outlier_txn_ids[:50])}"
+                )
                 if len(quality_report.basket_outlier_txn_ids) > 50:
                     st.caption(f"... and {len(quality_report.basket_outlier_txn_ids) - 50} more")
         if quality_report.duplicate_count > 0:
-            with st.expander(f"Duplicate transactions ({quality_report.duplicate_count})", expanded=False):
-                st.write(f"Duplicate transaction IDs: {', '.join(quality_report.duplicate_txn_ids[:50])}")
+            with st.expander(
+                f"Duplicate transactions ({quality_report.duplicate_count})", expanded=False
+            ):
+                st.write(
+                    f"Duplicate transaction IDs: {', '.join(quality_report.duplicate_txn_ids[:50])}"
+                )
                 if len(quality_report.duplicate_txn_ids) > 50:
                     st.caption(f"... and {len(quality_report.duplicate_txn_ids) - 50} more")
         if quality_report.incomplete_rows > 0:

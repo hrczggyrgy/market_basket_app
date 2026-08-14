@@ -41,12 +41,14 @@ def test_run_fpgrowth_contract(sample_df: pd.DataFrame) -> None:
 
 
 def test_run_fpgrowth_empty_returns_contract() -> None:
-    basket = create_basket_matrix(pd.DataFrame(
-        {
-            "transaction_id": ["T1", "T2"],
-            "stockcode": ["A", "B"],
-        }
-    ))
+    basket = create_basket_matrix(
+        pd.DataFrame(
+            {
+                "transaction_id": ["T1", "T2"],
+                "stockcode": ["A", "B"],
+            }
+        )
+    )
     freq = run_fpgrowth(basket, min_support=0.9, max_len=3)
     FREQUENT_ITEMSETS.validate(freq, allow_empty=True)
     assert freq.empty
@@ -78,7 +80,9 @@ def test_filter_rules_contract(sample_df: pd.DataFrame) -> None:
     basket = create_basket_matrix(sample_df)
     freq = run_fpgrowth(basket, min_support=0.02, max_len=3)
     rules = generate_rules(freq)
-    filtered = filter_rules(rules, min_support=0.03, min_confidence=0.25, min_lift=1.2, max_lift=50.0)
+    filtered = filter_rules(
+        rules, min_support=0.03, min_confidence=0.25, min_lift=1.2, max_lift=50.0
+    )
     RULES.validate(filtered, allow_empty=True)
     if not filtered.empty:
         assert filtered["support"].min() >= 0.03 - 1e-9
@@ -153,7 +157,9 @@ def test_flag_redundant_rules_marks_subsumed(sample_df: pd.DataFrame) -> None:
                 and s["confidence"] >= r_long["confidence"]
                 and s["lift"] >= r_long["lift"]
                 for s in short
-            ), f"Redundant rule without a stronger short rule: {r_long['antecedents']} -> {r_long['consequents']}"
+            ), (
+                f"Redundant rule without a stronger short rule: {r_long['antecedents']} -> {r_long['consequents']}"
+            )
 
 
 def test_bootstrap_lift_ci(sample_df: pd.DataFrame) -> None:
@@ -176,13 +182,15 @@ def test_strength_stability_anchor_apply_on_frozensets() -> None:
 
     from src.analytics.rules import aggregate_rules_to_categories
 
-    rules = pd.DataFrame({
-        "antecedents": [frozenset({"A"}), frozenset({"B", "C"})],
-        "consequents": [frozenset({"D"}), frozenset({"E"})],
-        "lift": [2.0, 3.0],
-        "lift_ci_lower": [1.5, 2.0],
-        "lift_ci_upper": [2.5, 4.0],
-    })
+    rules = pd.DataFrame(
+        {
+            "antecedents": [frozenset({"A"}), frozenset({"B", "C"})],
+            "consequents": [frozenset({"D"}), frozenset({"E"})],
+            "lift": [2.0, 3.0],
+            "lift_ci_lower": [1.5, 2.0],
+            "lift_ci_upper": [2.5, 4.0],
+        }
+    )
     with_ci = rules[rules["lift_ci_lower"].notna() & rules["lift_ci_upper"].notna()].copy()
     with_ci["anchor"] = with_ci["antecedents"].apply(lambda s: sorted(s)[0] if s else None)
     assert with_ci["anchor"].tolist() == ["A", "B"]

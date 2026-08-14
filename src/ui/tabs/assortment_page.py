@@ -75,7 +75,9 @@ def _render_revenue_waterfall(kept: list[str], metrics: dict, revenue: pd.Series
     )
     fig.update_layout(yaxis={"title": "Revenue ($)"}, height=350)
     show(fig)
-    st.caption("Total market = kept + recovered + lost. Recovered = demand from delisted SKUs captured by kept substitutes.")
+    st.caption(
+        "Total market = kept + recovered + lost. Recovered = demand from delisted SKUs captured by kept substitutes."
+    )
 
 
 def _render_scenario_comparison(scenarios: pd.DataFrame) -> None:
@@ -132,7 +134,9 @@ def _render_selected_assortment_table(kept: list[str], revenue: pd.Series) -> No
     show(fig)
     st.caption("Treemap: top 30 selected SKUs by revenue. Click to drill down.")
 
-    st.dataframe(table.sort_values("revenue", ascending=False), use_container_width=True, hide_index=True)
+    st.dataframe(
+        table.sort_values("revenue", ascending=False), use_container_width=True, hide_index=True
+    )
 
 
 def _render_category_coverage(kept: list[str], df: pd.DataFrame) -> None:
@@ -148,7 +152,10 @@ def _render_category_coverage(kept: list[str], df: pd.DataFrame) -> None:
     kept_rev = {}
     for p in kept:
         if p in cat_of:
-            kept_rev[cat_of[p]] = kept_rev.get(cat_of[p], 0.0) + (df[df["stockcode"] == p]["price"] * df[df["stockcode"] == p]["quantity"]).sum()
+            kept_rev[cat_of[p]] = (
+                kept_rev.get(cat_of[p], 0.0)
+                + (df[df["stockcode"] == p]["price"] * df[df["stockcode"] == p]["quantity"]).sum()
+            )
 
     cat_df = pd.DataFrame(
         {

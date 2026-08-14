@@ -12,9 +12,9 @@ from src.analytics.basket_metrics import compute_basket_penetration
 from src.analytics.intelligence import Opportunity, opportunities_to_dataframe
 from src.analytics.schemas import OPPORTUNITY_LIST, check
 
-_HIGH_PENETRATION_THRESHOLD = 0.5   # 50% of baskets
-_LOW_PENETRATION_THRESHOLD = 0.05   # 5% of baskets
-_MIN_REVENUE_SHARE = 0.01           # 1% of revenue
+_HIGH_PENETRATION_THRESHOLD = 0.5  # 50% of baskets
+_LOW_PENETRATION_THRESHOLD = 0.05  # 5% of baskets
+_MIN_REVENUE_SHARE = 0.01  # 1% of revenue
 
 
 def generate_basket_opportunities(
@@ -46,8 +46,8 @@ def generate_basket_opportunities(
 
     # Opportunity type 1: High penetration and high revenue -> traffic driver
     high_pen_high_rev = pen_df[
-        (pen_df["penetration"] >= _HIGH_PENETRATION_THRESHOLD) &
-        (pen_df["revenue_share"] >= pen_df["revenue_share"].quantile(0.5))
+        (pen_df["penetration"] >= _HIGH_PENETRATION_THRESHOLD)
+        & (pen_df["revenue_share"] >= pen_df["revenue_share"].quantile(0.5))
     ]
     if not high_pen_high_rev.empty:
         high_pen_high_rev = high_pen_high_rev.sort_values(
@@ -72,8 +72,8 @@ def generate_basket_opportunities(
 
     # Opportunity type 2: Low penetration but high revenue -> increase penetration
     low_pen_high_rev = pen_df[
-        (pen_df["penetration"] < _LOW_PENETRATION_THRESHOLD) &
-        (pen_df["revenue_share"] >= pen_df["revenue_share"].quantile(0.5))
+        (pen_df["penetration"] < _LOW_PENETRATION_THRESHOLD)
+        & (pen_df["revenue_share"] >= pen_df["revenue_share"].quantile(0.5))
     ]
     if not low_pen_high_rev.empty:
         low_pen_high_rev = low_pen_high_rev.sort_values(
@@ -156,5 +156,7 @@ def generate_basket_opportunities(
 
     table = opportunities_to_dataframe(opportunities)
     if not table.empty:
-        table = table.sort_values("value", ascending=False, na_position="last").reset_index(drop=True)
+        table = table.sort_values("value", ascending=False, na_position="last").reset_index(
+            drop=True
+        )
     return check(table, OPPORTUNITY_LIST, allow_empty=True)

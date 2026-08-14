@@ -135,7 +135,9 @@ def run_decision_center(
                 insight_parts.append(switching_insights)
                 domains.append("switching")
             rev_by_product = _revenue_by_product(df)
-            switching_opps = generate_switching_opportunities(sdp, delist, rev_by_product, top_n=top_n)
+            switching_opps = generate_switching_opportunities(
+                sdp, delist, rev_by_product, top_n=top_n
+            )
             if not switching_opps.empty:
                 opp_parts.append(switching_opps)
     except Exception:
@@ -166,7 +168,9 @@ def run_decision_center(
 
         affinity = get_top_affinity_pairs(df, top_n=50, min_cooccurrence=3)
         addon = _addon_recs_from_affinity(affinity)
-        cross_opps = generate_cross_sell_opportunities(addon, affinity, _revenue_by_product(df), top_n=top_n)
+        cross_opps = generate_cross_sell_opportunities(
+            addon, affinity, _revenue_by_product(df), top_n=top_n
+        )
         if not cross_opps.empty:
             opp_parts.append(cross_opps)
     except Exception:
@@ -229,7 +233,9 @@ def run_decision_center(
         n_signals=int(len(insights)),
         n_opportunities=int(len(opportunities)),
         n_risks=int((insights["kind"] == "risk").sum()) if not insights.empty else 0,
-        total_opportunity_value=float(opportunities["value"].fillna(0.0).sum()) if not opportunities.empty else 0.0,
+        total_opportunity_value=float(opportunities["value"].fillna(0.0).sum())
+        if not opportunities.empty
+        else 0.0,
         domains_covered=domains,
     )
 

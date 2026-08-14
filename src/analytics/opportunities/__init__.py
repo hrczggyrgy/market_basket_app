@@ -6,11 +6,11 @@ Decision Center can rank them by EUR impact.
 
 from src.analytics.opportunities.assortment import generate_assortment_opportunities
 from src.analytics.opportunities.basket import generate_basket_opportunities
+from src.analytics.opportunities.cdt import generate_cdt_opportunities
 from src.analytics.opportunities.cohort import generate_cohort_opportunities
 from src.analytics.opportunities.cross_sell import generate_cross_sell_opportunities
-from src.analytics.opportunities.cdt import generate_cdt_opportunities
-from src.analytics.opportunities.product import generate_product_opportunities
 from src.analytics.opportunities.pricing import generate_pricing_opportunities
+from src.analytics.opportunities.product import generate_product_opportunities
 from src.analytics.opportunities.promotion import generate_promotion_opportunities
 from src.analytics.opportunities.retention import generate_retention_opportunities
 from src.analytics.opportunities.switching import generate_switching_opportunities

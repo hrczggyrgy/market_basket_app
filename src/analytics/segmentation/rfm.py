@@ -72,17 +72,13 @@ def compute_rfm_features(
     rfm["items_per_order"] = rfm["n_items"] / rfm["frequency"]
 
     # Safe division with validation
-    rfm["revenue_per_item"] = np.where(
-        rfm["n_items"] > 0,
-        rfm["monetary"] / rfm["n_items"],
-        0.0
-    )
+    rfm["revenue_per_item"] = np.where(rfm["n_items"] > 0, rfm["monetary"] / rfm["n_items"], 0.0)
 
     # Safe coefficient of variation calculation
     rfm["order_value_cv"] = np.where(
         rfm["avg_order_value"].abs() > 1e-10,
         rfm["std_order_value"].fillna(0) / rfm["avg_order_value"].abs(),
-        0.0
+        0.0,
     )
 
     # Recency segments with better edge case handling
@@ -95,18 +91,19 @@ def compute_rfm_features(
         )
     except ValueError as e:
         import warnings as _warnings
+
         _warnings.warn(
             f"Could not create 4 recency segments due to insufficient variation: {e}. "
             "Falling back to manual binning.",
             UserWarning,
-            stacklevel=2
+            stacklevel=2,
         )
         # Manual fallback with equal-width bins
         rfm["recency_segment"] = pd.cut(
             rfm["recency_days"],
             bins=4,
             labels=["Recent", "Active", "Lapsing", "Churned"],
-            include_lowest=True
+            include_lowest=True,
         )
 
     try:
@@ -118,17 +115,18 @@ def compute_rfm_features(
         )
     except ValueError as e:
         import warnings as _warnings
+
         _warnings.warn(
             f"Could not create 4 frequency segments due to insufficient variation: {e}. "
             "Falling back to manual binning.",
             UserWarning,
-            stacklevel=2
+            stacklevel=2,
         )
         rfm["frequency_segment"] = pd.cut(
             rfm["frequency"],
             bins=4,
             labels=["Low", "Medium", "High", "Very High"],
-            include_lowest=True
+            include_lowest=True,
         )
 
     try:
@@ -140,17 +138,18 @@ def compute_rfm_features(
         )
     except ValueError as e:
         import warnings as _warnings
+
         _warnings.warn(
             f"Could not create 4 monetary segments due to insufficient variation: {e}. "
             "Falling back to manual binning.",
             UserWarning,
-            stacklevel=2
+            stacklevel=2,
         )
         rfm["monetary_segment"] = pd.cut(
             rfm["monetary"],
             bins=4,
             labels=["Low", "Medium", "High", "Very High"],
-            include_lowest=True
+            include_lowest=True,
         )
 
     return check(rfm, RFM_FEATURES)
@@ -173,7 +172,11 @@ def rfm_segmentation(
 
     if method == "quantile":
         # Classic RFM scoring (1-4 per dimension)
-        for dim, score_name in [("recency_days", "recency_score"), ("frequency", "frequency_score"), ("monetary", "monetary_score")]:
+        for dim, score_name in [
+            ("recency_days", "recency_score"),
+            ("frequency", "frequency_score"),
+            ("monetary", "monetary_score"),
+        ]:
             if dim == "recency_days":
                 df[score_name] = pd.qcut(
                     df[dim].rank(method="first"),
@@ -242,11 +245,12 @@ def rfm_segmentation(
 
         if len(df) < n_segments:
             import warnings as _warnings
+
             _warnings.warn(
                 f"Insufficient data for {n_segments}-segment clustering (n={len(df)}). "
                 "Falling back to single cluster assignment.",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             df["cluster"] = 0
             df["segment"] = "Other"
@@ -256,12 +260,13 @@ def rfm_segmentation(
         feature_variance = df[features].var()
         if (feature_variance < 1e-6).any():
             import warnings as _warnings
+
             low_var_features = feature_variance[feature_variance < 1e-6].index.tolist()
             _warnings.warn(
                 f"Low variance detected in features: {low_var_features}. "
                 "K-means clustering may produce unreliable results.",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
 
         scaler = StandardScaler()
@@ -272,10 +277,11 @@ def rfm_segmentation(
             df["cluster"] = kmeans.fit_predict(X_scaled)
         except Exception as e:
             import warnings as _warnings
+
             _warnings.warn(
                 f"K-means clustering failed: {e}. Falling back to quantile method.",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             # Fall back to quantile method
             return rfm_segmentation(df, method="quantile", n_segments=n_segments)
@@ -285,7 +291,11 @@ def rfm_segmentation(
         df["segment"] = df["cluster"].map(cluster_labels)
 
         # Also compute quantile scores for compatibility
-        for dim, score_name in [("recency_days", "recency_score"), ("frequency", "frequency_score"), ("monetary", "monetary_score")]:
+        for dim, score_name in [
+            ("recency_days", "recency_score"),
+            ("frequency", "frequency_score"),
+            ("monetary", "monetary_score"),
+        ]:
             if dim == "recency_days":
                 df[score_name] = pd.qcut(
                     df[dim].rank(method="first"),

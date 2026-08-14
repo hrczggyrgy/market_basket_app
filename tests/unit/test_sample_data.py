@@ -54,7 +54,7 @@ def test_generate_transactions_theme_copurchase_signal() -> None:
     lifts = []
     for theme_name, theme_cats in AFFINITY_THEMES.items():
         for i, cat_a in enumerate(theme_cats):
-            for cat_b in theme_cats[i+1:]:
+            for cat_b in theme_cats[i + 1 :]:
                 # Check if products from these categories co-purchase
                 cat_a_products = set(df[df["category"] == cat_a]["product"])
                 cat_b_products = set(df[df["category"] == cat_b]["product"])
@@ -62,7 +62,9 @@ def test_generate_transactions_theme_copurchase_signal() -> None:
                     continue
                 p_a = baskets.apply(lambda b: len(b & cat_a_products) > 0).mean()
                 p_b = baskets.apply(lambda b: len(b & cat_b_products) > 0).mean()
-                tc = baskets.apply(lambda b: len(b & cat_a_products) > 0 and len(b & cat_b_products) > 0).sum()
+                tc = baskets.apply(
+                    lambda b: len(b & cat_a_products) > 0 and len(b & cat_b_products) > 0
+                ).sum()
                 if p_a * p_b > 0:
                     lifts.append((tc / n) / (p_a * p_b))
     assert len(lifts) >= 4

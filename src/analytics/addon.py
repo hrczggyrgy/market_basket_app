@@ -58,12 +58,15 @@ def get_anchor_addon_matrix(df: pd.DataFrame, top_n_anchors: int = 20) -> pd.Dat
     """Anchor x addon lift matrix for heatmap rendering."""
     table = _lift_table(df)
     anchors = (
-        table.groupby("anchor")["addon"].count()
+        table.groupby("anchor")["addon"]
+        .count()
         .sort_values(ascending=False)
         .head(top_n_anchors)
         .index
     )
-    matrix = table[table["anchor"].isin(anchors)].pivot(index="anchor", columns="addon", values="lift")
+    matrix = table[table["anchor"].isin(anchors)].pivot(
+        index="anchor", columns="addon", values="lift"
+    )
     return matrix.fillna(0.0)
 
 

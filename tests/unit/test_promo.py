@@ -112,7 +112,11 @@ def test_category_promo_timeline_clamps_negative_discount(crafted_df: pd.DataFra
     # Force a promo period for SKU A; raise its prices inside the window so the
     # promo row price exceeds the stock's 90th-percentile baseline.
     promos = pd.DataFrame(
-        {"stockcode": ["A"], "start_date": [pd.Timestamp("2026-01-05")], "end_date": [pd.Timestamp("2026-01-07")]}
+        {
+            "stockcode": ["A"],
+            "start_date": [pd.Timestamp("2026-01-05")],
+            "end_date": [pd.Timestamp("2026-01-07")],
+        }
     )
     mask = (d["stockcode"] == "A") & d["date"].between("2026-01-05", "2026-01-07")
     d.loc[mask, "price"] = 40.0
@@ -170,7 +174,13 @@ def test_category_cannibalization_empty_without_category() -> None:
             "quantity": [1] * 10,
         }
     )
-    promos = pd.DataFrame({"stockcode": ["A"], "start_date": [pd.Timestamp("2025-01-02")], "end_date": [pd.Timestamp("2025-01-04")]})
+    promos = pd.DataFrame(
+        {
+            "stockcode": ["A"],
+            "start_date": [pd.Timestamp("2025-01-02")],
+            "end_date": [pd.Timestamp("2025-01-04")],
+        }
+    )
     cann = compute_category_cannibalization(df, promos)
     assert cann.empty
     check(cann, CATEGORY_CANNIBALIZATION, allow_empty=True)
@@ -195,6 +205,7 @@ def test_pre_post_promo_lift(crafted_df: pd.DataFrame) -> None:
     lift = pre_post_promo_lift(crafted_df, promos)
     # Validate against the contract (PROMO_LIFT)
     from src.analytics.schemas import PROMO_LIFT
+
     PROMO_LIFT.validate(lift)
     check(lift, PROMO_LIFT)
     row = lift.iloc[0]
@@ -218,7 +229,9 @@ def test_compute_incrementality_waterfall(crafted_df: pd.DataFrame) -> None:
         }
     )
     cann = pd.DataFrame({"stockcode": ["B"], "cannibalization_revenue": [20.0]})
-    table = compute_incrementality_waterfall(baseline, halo_revenue=halo, cannibalization_revenue=cann)
+    table = compute_incrementality_waterfall(
+        baseline, halo_revenue=halo, cannibalization_revenue=cann
+    )
     check(table, PROMO_WATERFALL)
     row = table.loc[table["stockcode"] == "A"].iloc[0]
     assert row["net_incremental_revenue"] == pytest.approx(
@@ -245,7 +258,15 @@ def test_promotion_timing_analysis(crafted_df: pd.DataFrame) -> None:
     timing = promotion_timing_analysis(crafted_df, promos)
     check(timing["by_day_of_week"], PROMO_TIMING_DOW)
     check(timing["by_month"], PROMO_TIMING_MONTH)
-    assert set(timing["by_day_of_week"]["day_name"]) <= {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+    assert set(timing["by_day_of_week"]["day_name"]) <= {
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat",
+        "Sun",
+    }
 
 
 def test_halo_effect_analysis(crafted_df: pd.DataFrame) -> None:
@@ -313,7 +334,9 @@ def test_train_uplift_learner_s_learner(sample_df: pd.DataFrame) -> None:
     X, treatment, y = build_uplift_dataset(sample_df, promos)
     if len(X) < 30:
         pytest.skip("dataset too small")
-    model, uplift = train_uplift_learner(X, treatment, y, learner="s", base_estimator="rf", n_estimators=50)
+    model, uplift = train_uplift_learner(
+        X, treatment, y, learner="s", base_estimator="rf", n_estimators=50
+    )
     assert len(uplift) == len(X)
     scores = score_uplift_by_customer(X, uplift, sample_df["customer_id"].iloc[: len(X)])
     check(scores, UPLIFT_SCORES)
@@ -324,7 +347,9 @@ def test_train_uplift_learner_t_learner(sample_df: pd.DataFrame) -> None:
     X, treatment, y = build_uplift_dataset(sample_df, promos)
     if len(X) < 30:
         pytest.skip("dataset too small")
-    models, uplift = train_uplift_learner(X, treatment, y, learner="t", base_estimator="hgb", n_estimators=50)
+    models, uplift = train_uplift_learner(
+        X, treatment, y, learner="t", base_estimator="hgb", n_estimators=50
+    )
     assert isinstance(models, tuple) and len(models) == 2
     assert len(uplift) == len(X)
 

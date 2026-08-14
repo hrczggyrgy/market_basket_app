@@ -14,7 +14,6 @@ import streamlit as st
 from src.analytics.insights import generate_switching_insights
 from src.analytics.opportunities import generate_switching_opportunities
 from src.analytics.switching import (
-    build_event_slices,
     compute_category_switching_by_phase,
     compute_category_switching_matrix,
     compute_switching_matrix,
@@ -24,7 +23,6 @@ from src.analytics.switching import (
 )
 from src.analytics.transference import (
     compute_demand_transference_matrix,
-    compute_recovery_hhi,
     compute_substitutable_demand_percentage,
     delist_impact_analysis,
 )
@@ -38,7 +36,9 @@ def _revenue_by_product(df: pd.DataFrame) -> pd.Series:
     return (df["price"] * df["quantity"]).groupby(df["stockcode"]).sum()
 
 
-def _render_revenue_at_risk(df: pd.DataFrame, demand_transference_df: pd.DataFrame, top_n: int = 12) -> None:
+def _render_revenue_at_risk(
+    df: pd.DataFrame, demand_transference_df: pd.DataFrame, top_n: int = 12
+) -> None:
     st.subheader(":material/water_drop: Revenue at Risk (Net Switching)")
     if demand_transference_df is None or demand_transference_df.empty:
         show(empty_state("No switching data"))
@@ -79,9 +79,21 @@ def _render_revenue_at_risk(df: pd.DataFrame, demand_transference_df: pd.DataFra
     total_rev = float(_revenue_by_product(df).sum())
     render_metric_row(
         [
-            {"label": "Switching revenue out", "value": f"€{total_out:,.0f}", "help": "Observed revenue-weighted switches away."},
-            {"label": "Switching revenue in", "value": f"€{total_in:,.0f}", "help": "Observed revenue-weighted switches toward."},
-            {"label": "Share of total revenue", "value": f"{total_out / total_rev:.1%}" if total_rev else "—", "help": "Revenue that moved between products at least once."},
+            {
+                "label": "Switching revenue out",
+                "value": f"€{total_out:,.0f}",
+                "help": "Observed revenue-weighted switches away.",
+            },
+            {
+                "label": "Switching revenue in",
+                "value": f"€{total_in:,.0f}",
+                "help": "Observed revenue-weighted switches toward.",
+            },
+            {
+                "label": "Share of total revenue",
+                "value": f"{total_out / total_rev:.1%}" if total_rev else "—",
+                "help": "Revenue that moved between products at least once.",
+            },
         ]
     )
     st.caption(
@@ -107,13 +119,25 @@ def _render_delist_safety(df: pd.DataFrame, sdp_df: pd.DataFrame, top_n: int = 1
         go.Bar(
             x=work["stockcode"].astype(str),
             y=work["sdp"] * 100,
-            marker={"color": ["#59A14F" if v >= 80 else "#F28E2B" if v >= 20 else "#E15759" for v in work["sdp"] * 100]},
+            marker={
+                "color": [
+                    "#59A14F" if v >= 80 else "#F28E2B" if v >= 20 else "#E15759"
+                    for v in work["sdp"] * 100
+                ]
+            },
             hovertemplate="%{x}<br>SDP: %{y:.0f}%<br>Revenue: €%{customdata:,.0f}<extra></extra>",
             customdata=work["revenue"],
         )
     )
-    fig.add_hline(y=80, line_dash="dash", line_color="#59A14F", annotation_text="Highly substitutable (safe to cut)")
-    fig.add_hline(y=20, line_dash="dash", line_color="#E15759", annotation_text="Unique demand (do not cut)")
+    fig.add_hline(
+        y=80,
+        line_dash="dash",
+        line_color="#59A14F",
+        annotation_text="Highly substitutable (safe to cut)",
+    )
+    fig.add_hline(
+        y=20, line_dash="dash", line_color="#E15759", annotation_text="Unique demand (do not cut)"
+    )
     fig.update_layout(
         yaxis={"title": "Substitutable demand % (SDP)", "range": [0, 105]},
         xaxis={"title": "", "tickangle": -45},
@@ -280,9 +304,13 @@ def _render_switcher_loyalist(df: pd.DataFrame, matrix: pd.DataFrame) -> None:
             marker={"color": PALETTE[3]},
         )
     )
-    fig.update_layout(barmode="stack", yaxis={"title": "Transaction count"}, xaxis={"tickangle": -45})
+    fig.update_layout(
+        barmode="stack", yaxis={"title": "Transaction count"}, xaxis={"tickangle": -45}
+    )
     show(fig)
-    st.caption("Stacked: loyal transactions, switches away, switches to. Products with high 'switched to' are acquisition drivers.")
+    st.caption(
+        "Stacked: loyal transactions, switches away, switches to. Products with high 'switched to' are acquisition drivers."
+    )
 
 
 def _render_monthly_net_switching(df: pd.DataFrame, window_days: int) -> None:
@@ -324,7 +352,7 @@ def _render_monthly_net_switching(df: pd.DataFrame, window_days: int) -> None:
     # Aggregate out and in separately then combine
     out_monthly = switch_df.groupby(["period", "from_product"]).size().rename("out").reset_index()
     out_monthly = out_monthly.rename(columns={"from_product": "product"})
-    
+
     in_monthly = switch_df.groupby(["period", "to_product"]).size().rename("in").reset_index()
     in_monthly = in_monthly.rename(columns={"to_product": "product"})
 
@@ -333,7 +361,11 @@ def _render_monthly_net_switching(df: pd.DataFrame, window_days: int) -> None:
     monthly["net"] = monthly["in"] - monthly["out"]
 
     # Top products by total absolute net flow
-    product_vol = monthly.groupby("product")["net"].apply(lambda s: s.abs().sum()).sort_values(ascending=False)
+    product_vol = (
+        monthly.groupby("product")["net"]
+        .apply(lambda s: s.abs().sum())
+        .sort_values(ascending=False)
+    )
     top_products = product_vol.head(10).index.tolist()
     monthly_top = monthly[monthly["product"].isin(top_products)]
 
@@ -352,12 +384,18 @@ def _render_monthly_net_switching(df: pd.DataFrame, window_days: int) -> None:
                 marker={"color": PALETTE[top_products.index(product) % len(PALETTE)]},
             )
         )
-    fig.update_layout(barmode="group", yaxis={"title": "Net switches (in - out)"}, xaxis={"title": "Month"})
+    fig.update_layout(
+        barmode="group", yaxis={"title": "Net switches (in - out)"}, xaxis={"title": "Month"}
+    )
     show(fig)
-    st.caption("Positive = net acquisition; negative = net defection. Shows seasonal switching dynamics.")
+    st.caption(
+        "Positive = net acquisition; negative = net defection. Shows seasonal switching dynamics."
+    )
 
 
-def _render_transition_heatmap(df: pd.DataFrame, matrix: pd.DataFrame, top_n: int, window_days: int, min_txns: int) -> None:
+def _render_transition_heatmap(
+    df: pd.DataFrame, matrix: pd.DataFrame, top_n: int, window_days: int, min_txns: int
+) -> None:
     st.subheader(":material/table_chart: Transition Probability Matrix")
     pivot = compute_transition_matrix(df, window_days=window_days, min_transactions=min_txns)
     if pivot.empty:
@@ -370,7 +408,9 @@ def _render_transition_heatmap(df: pd.DataFrame, matrix: pd.DataFrame, top_n: in
     product_score = (total_out + total_in).sort_values(ascending=False)
     top_products = product_score.head(top_n).index.tolist()
 
-    sub = pivot.loc[pivot.index.intersection(top_products), pivot.columns.intersection(top_products)]
+    sub = pivot.loc[
+        pivot.index.intersection(top_products), pivot.columns.intersection(top_products)
+    ]
     if sub.empty:
         show(empty_state("No transitions among top products"))
         return
@@ -385,9 +425,13 @@ def _render_transition_heatmap(df: pd.DataFrame, matrix: pd.DataFrame, top_n: in
             colorbar={"title": "Probability"},
         )
     )
-    fig.update_layout(xaxis={"tickangle": -45}, yaxis={"tickangle": 0}, height=max(400, 20 * len(top_products)))
+    fig.update_layout(
+        xaxis={"tickangle": -45}, yaxis={"tickangle": 0}, height=max(400, 20 * len(top_products))
+    )
     show(fig)
-    st.caption("Row-normalized: each row sums to 1. Green = high probability of switching TO column from row.")
+    st.caption(
+        "Row-normalized: each row sums to 1. Green = high probability of switching TO column from row."
+    )
 
 
 def _render_phase_switch_comparison(
@@ -406,7 +450,9 @@ def _render_phase_switch_comparison(
         st.info("No promotional periods detected — set an event window manually below.")
         return
 
-    st.caption(f"Events detected: {len(events)} promotional periods (earliest {events['start_date'].min().date()} to {events['end_date'].max().date()}).")
+    st.caption(
+        f"Events detected: {len(events)} promotional periods (earliest {events['start_date'].min().date()} to {events['end_date'].max().date()})."
+    )
 
     c1, c2, c3 = st.columns(3)
     pre_days = int(c1.number_input("Pre window (days)", 7, 180, 30))
@@ -451,7 +497,9 @@ def _render_phase_switch_comparison(
                 hovertemplate="%{y}: %{x} switches<extra></extra>",
             )
         )
-        fig.update_layout(yaxis={"categoryorder": "array", "categoryarray": labels[::-1]}, height=280)
+        fig.update_layout(
+            yaxis={"categoryorder": "array", "categoryarray": labels[::-1]}, height=280
+        )
         show(fig)
 
 
@@ -477,9 +525,10 @@ def render(df: pd.DataFrame) -> None:
     demand_transference = compute_demand_transference_matrix(df, matrix)
     sdp = compute_substitutable_demand_percentage(demand_transference, df)
     delist_impact = delist_impact_analysis(
-        df, demand_transference, sdp.sort_values("sdp", ascending=False)["stockcode"].head(10).tolist()
+        df,
+        demand_transference,
+        sdp.sort_values("sdp", ascending=False)["stockcode"].head(10).tolist(),
     )
-    recovery_hhi = compute_recovery_hhi(demand_transference)
 
     st.divider()
     _render_revenue_at_risk(df, demand_transference, top_n)
@@ -507,7 +556,9 @@ def render(df: pd.DataFrame) -> None:
 
     st.divider()
     st.subheader(":material/table_rows: Top Switching Paths")
-    top_paths = get_top_switching_paths(df, top_n=top_n, window_days=window_days, min_transactions=min_txns)
+    top_paths = get_top_switching_paths(
+        df, top_n=top_n, window_days=window_days, min_transactions=min_txns
+    )
     st.dataframe(top_paths, use_container_width=True, hide_index=True)
 
     st.divider()

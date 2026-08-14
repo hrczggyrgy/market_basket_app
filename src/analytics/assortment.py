@@ -143,16 +143,18 @@ def optimize_assortment_milp(
     revenue = revenue_per_product.head(top_n)
 
     if demand_transference_df is None:
-        demand_transference_df = compute_demand_transference_matrix(
-            transactions_df, top_n=top_n
-        )
+        demand_transference_df = compute_demand_transference_matrix(transactions_df, top_n=top_n)
     if demand_transference_df is None or demand_transference_df.empty:
-        dt_edges = pd.DataFrame(columns=["from_product", "to_product", "observed_switching_transfer_revenue"])
+        dt_edges = pd.DataFrame(
+            columns=["from_product", "to_product", "observed_switching_transfer_revenue"]
+        )
     else:
         dt_edges = demand_transference_df[
             ["from_product", "to_product", "observed_switching_transfer_revenue"]
         ]
-    dt_edges = dt_edges[dt_edges["from_product"].isin(revenue.index) & dt_edges["to_product"].isin(revenue.index)]
+    dt_edges = dt_edges[
+        dt_edges["from_product"].isin(revenue.index) & dt_edges["to_product"].isin(revenue.index)
+    ]
 
     products = list(revenue.index)
     idx = {p: i for i, p in enumerate(products)}
@@ -235,9 +237,7 @@ def optimize_assortment_milp(
     coverage_attempt = min_coverage
     result = None
     while True:
-        constraints[1] = LinearConstraint(
-            rows_cov, coverage_attempt * float(revenue.sum()), np.inf
-        )
+        constraints[1] = LinearConstraint(rows_cov, coverage_attempt * float(revenue.sum()), np.inf)
         result = milp(
             c=c,
             integrality=integrality,
@@ -290,12 +290,16 @@ def optimize_assortment_heuristic(
     revenue = revenue_per_product.head(max_skus * 4)
 
     if demand_transference_df is None or demand_transference_df.empty:
-        dt_edges = pd.DataFrame(columns=["from_product", "to_product", "observed_switching_transfer_revenue"])
+        dt_edges = pd.DataFrame(
+            columns=["from_product", "to_product", "observed_switching_transfer_revenue"]
+        )
     else:
         dt_edges = demand_transference_df[
             ["from_product", "to_product", "observed_switching_transfer_revenue"]
         ]
-    dt_edges = dt_edges[dt_edges["from_product"].isin(revenue.index) & dt_edges["to_product"].isin(revenue.index)]
+    dt_edges = dt_edges[
+        dt_edges["from_product"].isin(revenue.index) & dt_edges["to_product"].isin(revenue.index)
+    ]
     transfers = _transfers_by_from(dt_edges)
 
     margin_of: dict[str, float] = {}
@@ -306,8 +310,10 @@ def optimize_assortment_heuristic(
 
     def objective_value(kept: set[str]) -> float:
         metrics = _evaluate_solution(kept, revenue, transfers)
-        base = metrics.kept_revenue if objective != "margin" else sum(
-            margin_of.get(p, 0.0) for p in kept
+        base = (
+            metrics.kept_revenue
+            if objective != "margin"
+            else sum(margin_of.get(p, 0.0) for p in kept)
         )
         value = base + recovery_margin * metrics.recovered_revenue
         if metrics.coverage < min_coverage:
@@ -437,7 +443,9 @@ def compare_assortment_scenarios(
             kept = set(revenue.head(max_skus).index)
             method = "greedy"
         elif i % 2 == 0:
-            kept = set(rng.choice(list(revenue.index), size=min(max_skus, len(revenue)), replace=False))
+            kept = set(
+                rng.choice(list(revenue.index), size=min(max_skus, len(revenue)), replace=False)
+            )
             method = "random"
         else:
             selected, _ = optimize_assortment_milp(

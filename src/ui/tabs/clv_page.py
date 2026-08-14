@@ -26,7 +26,12 @@ def _render_clv_distribution(customers: pd.DataFrame) -> None:
             x="predicted_clv",
             nbins=40,
             color="clv_segment",
-            color_discrete_map={"Platinum": PALETTE[0], "Gold": PALETTE[2], "Silver": PALETTE[4], "Bronze": PALETTE[1]},
+            color_discrete_map={
+                "Platinum": PALETTE[0],
+                "Gold": PALETTE[2],
+                "Silver": PALETTE[4],
+                "Bronze": PALETTE[1],
+            },
             marginal="box",
             hover_data=["customer_id"],
         )
@@ -40,7 +45,12 @@ def _render_clv_distribution(customers: pd.DataFrame) -> None:
             x="clv_segment",
             y="predicted_clv",
             color="clv_segment",
-            color_discrete_map={"Platinum": PALETTE[0], "Gold": PALETTE[2], "Silver": PALETTE[4], "Bronze": PALETTE[1]},
+            color_discrete_map={
+                "Platinum": PALETTE[0],
+                "Gold": PALETTE[2],
+                "Silver": PALETTE[4],
+                "Bronze": PALETTE[1],
+            },
             box=True,
             points="outliers",
             hover_data=["customer_id"],
@@ -51,7 +61,9 @@ def _render_clv_distribution(customers: pd.DataFrame) -> None:
             showlegend=False,
         )
         show(fig)
-        st.caption("Violin plot showing CLV density per segment. Box = IQR/median; width = density.")
+        st.caption(
+            "Violin plot showing CLV density per segment. Box = IQR/median; width = density."
+        )
 
 
 def _render_clv_with_ci(customers: pd.DataFrame) -> None:
@@ -67,8 +79,12 @@ def _render_clv_with_ci(customers: pd.DataFrame) -> None:
         return
 
     # Top N by predicted CLV
-    top_customers = customers.nlargest(30, "predicted_clv")[["customer_id", "predicted_clv", "ci_lower", "ci_upper", "clv_segment"]].copy()
-    top_customers["label"] = top_customers["customer_id"] + " (" + top_customers["clv_segment"] + ")"
+    top_customers = customers.nlargest(30, "predicted_clv")[
+        ["customer_id", "predicted_clv", "ci_lower", "ci_upper", "clv_segment"]
+    ].copy()
+    top_customers["label"] = (
+        top_customers["customer_id"] + " (" + top_customers["clv_segment"] + ")"
+    )
 
     fig = render_bar_with_ci(
         df=top_customers,
@@ -78,11 +94,18 @@ def _render_clv_with_ci(customers: pd.DataFrame) -> None:
         ci_upper_col="ci_upper",
         y_title="Predicted CLV ($)",
         color="clv_segment",
-        color_discrete_map={"Platinum": PALETTE[0], "Gold": PALETTE[2], "Silver": PALETTE[4], "Bronze": PALETTE[1]},
+        color_discrete_map={
+            "Platinum": PALETTE[0],
+            "Gold": PALETTE[2],
+            "Silver": PALETTE[4],
+            "Bronze": PALETTE[1],
+        },
         height=500,
     )
     show(fig)
-    st.caption("Top 30 customers by predicted CLV. Error bars = 95% bootstrap confidence interval. Segment color indicates CLV tier.")
+    st.caption(
+        "Top 30 customers by predicted CLV. Error bars = 95% bootstrap confidence interval. Segment color indicates CLV tier."
+    )
 
 
 def _render_clv_segments(customers: pd.DataFrame) -> None:
@@ -105,7 +128,12 @@ def _render_clv_segments(customers: pd.DataFrame) -> None:
         x="clv_segment",
         y="avg_clv",
         color="clv_segment",
-        color_discrete_map={"Platinum": PALETTE[0], "Gold": PALETTE[2], "Silver": PALETTE[4], "Bronze": PALETTE[1]},
+        color_discrete_map={
+            "Platinum": PALETTE[0],
+            "Gold": PALETTE[2],
+            "Silver": PALETTE[4],
+            "Bronze": PALETTE[1],
+        },
         text=seg["avg_clv"].apply(lambda x: f"${x:,.0f}"),
         hover_data=["n_customers", "avg_freq", "avg_p_alive"],
     )
@@ -129,13 +157,22 @@ def _render_frequency_recency(customers: pd.DataFrame) -> None:
         y="recency_days",
         size="predicted_clv",
         color="clv_segment",
-        color_discrete_map={"Platinum": PALETTE[0], "Gold": PALETTE[2], "Silver": PALETTE[4], "Bronze": PALETTE[1]},
+        color_discrete_map={
+            "Platinum": PALETTE[0],
+            "Gold": PALETTE[2],
+            "Silver": PALETTE[4],
+            "Bronze": PALETTE[1],
+        },
         hover_data=["customer_id", "predicted_clv", "p_alive"],
         log_y=True,
     )
-    fig.update_layout(xaxis={"title": "Frequency (repeat purchases)"}, yaxis={"title": "Recency (days)"})
+    fig.update_layout(
+        xaxis={"title": "Frequency (repeat purchases)"}, yaxis={"title": "Recency (days)"}
+    )
     show(fig)
-    st.caption("Top-right = high frequency, high recency (active loyalists). Bottom-right = high freq, long ago (at-risk).")
+    st.caption(
+        "Top-right = high frequency, high recency (active loyalists). Bottom-right = high freq, long ago (at-risk)."
+    )
 
 
 def _render_p_alive_vs_clv(customers: pd.DataFrame) -> None:
@@ -146,7 +183,12 @@ def _render_p_alive_vs_clv(customers: pd.DataFrame) -> None:
         y="predicted_clv",
         size="frequency",
         color="clv_segment",
-        color_discrete_map={"Platinum": PALETTE[0], "Gold": PALETTE[2], "Silver": PALETTE[4], "Bronze": PALETTE[1]},
+        color_discrete_map={
+            "Platinum": PALETTE[0],
+            "Gold": PALETTE[2],
+            "Silver": PALETTE[4],
+            "Bronze": PALETTE[1],
+        },
         hover_data=["customer_id", "recency_days"],
         log_y=True,
     )
@@ -167,16 +209,26 @@ def _render_clv_diagnostics(diagnostics: pd.DataFrame) -> None:
     if not status.empty and len(status) == 1:
         status_code = float(status["value"].iloc[0])
         if status_code == 2.0:
-            st.warning(":material/warning: Gamma-Gamma independence assumption VIOLATED (strong freq-value correlation); treat CLV with caution.")
+            st.warning(
+                ":material/warning: Gamma-Gamma independence assumption VIOLATED (strong freq-value correlation); treat CLV with caution."
+            )
         elif status_code == 1.0:
-            st.info(":material/info: Gamma-Gamma independence assumption PARTIALLY met (moderate freq-value correlation).")
+            st.info(
+                ":material/info: Gamma-Gamma independence assumption PARTIALLY met (moderate freq-value correlation)."
+            )
         else:
-            st.success(":material/check_circle: Gamma-Gamma independence assumption largely met (|corr(freq, value)| < 0.2).")
+            st.success(
+                ":material/check_circle: Gamma-Gamma independence assumption largely met (|corr(freq, value)| < 0.2)."
+            )
 
     st.dataframe(diagnostics, use_container_width=True, hide_index=True)
 
     # Key parameters
-    key_params = diagnostics[diagnostics["metric"].isin(["bgf_r", "bgf_alpha", "bgf_a", "bgf_b", "ggf_p", "ggf_q", "ggf_v"])]
+    key_params = diagnostics[
+        diagnostics["metric"].isin(
+            ["bgf_r", "bgf_alpha", "bgf_a", "bgf_b", "ggf_p", "ggf_q", "ggf_v"]
+        )
+    ]
     if not key_params.empty:
         fig = go.Figure(
             data=[
@@ -189,9 +241,13 @@ def _render_clv_diagnostics(diagnostics: pd.DataFrame) -> None:
                 )
             ]
         )
-        fig.update_layout(yaxis={"title": "Parameter Value", "type": "log"}, xaxis={"title": "Parameter"})
+        fig.update_layout(
+            yaxis={"title": "Parameter Value", "type": "log"}, xaxis={"title": "Parameter"}
+        )
         show(fig)
-        st.caption("BG/NBD: r=shape, alpha=scale; GG: p=shape, q=scale, v=avg profit. Higher r/alpha = lower frequency/recency variability.")
+        st.caption(
+            "BG/NBD: r=shape, alpha=scale; GG: p=shape, q=scale, v=avg profit. Higher r/alpha = lower frequency/recency variability."
+        )
 
 
 def render(df: pd.DataFrame) -> None:
@@ -258,10 +314,19 @@ def render(df: pd.DataFrame) -> None:
     st.divider()
     st.subheader(":material/table_rows: Customer CLV Detail")
     display_cols = [
-        "customer_id", "frequency", "recency_days", "total_revenue",
-        "avg_order_value", "p_alive", "predicted_purchases",
-        "expected_avg_value", "predicted_clv", "clv_12m", "clv_segment",
-        "entropy", "normalized_entropy",
+        "customer_id",
+        "frequency",
+        "recency_days",
+        "total_revenue",
+        "avg_order_value",
+        "p_alive",
+        "predicted_purchases",
+        "expected_avg_value",
+        "predicted_clv",
+        "clv_12m",
+        "clv_segment",
+        "entropy",
+        "normalized_entropy",
     ]
     display_cols = [c for c in display_cols if c in filtered.columns]
     st.dataframe(

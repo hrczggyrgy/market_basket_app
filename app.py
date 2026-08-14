@@ -3,17 +3,12 @@
 from __future__ import annotations
 
 import io
-import os
-import sys
 
 import pandas as pd
 import streamlit as st
 
-# Ensure project root is in Python path for src package imports
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-
+# Ensure project root is in Python path for src package imports (via src.__init__)
+import src  # noqa: F401
 from src.analytics.data import load_transactions
 from src.analytics.simulation import SCENARIOS, config_for, generate_sample_transactions
 from src.ui import registry
@@ -94,29 +89,31 @@ def main() -> None:
         "Select data source",
         options=["Upload CSV", "Use sample data"],
         index=0,
-        help="Upload your own transaction CSV or use the built-in sample data to explore the app"
+        help="Upload your own transaction CSV or use the built-in sample data to explore the app",
     )
 
     uploaded = None
     if data_source_option == "Upload CSV":
-        uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"], help="Upload your transaction CSV file")
+        uploaded = st.sidebar.file_uploader(
+            "Upload CSV", type=["csv"], help="Upload your transaction CSV file"
+        )
         if uploaded is not None:
             # Security validation
             if uploaded.size > 100 * 1024 * 1024:  # 100MB limit
                 st.error("File size exceeds 100MB limit. Please upload a smaller file.")
                 st.stop()
-            
+
             # Validate filename
             filename = uploaded.name.lower()
-            if not filename.endswith('.csv'):
+            if not filename.endswith(".csv"):
                 st.error("Only CSV files are allowed.")
                 st.stop()
-            
+
             # Check for potentially malicious patterns in filename
-            if any(char in filename for char in ['..', '/', '\\', '\0']):
+            if any(char in filename for char in ["..", "/", "\\", "\0"]):
                 st.error("Invalid filename. Please use a simple filename with .csv extension.")
                 st.stop()
-            
+
             data_source: str | io.BytesIO = io.BytesIO(uploaded.getvalue())
             source_label = uploaded.name
         else:
@@ -145,8 +142,12 @@ def main() -> None:
                 df, warning, dropped, quality_report = _load_data(data_source, _version=2)
         except ValueError as e:
             st.error(f"Data validation error: {e}")
-            st.info("Please check your CSV file format and ensure all required columns are present.")
-            st.info("Required columns: date, transaction_id, stockcode, product, customer_id, price, quantity")
+            st.info(
+                "Please check your CSV file format and ensure all required columns are present."
+            )
+            st.info(
+                "Required columns: date, transaction_id, stockcode, product, customer_id, price, quantity"
+            )
             st.stop()
         except pd.errors.EmptyDataError:
             st.error("The uploaded file is empty or contains no data.")
@@ -178,24 +179,38 @@ def main() -> None:
     if quality_report and quality_report.has_issues():
         with st.sidebar.expander("Data Quality Issues", expanded=False):
             if quality_report.low_freq_products:
-                st.warning(f"**Low-frequency products:** {len(quality_report.low_freq_products)} products with insufficient transactions")
+                st.warning(
+                    f"**Low-frequency products:** {len(quality_report.low_freq_products)} products with insufficient transactions"
+                )
                 if st.checkbox("Show low-frequency products"):
-                    st.write(pd.DataFrame(list(quality_report.low_freq_counts.items()), 
-                                          columns=["Product", "Transaction Count"]))
-            
+                    st.write(
+                        pd.DataFrame(
+                            list(quality_report.low_freq_counts.items()),
+                            columns=["Product", "Transaction Count"],
+                        )
+                    )
+
             if quality_report.basket_outlier_txn_ids:
-                st.warning(f"**Basket outliers:** {len(quality_report.basket_outlier_txn_ids)} unusually large baskets")
-            
+                st.warning(
+                    f"**Basket outliers:** {len(quality_report.basket_outlier_txn_ids)} unusually large baskets"
+                )
+
             if quality_report.duplicate_count > 0:
-                st.warning(f"**Duplicate transactions:** {quality_report.duplicate_count} potential duplicates detected")
-            
+                st.warning(
+                    f"**Duplicate transactions:** {quality_report.duplicate_count} potential duplicates detected"
+                )
+
             if quality_report.incomplete_rows > 0:
-                st.warning(f"**Incomplete rows:** {quality_report.incomplete_rows} rows with missing required fields")
-            
+                st.warning(
+                    f"**Incomplete rows:** {quality_report.incomplete_rows} rows with missing required fields"
+                )
+
             if quality_report.volume_warning:
                 st.error(quality_report.volume_warning)
 
-    st.sidebar.caption(f"{len(df):,} rows \u2022 {df['customer_id'].nunique()} customers \u2022 {df['stockcode'].nunique()} products")
+    st.sidebar.caption(
+        f"{len(df):,} rows \u2022 {df['customer_id'].nunique()} customers \u2022 {df['stockcode'].nunique()} products"
+    )
     st.sidebar.caption(f"Source: {source_label}")
 
     # Sidebar: mode selection

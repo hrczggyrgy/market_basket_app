@@ -128,7 +128,9 @@ def compute_substitutable_demand_percentage(
     if total_revenue <= 0:
         return check(pd.DataFrame(columns=list(SDP_SCORES.columns)), SDP_SCORES, allow_empty=True)
 
-    recovery_sum = demand_transference_df.groupby("from_product")["observed_switching_transfer_revenue"].sum()
+    recovery_sum = demand_transference_df.groupby("from_product")[
+        "observed_switching_transfer_revenue"
+    ].sum()
     sdp = (recovery_sum / product_revenue).fillna(0.0).clip(upper=1.0)
     table = sdp.reset_index().rename(columns={"from_product": product_col, 0: "sdp"})
     return check(table, SDP_SCORES)
@@ -155,9 +157,9 @@ def delist_impact_analysis(
     for prod in products_to_delist:
         rev = _scalar_value(product_revenue, prod, 0.0)
         transferred = float(
-            demand_transference_df[
-                demand_transference_df["from_product"] == prod
-            ]["observed_switching_transfer_revenue"].sum()
+            demand_transference_df[demand_transference_df["from_product"] == prod][
+                "observed_switching_transfer_revenue"
+            ].sum()
         )
         rows.append(
             {
@@ -198,11 +200,17 @@ def node_delist_impact(
     for node_id in sorted(set(cluster_assignments.values())):
         node_products = [p for p in cluster_assignments if cluster_assignments[p] == node_id]
         node_rev = float(sum(product_revenue.get(p, 0.0) for p in node_products))
-        node_dt = demand_transference_df[
-            demand_transference_df["from_product"].isin(node_products)
-        ]
-        internal = float(node_dt[node_dt["to_product"].isin(node_products)]["observed_switching_transfer_revenue"].sum())
-        external = float(node_dt[~node_dt["to_product"].isin(node_products)]["observed_switching_transfer_revenue"].sum())
+        node_dt = demand_transference_df[demand_transference_df["from_product"].isin(node_products)]
+        internal = float(
+            node_dt[node_dt["to_product"].isin(node_products)][
+                "observed_switching_transfer_revenue"
+            ].sum()
+        )
+        external = float(
+            node_dt[~node_dt["to_product"].isin(node_products)][
+                "observed_switching_transfer_revenue"
+            ].sum()
+        )
         rows.append(
             {
                 "node_id": node_id,
@@ -281,12 +289,13 @@ def build_similarity_substitution_score(
     revenue per product from the transaction snapshot.
     """
     import warnings
+
     warnings.warn(
         "build_similarity_substitution_score is a heuristic similarity-based score, "
         "NOT a multinomial logit model. No price coefficients are estimated. "
         "Results are descriptive similarity scores, NOT substitution probabilities.",
         UserWarning,
-        stacklevel=2
+        stacklevel=2,
     )
     df = transactions_df.copy()
     df["revenue"] = revenue_column(df)
@@ -340,9 +349,7 @@ def build_similarity_matrix(
     """
     from src.analytics.copurchase import get_top_affinity_pairs
 
-    pairs = get_top_affinity_pairs(
-        transactions_df, top_n=top_n, min_cooccurrence=min_cooccurrence
-    )
+    pairs = get_top_affinity_pairs(transactions_df, top_n=top_n, min_cooccurrence=min_cooccurrence)
     if pairs.empty:
         return pd.DataFrame()
     products = sorted(set(pairs["product_a"]) | set(pairs["product_b"]))
@@ -540,13 +547,13 @@ def bootstrap_demand_transference_ci(
     cust_groups = {c: g for c, g in transactions_df.groupby("customer_id")}
 
     def _point(d: pd.DataFrame) -> pd.DataFrame:
-        return compute_demand_transference_matrix(
-            d, switching_df=switching_df, top_n=top_n
-        )
+        return compute_demand_transference_matrix(d, switching_df=switching_df, top_n=top_n)
 
     point = _point(transactions_df)
     if point.empty:
-        return check(pd.DataFrame(columns=list(TRANSFERENCE_CI.columns)), TRANSFERENCE_CI, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(TRANSFERENCE_CI.columns)), TRANSFERENCE_CI, allow_empty=True
+        )
 
     rows: list[dict[str, float | int | str]] = []
     for pair_row in point.head(max_pairs).itertuples(index=False):
@@ -563,7 +570,9 @@ def bootstrap_demand_transference_ci(
             if rt.empty:
                 continue
             match = rt[(rt["from_product"] == from_p) & (rt["to_product"] == to_p)]
-            replicates.append(float(match["observed_switching_transference"].iloc[0]) if not match.empty else 0.0)
+            replicates.append(
+                float(match["observed_switching_transference"].iloc[0]) if not match.empty else 0.0
+            )
 
         if not replicates:
             continue

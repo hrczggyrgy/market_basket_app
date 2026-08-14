@@ -54,8 +54,13 @@ def test_milp_margin_objective(assortment_inputs: dict[str, object]) -> None:
     revenue = assortment_inputs["revenue"]  # type: ignore[assignment]
     cost = revenue * 0.6
     selected, _ = optimize_assortment_milp(
-        df, revenue, objective="margin", cost_per_product=cost,
-        max_skus=20, min_coverage=0.5, time_limit_seconds=20,
+        df,
+        revenue,
+        objective="margin",
+        cost_per_product=cost,
+        max_skus=20,
+        min_coverage=0.5,
+        time_limit_seconds=20,
     )
     assert len(selected) > 0
 
@@ -82,7 +87,10 @@ def test_evaluate_assortment_metrics(assortment_inputs: dict[str, object]) -> No
     assert metrics["kept_revenue"] > 0
     assert metrics["recovered_revenue"] >= 0
     assert metrics["unmet_demand"] >= 0
-    assert abs(metrics["expected_revenue"] - (metrics["kept_revenue"] + metrics["recovered_revenue"])) < 1e-6
+    assert (
+        abs(metrics["expected_revenue"] - (metrics["kept_revenue"] + metrics["recovered_revenue"]))
+        < 1e-6
+    )
     assert 0 <= metrics["coverage"] <= 1
     assert metrics["n_categories_total"] > 0
 

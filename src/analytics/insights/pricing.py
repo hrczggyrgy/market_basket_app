@@ -84,7 +84,11 @@ def generate_pricing_insights(
     insights: list[Insight] = []
     rev_by_sku = _revenue_by_sku(kvi_df)
 
-    status = elasticity_status_df if elasticity_status_df is not None and not elasticity_status_df.empty else pd.DataFrame()
+    status = (
+        elasticity_status_df
+        if elasticity_status_df is not None and not elasticity_status_df.empty
+        else pd.DataFrame()
+    )
     if not status.empty:
         n_total = int(len(status))
         n_est = int((status["elasticity_status"] == "estimated").sum())
@@ -123,6 +127,10 @@ def generate_pricing_insights(
                     impact_value=uncovered_rev if uncovered_rev > 0 else None,
                     sample_size=n_total,
                     stability=round(coverage, 3),
+                    evidence_level=2,  # descriptive
+                    n_transition_pairs=0,
+                    n_unique_products=0,
+                    confidence_gate=False,  # evidence_level < 3
                 )
             )
         else:
@@ -141,6 +149,10 @@ def generate_pricing_insights(
                     impact_value=None,
                     sample_size=n_total,
                     stability=round(coverage, 3),
+                    evidence_level=2,  # descriptive
+                    n_transition_pairs=0,
+                    n_unique_products=0,
+                    confidence_gate=False,  # evidence_level < 3
                 )
             )
 
@@ -161,6 +173,10 @@ def generate_pricing_insights(
                     confidence="medium",
                     impact_value=weak_rev if weak_rev > 0 else None,
                     sample_size=n_weak,
+                    evidence_level=2,  # descriptive
+                    n_transition_pairs=0,
+                    n_unique_products=0,
+                    confidence_gate=False,  # evidence_level < 3
                 )
             )
 
@@ -176,7 +192,9 @@ def generate_pricing_insights(
                 ]
                 if not high_rev_non_est.empty:
                     high_rev_count = len(high_rev_non_est)
-                    high_rev_value = float(high_rev_non_est["stockcode"].map(rev_by_sku).fillna(0.0).sum())
+                    high_rev_value = float(
+                        high_rev_non_est["stockcode"].map(rev_by_sku).fillna(0.0).sum()
+                    )
                     insights.append(
                         Insight(
                             domain="pricing",
@@ -195,13 +213,19 @@ def generate_pricing_insights(
                             confidence="high",
                             impact_value=high_rev_value,
                             sample_size=high_rev_count,
+                            evidence_level=3,  # predictive
+                            n_transition_pairs=0,
+                            n_unique_products=0,
+                            confidence_gate=True,  # evidence_level >= 3
                         )
                     )
 
         # Price-variation opportunity insights
         if n_insuf_var > 0 or n_insuf_pts > 0:
             low_var_skus = status[
-                status["elasticity_status"].isin(["insufficient_variation", "insufficient_price_points"])
+                status["elasticity_status"].isin(
+                    ["insufficient_variation", "insufficient_price_points"]
+                )
             ]
             if not low_var_skus.empty:
                 low_var_rev = float(low_var_skus["stockcode"].map(rev_by_sku).fillna(0.0).sum())
@@ -222,10 +246,18 @@ def generate_pricing_insights(
                         confidence="high",
                         impact_value=low_var_rev,
                         sample_size=len(low_var_skus),
+                        evidence_level=2,  # descriptive
+                        n_transition_pairs=0,
+                        n_unique_products=0,
+                        confidence_gate=False,  # evidence_level < 3
                     )
                 )
 
-    dm = decision_matrix if decision_matrix is not None and not decision_matrix.empty else pd.DataFrame()
+    dm = (
+        decision_matrix
+        if decision_matrix is not None and not decision_matrix.empty
+        else pd.DataFrame()
+    )
     if not dm.empty:
         for decision in ("invest", "protect", "price_lever", "review"):
             grp = dm[dm["decision"] == decision]
@@ -248,6 +280,10 @@ def generate_pricing_insights(
                     confidence=_aggregate_confidence(grp["elasticity_confidence"]),
                     impact_value=rev,
                     sample_size=n,
+                    evidence_level=3,  # predictive
+                    n_transition_pairs=0,
+                    n_unique_products=0,
+                    confidence_gate=True,  # evidence_level >= 3
                 )
             )
 
@@ -269,6 +305,10 @@ def generate_pricing_insights(
                     confidence="low",
                     impact_value=extreme_rev if extreme_rev > 0 else None,
                     sample_size=int(len(extreme)),
+                    evidence_level=1,  # exploratory
+                    n_transition_pairs=0,
+                    n_unique_products=0,
+                    confidence_gate=False,  # evidence_level < 3
                 )
             )
 

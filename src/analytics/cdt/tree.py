@@ -132,9 +132,7 @@ def compute_entropy_gain(
         for c, count in group.items():
             all_counts[c] = all_counts.get(c, 0) + count
     parent_h = _entropy_of(all_counts)
-    weighted = sum(
-        (sum(g.values()) / total) * _entropy_of(g) for g in groups.values()
-    )
+    weighted = sum((sum(g.values()) / total) * _entropy_of(g) for g in groups.values())
     return float(parent_h - weighted)
 
 
@@ -215,18 +213,39 @@ def compute_attribute_split_quality(
         assert cluster_assignments is not None
 
     parent_sim = compute_within_group_similarity(products, similarity_matrix)
-    sim_gain = float(np.mean([parent_sim - compute_within_group_similarity(v, similarity_matrix) for v in groups.values()]))
+    sim_gain = float(
+        np.mean(
+            [
+                parent_sim - compute_within_group_similarity(v, similarity_matrix)
+                for v in groups.values()
+            ]
+        )
+    )
 
     if criterion == "similarity":
         score = sim_gain
     elif criterion == "entropy":
-        score = compute_entropy_gain(cluster_assignments, products, {p: attribute_values[p] for p in products if p in attribute_values})
+        score = compute_entropy_gain(
+            cluster_assignments,
+            products,
+            {p: attribute_values[p] for p in products if p in attribute_values},
+        )
     elif criterion == "gini":
-        score = compute_gini_gain(cluster_assignments, products, {p: attribute_values[p] for p in products if p in attribute_values})
+        score = compute_gini_gain(
+            cluster_assignments,
+            products,
+            {p: attribute_values[p] for p in products if p in attribute_values},
+        )
     elif criterion == "mutual_info":
-        score = compute_mutual_information(cluster_assignments, {p: attribute_values[p] for p in products if p in attribute_values})
+        score = compute_mutual_information(
+            cluster_assignments, {p: attribute_values[p] for p in products if p in attribute_values}
+        )
     else:  # mixed
-        purity = compute_entropy_gain(cluster_assignments, products, {p: attribute_values[p] for p in products if p in attribute_values})
+        purity = compute_entropy_gain(
+            cluster_assignments,
+            products,
+            {p: attribute_values[p] for p in products if p in attribute_values},
+        )
         score = alpha * purity + (1.0 - alpha) * sim_gain
     return float(max(score, 0.0)), groups
 
@@ -618,8 +637,12 @@ def tree_to_dataframe(root: TreeNode) -> tuple[pd.DataFrame, pd.DataFrame]:
                 "similarity_within": float(node.similarity_within),
                 "parent_id": node.parent_id if node.parent_id is not None else "",
                 "split_score": float(node.split_score) if node.split_score is not None else 0.0,
-                "split_stability": float(node.split_stability) if node.split_stability is not None else 0.0,
-                "shopper_decision_rule": node.shopper_decision_rule if node.shopper_decision_rule is not None else "",
+                "split_stability": float(node.split_stability)
+                if node.split_stability is not None
+                else 0.0,
+                "shopper_decision_rule": node.shopper_decision_rule
+                if node.shopper_decision_rule is not None
+                else "",
             }
         )
         for product in node.products:
@@ -647,10 +670,14 @@ def prune_tree(
     for child in root.children[:]:
         prune_tree(child, threshold, similarity_matrix)
     if root.children and all(c.is_leaf for c in root.children):
-        combined_score = compute_within_group_similarity(
-            [p for c in root.children for p in c.products],
-            similarity_matrix if similarity_matrix is not None else pd.DataFrame(),
-        ) if similarity_matrix is not None else 0.0
+        combined_score = (
+            compute_within_group_similarity(
+                [p for c in root.children for p in c.products],
+                similarity_matrix if similarity_matrix is not None else pd.DataFrame(),
+            )
+            if similarity_matrix is not None
+            else 0.0
+        )
         if combined_score < threshold:
             combined: list[str] = []
             attrs: list[str | None] = []

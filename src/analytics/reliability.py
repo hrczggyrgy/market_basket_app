@@ -32,6 +32,7 @@ import pandas as pd
 
 class ReliabilityLevel(Enum):
     """Reliability tier for analytical outputs."""
+
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
@@ -40,6 +41,7 @@ class ReliabilityLevel(Enum):
 
 class ReliabilityDimension(Enum):
     """Dimensions contributing to reliability score."""
+
     SAMPLE_SIZE = "sample_size"
     COVERAGE = "coverage"
     UNCERTAINTY = "uncertainty"
@@ -51,6 +53,7 @@ class ReliabilityDimension(Enum):
 @dataclass
 class ReliabilityScore:
     """Reliability assessment for a single analytical output."""
+
     level: ReliabilityLevel
     overall_score: float  # 0-1 composite score
     dimension_scores: Dict[ReliabilityDimension, float]  # 0-1 per dimension
@@ -74,6 +77,7 @@ class AnalysisEligibility:
     This is the gate that checks data suitability BEFORE running expensive
     computations, saving time and preventing unreliable outputs.
     """
+
     is_eligible: bool
     reliability: ReliabilityScore
     blocking_reasons: List[str]  # Hard blockers (missing data, etc.)
@@ -286,6 +290,7 @@ def check_analysis_eligibility(
 
     # Data quality assessment
     from src.analytics.data_quality import assess_data_quality
+
     quality_report = assess_data_quality(df)
     dq_score = 1.0
     if quality_report.has_issues():

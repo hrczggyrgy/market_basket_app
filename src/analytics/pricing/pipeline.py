@@ -62,7 +62,9 @@ def run_pricing_analysis(
     )
     decision_matrix = compute_pricing_decision_matrix(kvi, elasticity)
     insights = generate_pricing_insights(elasticity, elasticity_status, kvi, decision_matrix)
-    opportunities = generate_pricing_opportunities(elasticity, elasticity_status, kvi, decision_matrix)
+    opportunities = generate_pricing_opportunities(
+        elasticity, elasticity_status, kvi, decision_matrix
+    )
 
     return PricingAnalysis(
         elasticity=elasticity,

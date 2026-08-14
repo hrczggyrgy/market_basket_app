@@ -1,34 +1,58 @@
-# Agent Guidelines for Market Basket App
+# AGENTS.md - OpenCode Configuration
 
-## Setup
-- Create venv: `python -m venv .venv && source .venv/bin/activate`
-- Install: `pip install -e .`
-- Dev extras: `pip install -e .[dev]`
+This project uses the Python Expert Agent pack for OpenCode.
 
-## Running the App
-- Start: `streamlit run app.py`
-- Data: expects CSV with columns: date, transaction_id, stockcode, product, customer_id, price, quantity (optional: category, brand, size, flavor/variant, promo_flag, is_online, cost)
-- Sample data: `sample_data/sample_transactions.csv`
+## Project Info
 
-## Testing
-- Run unit tests: `pytest tests/unit -x -q -k "not slow"`
-- With coverage: `pytest tests/unit --cov=src --cov-report=term-missing`
-- Specific module: `pytest tests/unit/test_pricing.py -v`
+| Field | Value |
+|-------|-------|
+| Type | Python |
+| Framework | FastAPI |
+| Python Version | 3.13+ |
 
-## Code Quality
-- Lint: `ruff check .`
-- Format: `ruff check . --fix`
-- Typecheck: `mypy src`
+## Available Skills
 
-## Project Structure
-- Entrypoint: `app.py`
-- Core analytics: `src/analytics/`
-- UI tabs: `src/ui/tabs/`
-- Shared plot helpers: `src/ui/plots.py`
-- Data contracts: `src/analytics/schemas.py`
-- Config: `pyproject.toml`
+| Skill | Triggers | Purpose |
+|-------|----------|---------|
+| python-fundamentals | `*.py`, `python`, `dataclass` | Core Python patterns |
+| python-fastapi | `fastapi`, `pydantic`, `endpoint` | FastAPI production patterns |
+| python-backend | `sqlalchemy`, `database`, `orm` | SQLAlchemy 2.0 async |
+| python-testing-general | `pytest`, `test`, `mock` | pytest fundamentals |
+| python-testing-deep | `hypothesis`, `property-based` | Advanced testing |
+| python-asyncio | `async`, `await`, `asyncio` | Async patterns |
+| python-type-hints | `typing`, `mypy`, `pyright` | Type system |
+| python-package-management | `uv`, `pip`, `pyproject` | UV package manager |
+| python-tooling | `docker`, `ci`, `cd` | DevOps/CI-CD |
+| python-fundamentals-313 | `3.13`, `jit`, `free-threading` | Python 3.13+ features |
 
-## Notes
-- Uses Streamlit 1.59+, Python >=3.10
-- Dependencies locked via pyproject.toml
-- Validation via pydantic schemas
+## Usage
+
+```
+skill(name="python-fastapi")
+```
+
+## Subagents
+
+| Subagent | Use For |
+|----------|---------|
+| python-coder | Code generation |
+| python-reviewer | Code review |
+| python-tester | Writing tests |
+| python-scout | Finding context |
+
+## Configuration
+
+Main config: `.opencode/config.json`
+
+```json
+{
+  "agent": "python-expert"
+}
+```
+
+## Resources
+
+- Skills: `.opencode/skills/*/SKILL.md`
+- Standards: `.opencode/context/python/standards.md`
+- Patterns: `.opencode/context/python/patterns.md`
+- Security: `.opencode/context/python/security.md`

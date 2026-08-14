@@ -34,7 +34,7 @@ from src.ui.features import get_product_metrics
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
 
-_ACTION_MATRIX: dict[tuple[ str, str], str] = {
+_ACTION_MATRIX: dict[tuple[str, str], str] = {
     ("A", "X"): "Protect & grow",
     ("A", "Y"): "Manage demand",
     ("A", "Z"): "Hedge volatility",
@@ -63,8 +63,12 @@ def _render_product_decision_matrix(full: pd.DataFrame, rational: pd.DataFrame) 
         for a, z in zip(grid["abc_class"], grid["xyz_class"], strict=False)
     ]
 
-    pivot_count = grid.pivot_table(index="abc_class", columns="xyz_class", values="stockcode", aggfunc="count", fill_value=0)
-    pivot_rev = grid.pivot_table(index="abc_class", columns="xyz_class", values="revenue", aggfunc="sum", fill_value=0)
+    pivot_count = grid.pivot_table(
+        index="abc_class", columns="xyz_class", values="stockcode", aggfunc="count", fill_value=0
+    )
+    pivot_rev = grid.pivot_table(
+        index="abc_class", columns="xyz_class", values="revenue", aggfunc="sum", fill_value=0
+    )
     for cls in ("A", "B", "C"):
         if cls not in pivot_count.index:
             pivot_count.loc[cls] = 0
@@ -112,7 +116,11 @@ def _render_product_decision_matrix(full: pd.DataFrame, rational: pd.DataFrame) 
     )
 
     action_counts = rational["action"].value_counts()
-    counts_line = ", ".join(f"{k}: {v}" for k, v in action_counts.items()) if not action_counts.empty else "no actions"
+    counts_line = (
+        ", ".join(f"{k}: {v}" for k, v in action_counts.items())
+        if not action_counts.empty
+        else "no actions"
+    )
     st.caption(f"Rationalization actions across all SKUs: {counts_line}.")
 
 
@@ -124,7 +132,9 @@ def _render_abc_pareto(perf: pd.DataFrame) -> None:
         return
 
     abc_sorted = abc.sort_values("revenue", ascending=False).reset_index(drop=True)
-    abc_sorted["cumulative_pct"] = abc_sorted["revenue"].cumsum() / abc_sorted["revenue"].sum() * 100
+    abc_sorted["cumulative_pct"] = (
+        abc_sorted["revenue"].cumsum() / abc_sorted["revenue"].sum() * 100
+    )
 
     fig = new_fig()
     # Bar: revenue
@@ -133,7 +143,11 @@ def _render_abc_pareto(perf: pd.DataFrame) -> None:
             x=abc_sorted["stockcode"],
             y=abc_sorted["revenue"],
             name="Revenue",
-            marker={"color": abc_sorted["abc_class"].map({"A": PALETTE[0], "B": PALETTE[2], "C": PALETTE[4]})},
+            marker={
+                "color": abc_sorted["abc_class"].map(
+                    {"A": PALETTE[0], "B": PALETTE[2], "C": PALETTE[4]}
+                )
+            },
             hovertemplate="%{x}: $%{y:,.0f}<extra></extra>",
         )
     )
@@ -149,8 +163,12 @@ def _render_abc_pareto(perf: pd.DataFrame) -> None:
             marker={"size": 4},
         )
     )
-    fig.add_hline(y=70, line_dash="dash", line_color="gray", annotation_text="A boundary (70%)", yref="y2")
-    fig.add_hline(y=90, line_dash="dash", line_color="gray", annotation_text="B boundary (90%)", yref="y2")
+    fig.add_hline(
+        y=70, line_dash="dash", line_color="gray", annotation_text="A boundary (70%)", yref="y2"
+    )
+    fig.add_hline(
+        y=90, line_dash="dash", line_color="gray", annotation_text="B boundary (90%)", yref="y2"
+    )
     fig.update_layout(
         yaxis={"title": "Revenue ($)"},
         yaxis2={"title": "Cumulative %", "overlaying": "y", "side": "right", "range": [0, 105]},
@@ -158,7 +176,9 @@ def _render_abc_pareto(perf: pd.DataFrame) -> None:
         hovermode="x unified",
     )
     show(fig)
-    st.caption("Pareto chart: A-class (green) = top 70% revenue, B (blue) = 70-90%, C (gray) = rest.")
+    st.caption(
+        "Pareto chart: A-class (green) = top 70% revenue, B (blue) = 70-90%, C (gray) = rest."
+    )
 
 
 def _render_xyz_volatility(perf: pd.DataFrame) -> None:
@@ -186,8 +206,12 @@ def _render_xyz_volatility(perf: pd.DataFrame) -> None:
         hover_data=["stockcode", "xyz_class", "zero_demand_rate", "n_periods"],
         log_x=True,
     )
-    fig.add_hline(y=t1, line_dash="dash", line_color="gray", annotation_text=f"X boundary (CV {t1:.0%})")
-    fig.add_hline(y=t2, line_dash="dash", line_color="gray", annotation_text=f"Y boundary (CV {t2:.0%})")
+    fig.add_hline(
+        y=t1, line_dash="dash", line_color="gray", annotation_text=f"X boundary (CV {t1:.0%})"
+    )
+    fig.add_hline(
+        y=t2, line_dash="dash", line_color="gray", annotation_text=f"Y boundary (CV {t2:.0%})"
+    )
     fig.update_layout(xaxis={"title": "Total Revenue (log)"}, yaxis={"title": "Unit-demand CV"})
     show(fig)
     st.caption(
@@ -216,11 +240,19 @@ def _render_lifecycle_scatter(perf: pd.DataFrame) -> None:
         hover_data=["stockcode"],
         log_x=True,
     )
-    fig.add_hline(y=25, line_dash="dash", line_color="gray", annotation_text="Growth threshold (+25%)")
-    fig.add_hline(y=-25, line_dash="dash", line_color="gray", annotation_text="Decline threshold (-25%)")
-    fig.update_layout(xaxis={"title": "Prior Period Revenue (log)"}, yaxis={"title": "Growth % (Recent vs Prior)"})
+    fig.add_hline(
+        y=25, line_dash="dash", line_color="gray", annotation_text="Growth threshold (+25%)"
+    )
+    fig.add_hline(
+        y=-25, line_dash="dash", line_color="gray", annotation_text="Decline threshold (-25%)"
+    )
+    fig.update_layout(
+        xaxis={"title": "Prior Period Revenue (log)"}, yaxis={"title": "Growth % (Recent vs Prior)"}
+    )
     show(fig)
-    st.caption("Products in growth quadrant (top-right) are expanding; decline (bottom-left) need attention.")
+    st.caption(
+        "Products in growth quadrant (top-right) are expanding; decline (bottom-left) need attention."
+    )
 
 
 def _render_velocity_repeat(full: pd.DataFrame) -> None:
@@ -241,14 +273,20 @@ def _render_velocity_repeat(full: pd.DataFrame) -> None:
         x="velocity",
         y="repeat_rate",
         size="revenue",
-        color=merged["revenue"].apply(lambda r: "High" if r > merged["revenue"].median() else "Low"),
+        color=merged["revenue"].apply(
+            lambda r: "High" if r > merged["revenue"].median() else "Low"
+        ),
         color_discrete_map={"High": PALETTE[0], "Low": PALETTE[4]},
         hover_data=["stockcode"],
         log_x=True,
     )
-    fig.update_layout(xaxis={"title": "Velocity (units/active day)"}, yaxis={"title": "Repeat Purchase Rate"})
+    fig.update_layout(
+        xaxis={"title": "Velocity (units/active day)"}, yaxis={"title": "Repeat Purchase Rate"}
+    )
     show(fig)
-    st.caption("High velocity + high repeat (top-right) = sticky, fast-moving products. Low both = slow movers with low loyalty.")
+    st.caption(
+        "High velocity + high repeat (top-right) = sticky, fast-moving products. Low both = slow movers with low loyalty."
+    )
 
 
 def _render_sku_rationalization(perf: pd.DataFrame) -> None:
@@ -272,7 +310,9 @@ def _render_sku_rationalization(perf: pd.DataFrame) -> None:
     fig.update_layout(showlegend=True)
     show(fig)
 
-    st.caption("keep = A + X/Y; delist_candidate = C + Z; review = others. Use filters below to drill down.")
+    st.caption(
+        "keep = A + X/Y; delist_candidate = C + Z; review = others. Use filters below to drill down."
+    )
     st.dataframe(
         rational.sort_values(["abc_class", "xyz_class", "revenue"], ascending=[True, True, False]),
         use_container_width=True,
@@ -296,9 +336,6 @@ def _render_category_roles(df: pd.DataFrame) -> None:
         show(empty_state("No category roles computed"))
         return
 
-    # Disclosure banner
-    source = roles["category_source"].iloc[0] if "category_source" in roles.columns and not roles.empty else "unknown"
-
 
 def render(df: pd.DataFrame) -> None:
     st.subheader(":material/insights: Product Performance")
@@ -307,7 +344,9 @@ def render(df: pd.DataFrame) -> None:
         c1, c2, c3 = st.columns(3)
         abc_filter = c1.multiselect("ABC Class", ["A", "B", "C"], default=["A", "B", "C"])
         xyz_filter = c2.multiselect("XYZ Class", ["X", "Y", "Z"], default=["X", "Y", "Z"])
-        stage_filter = c3.multiselect("Lifecycle", ["growth", "mature", "decline"], default=["growth", "mature", "decline"])
+        stage_filter = c3.multiselect(
+            "Lifecycle", ["growth", "mature", "decline"], default=["growth", "mature", "decline"]
+        )
 
     @st.cache_data(show_spinner="Computing product metrics...")
     def get_cached_product_metrics(data_df: pd.DataFrame) -> pd.DataFrame:
@@ -385,8 +424,18 @@ def render(df: pd.DataFrame) -> None:
 
     st.divider()
     st.subheader(":material/table_rows: Full Performance Table")
-    display_cols = ["stockcode", "revenue", "units", "transactions", "customers",
-                    "abc_class", "xyz_class", "stage", "velocity", "repeat_rate"]
+    display_cols = [
+        "stockcode",
+        "revenue",
+        "units",
+        "transactions",
+        "customers",
+        "abc_class",
+        "xyz_class",
+        "stage",
+        "velocity",
+        "repeat_rate",
+    ]
     display_cols = [c for c in display_cols if c in filtered.columns]
     st.dataframe(
         filtered[display_cols].sort_values("revenue", ascending=False),

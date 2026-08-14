@@ -34,7 +34,9 @@ def _create_kvi_features(
     pm = product_metrics.drop(columns=["penetration"], errors="ignore")
 
     kvi_features = pm.merge(
-        basket_pen[["stockcode", "basket_count", "penetration", "revenue_share"]], on="stockcode", how="left"
+        basket_pen[["stockcode", "basket_count", "penetration", "revenue_share"]],
+        on="stockcode",
+        how="left",
     )
 
     # Carry category through to the feature table (may be provided or inferred upstream)
@@ -45,11 +47,17 @@ def _create_kvi_features(
             .dropna(subset=["category"])
         )
         kvi_features = kvi_features.merge(cat_lookup, on="stockcode", how="left")
-    total_baskets = float(transactions_df["transaction_id"].nunique()) if "transaction_id" in transactions_df.columns else 0.0
+    total_baskets = (
+        float(transactions_df["transaction_id"].nunique())
+        if "transaction_id" in transactions_df.columns
+        else 0.0
+    )
     kvi_features["trip_incidence"] = (
         kvi_features["basket_count"] / total_baskets if total_baskets > 0 else 0.0
     )
-    kvi_features = kvi_features.rename(columns={"penetration": "basket_penetration", "revenue": "total_revenue"})
+    kvi_features = kvi_features.rename(
+        columns={"penetration": "basket_penetration", "revenue": "total_revenue"}
+    )
 
     # Elasticity features
     if elasticity_df is not None and not elasticity_df.empty:
@@ -148,9 +156,9 @@ def _kvi_heuristic(
         and "total_revenue" in features.columns
         and "customers" in features.columns
     ):
-        features["revenue_per_customer"] = (
-            features["total_revenue"] / features["customers"].replace(0, np.nan)
-        )
+        features["revenue_per_customer"] = features["total_revenue"] / features[
+            "customers"
+        ].replace(0, np.nan)
 
     feature_cols = [
         "basket_penetration",
@@ -220,9 +228,9 @@ def _kvi_xgb(
         and "total_revenue" in features.columns
         and "customers" in features.columns
     ):
-        features["revenue_per_customer"] = (
-            features["total_revenue"] / features["customers"].replace(0, np.nan)
-        )
+        features["revenue_per_customer"] = features["total_revenue"] / features[
+            "customers"
+        ].replace(0, np.nan)
 
     feature_cols = [
         "basket_penetration",

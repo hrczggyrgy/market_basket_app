@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import pandas as pd
 
-from src.analytics.cohort import compute_cohorts, compute_cohort_sizes
+from src.analytics.cohort import compute_cohort_sizes, compute_cohorts
 from src.analytics.intelligence import Insight, insights_to_dataframe
 from src.analytics.schemas import PRICING_INSIGHTS, check
 
 _DECLINING_COHORT_SIZE_THRESHOLD = -0.1  # 10% decline quarter over quarter
-_LOW_RETENTION_THRESHOLD = 0.2          # 20% retention in period 1 is concerning
+_LOW_RETENTION_THRESHOLD = 0.2  # 20% retention in period 1 is concerning
 
 
 def generate_cohort_insights(df: pd.DataFrame, cohort_period: str = "M") -> pd.DataFrame:
@@ -44,7 +44,8 @@ def generate_cohort_insights(df: pd.DataFrame, cohort_period: str = "M") -> pd.D
         # Calculate quarter-over-quarter change in cohort size
         size_change = (
             (latest["cohort_size"] - previous["cohort_size"]) / previous["cohort_size"]
-            if previous["cohort_size"] > 0 else 0.0
+            if previous["cohort_size"] > 0
+            else 0.0
         )
 
         if size_change < _DECLINING_COHORT_SIZE_THRESHOLD:

@@ -105,9 +105,7 @@ def test_bootstrap_phi_matches_matrix(sample_df: pd.DataFrame) -> None:
     a, b = sample_df["stockcode"].unique()[:2]
     sim = build_similarity_matrix(sample_df, method="phi", min_cooccurrence=5)
     expected = float(sim.loc[a, b])
-    ci = bootstrap_similarity_ci(
-        sample_df, a, b, method="phi", n_resamples=5, random_seed=42
-    )
+    ci = bootstrap_similarity_ci(sample_df, a, b, method="phi", n_resamples=5, random_seed=42)
     assert ci["estimate"] == pytest.approx(expected, abs=1e-12)
     assert ci["n_resamples"] == 5
     assert ci["lower"] <= ci["estimate"] <= ci["upper"]
@@ -116,9 +114,7 @@ def test_bootstrap_phi_matches_matrix(sample_df: pd.DataFrame) -> None:
 def test_bootstrap_embedding_raises(sample_df: pd.DataFrame) -> None:
     a, b = sample_df["stockcode"].unique()[:2]
     with pytest.raises(ValueError):
-        bootstrap_similarity_ci(
-            sample_df, a, b, method="embedding", n_resamples=2
-        )
+        bootstrap_similarity_ci(sample_df, a, b, method="embedding", n_resamples=2)
 
 
 def test_bootstrap_similarity_ci(sample_df: pd.DataFrame) -> None:
@@ -138,7 +134,9 @@ def test_distance_and_clustering(sample_df: pd.DataFrame) -> None:
     assert (dist >= 0).all()
 
     linkage, clusters = perform_hierarchical_clustering(sim, n_clusters=3)
-    CDT_ASSIGNMENTS.validate(clusters.reset_index().rename(columns={"index": "stockcode", "cluster": "cluster"}))
+    CDT_ASSIGNMENTS.validate(
+        clusters.reset_index().rename(columns={"index": "stockcode", "cluster": "cluster"})
+    )
     assert len(clusters) == len(sim)
 
 
@@ -249,7 +247,11 @@ def test_tree_build_and_score(sample_df: pd.DataFrame) -> None:
 
     scores = score_tree(root, sim)
     CDT_TREE_SCORE.validate(scores)
-    assert scores["metric"].isin({"n_nodes", "n_leaves", "depth", "mean_leaf_similarity", "products_covered"}).all()
+    assert (
+        scores["metric"]
+        .isin({"n_nodes", "n_leaves", "depth", "mean_leaf_similarity", "products_covered"})
+        .all()
+    )
 
 
 def test_synthetic_validation() -> None:

@@ -6,9 +6,9 @@ insight contract) that the UI ranks and renders as decision cards.
 
 from src.analytics.insights.assortment import generate_assortment_insights
 from src.analytics.insights.basket import generate_basket_insights
+from src.analytics.insights.cdt import generate_cdt_insights
 from src.analytics.insights.cohort import generate_cohort_insights
 from src.analytics.insights.customer import generate_customer_insights
-from src.analytics.insights.cdt import generate_cdt_insights
 from src.analytics.insights.overview import generate_overview_insights
 from src.analytics.insights.pricing import generate_pricing_insights
 from src.analytics.insights.product import generate_product_insights

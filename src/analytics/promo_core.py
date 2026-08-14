@@ -39,7 +39,20 @@ from src.analytics.schemas import (
 )
 
 _DAY_NAMES = {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"}
-_MONTH_NAMES = {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun", 7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"}
+_MONTH_NAMES = {
+    1: "Jan",
+    2: "Feb",
+    3: "Mar",
+    4: "Apr",
+    5: "May",
+    6: "Jun",
+    7: "Jul",
+    8: "Aug",
+    9: "Sep",
+    10: "Oct",
+    11: "Nov",
+    12: "Dec",
+}
 
 
 def mark_promo_transactions(
@@ -78,13 +91,14 @@ def detect_promotions(
     lifecycle pricing, or data errors. Manual review recommended for decision-making.
     """
     import warnings
+
     warnings.warn(
         "detect_promotions uses a HEURISTIC price-drop threshold. It does NOT verify actual "
         "promotional activity. Results may include clearance, permanent price changes, "
         "competitive matching, markdowns, lifecycle pricing, or data errors. "
         "Manual review recommended before decision-making.",
         UserWarning,
-        stacklevel=2
+        stacklevel=2,
     )
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
@@ -94,7 +108,9 @@ def detect_promotions(
     df["price_drop_pct"] = (df["baseline_price"] - df["price"]) / df["baseline_price"]
     df["is_promo"] = df["price_drop_pct"] >= price_change_threshold
     if not df["is_promo"].any():
-        return check(pd.DataFrame(columns=list(PROMO_PERIODS.columns)), PROMO_PERIODS, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(PROMO_PERIODS.columns)), PROMO_PERIODS, allow_empty=True
+        )
 
     non_promo_days = df.loc[~df["is_promo"], "date"].nunique()
     promotions = []
@@ -116,12 +132,22 @@ def detect_promotions(
             baseline_qty = baseline_sales["quantity"].sum()
             promo_revenue = group["revenue"].sum()
             baseline_revenue = baseline_sales["revenue"].sum()
-            qty_lift = (promo_qty / duration) / (baseline_qty / non_promo_days) - 1 if baseline_qty > 0 and non_promo_days > 0 else 0.0
-            revenue_lift = (promo_revenue / duration) / (baseline_revenue / non_promo_days) - 1 if baseline_revenue > 0 and non_promo_days > 0 else 0.0
+            qty_lift = (
+                (promo_qty / duration) / (baseline_qty / non_promo_days) - 1
+                if baseline_qty > 0 and non_promo_days > 0
+                else 0.0
+            )
+            revenue_lift = (
+                (promo_revenue / duration) / (baseline_revenue / non_promo_days) - 1
+                if baseline_revenue > 0 and non_promo_days > 0
+                else 0.0
+            )
             promotions.append(
                 {
                     "stockcode": stockcode,
-                    "product_name": group["product"].iloc[0] if "product" in group.columns else stockcode,
+                    "product_name": group["product"].iloc[0]
+                    if "product" in group.columns
+                    else stockcode,
                     "start_date": start_date,
                     "end_date": end_date,
                     "duration_days": duration,
@@ -137,7 +163,9 @@ def detect_promotions(
                     "qty_lift": qty_lift,
                     "revenue_lift": revenue_lift,
                     "avg_promo_price": group["price"].mean(),
-                    "avg_baseline_price": baseline_sales["price"].mean() if len(baseline_sales) else 0.0,
+                    "avg_baseline_price": baseline_sales["price"].mean()
+                    if len(baseline_sales)
+                    else 0.0,
                 }
             )
     table = pd.DataFrame(promotions)
@@ -258,7 +286,11 @@ def compute_promo_baseline(
     df["week"] = df["date"].dt.to_period("W")
     weekly = (
         df.groupby(["stockcode", "week"])
-        .agg(actual_units=("quantity", "sum"), actual_revenue=("revenue", "sum"), avg_price=("price", "mean"))
+        .agg(
+            actual_units=("quantity", "sum"),
+            actual_revenue=("revenue", "sum"),
+            avg_price=("price", "mean"),
+        )
         .reset_index()
     )
     promo_weekly = _expand_promo_weeks(promo_periods)
@@ -297,7 +329,9 @@ def compute_promo_baseline(
                 # Fill non-promo weeks with fitted values
                 non_promo_indices = np.where(non_promo_mask)[0]
                 baseline_units[non_promo_indices] = np.maximum(trend_units + seasonal_units, 0)
-                baseline_revenue[non_promo_indices] = np.maximum(trend_revenue + seasonal_revenue, 0)
+                baseline_revenue[non_promo_indices] = np.maximum(
+                    trend_revenue + seasonal_revenue, 0
+                )
 
                 # Forward-fill promo weeks from last non-promo observation
                 # Find the last non-promo index before each promo week
@@ -316,25 +350,59 @@ def compute_promo_baseline(
                         baseline_revenue[idx] = baseline_revenue[first_idx]
 
             except (ValueError, RuntimeError, np.linalg.LinAlgError):
-                baseline_units = sku["actual_units"].rolling(4, min_periods=1).mean().shift(1).fillna(sku["actual_units"])
-                baseline_revenue = sku["actual_revenue"].rolling(4, min_periods=1).mean().shift(1).fillna(sku["actual_revenue"])
+                baseline_units = (
+                    sku["actual_units"]
+                    .rolling(4, min_periods=1)
+                    .mean()
+                    .shift(1)
+                    .fillna(sku["actual_units"])
+                )
+                baseline_revenue = (
+                    sku["actual_revenue"]
+                    .rolling(4, min_periods=1)
+                    .mean()
+                    .shift(1)
+                    .fillna(sku["actual_revenue"])
+                )
         else:
-            baseline_units = sku["actual_units"].rolling(4, min_periods=1).mean().shift(1).fillna(sku["actual_units"])
-            baseline_revenue = sku["actual_revenue"].rolling(4, min_periods=1).mean().shift(1).fillna(sku["actual_revenue"])
+            baseline_units = (
+                sku["actual_units"]
+                .rolling(4, min_periods=1)
+                .mean()
+                .shift(1)
+                .fillna(sku["actual_units"])
+            )
+            baseline_revenue = (
+                sku["actual_revenue"]
+                .rolling(4, min_periods=1)
+                .mean()
+                .shift(1)
+                .fillna(sku["actual_revenue"])
+            )
 
         # Calculate baseline price and incremental components
         sku["baseline_units"] = baseline_units
         sku["baseline_revenue"] = baseline_revenue
-        sku["baseline_price"] = np.where(baseline_units > 0, baseline_revenue / baseline_units, np.nan)
+        sku["baseline_price"] = np.where(
+            baseline_units > 0, baseline_revenue / baseline_units, np.nan
+        )
         sku["incremental_units"] = sku["actual_units"] - sku["baseline_units"]
         sku["incremental_revenue"] = sku["actual_revenue"] - sku["baseline_revenue"]
         # Revenue from quantity change (using baseline price)
         sku["incremental_revenue_qty"] = sku["incremental_units"] * sku["baseline_price"]
         # Revenue from price change
-        sku["incremental_revenue_price"] = sku["incremental_revenue"] - sku["incremental_revenue_qty"]
-        sku["incrementality_pct"] = np.where(sku["actual_revenue"] > 0, sku["incremental_revenue"] / sku["actual_revenue"] * 100, 0.0)
+        sku["incremental_revenue_price"] = (
+            sku["incremental_revenue"] - sku["incremental_revenue_qty"]
+        )
+        sku["incrementality_pct"] = np.where(
+            sku["actual_revenue"] > 0, sku["incremental_revenue"] / sku["actual_revenue"] * 100, 0.0
+        )
         results.append(sku)
-    table = pd.concat(results, ignore_index=True) if results else pd.DataFrame(columns=list(PROMO_BASELINE.columns))
+    table = (
+        pd.concat(results, ignore_index=True)
+        if results
+        else pd.DataFrame(columns=list(PROMO_BASELINE.columns))
+    )
     return check(table, PROMO_BASELINE, allow_empty=True)
 
 
@@ -352,11 +420,12 @@ def pre_post_promo_comparison(
     USE FOR DESCRIPTIVE PRE/POST COMPARISON ONLY. NOT FOR CAUSAL INFERENCE.
     """
     import warnings
+
     warnings.warn(
         "pre_post_promo_comparison is a simple pre/post comparison, NOT a DiD estimator. "
         "Results are confounded by seasonality and trends. NOT for causal inference.",
         UserWarning,
-        stacklevel=2
+        stacklevel=2,
     )
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
@@ -370,7 +439,11 @@ def pre_post_promo_comparison(
         baseline_start = start - pd.Timedelta(days=duration)
         baseline_end = start - pd.Timedelta(days=1)
         treated = df[(df["stockcode"] == stockcode) & (df["date"] >= start) & (df["date"] <= end)]
-        control = df[(df["stockcode"] == stockcode) & (df["date"] >= baseline_start) & (df["date"] <= baseline_end)]
+        control = df[
+            (df["stockcode"] == stockcode)
+            & (df["date"] >= baseline_start)
+            & (df["date"] <= baseline_end)
+        ]
         t_rev, c_rev = treated["revenue"].sum(), control["revenue"].sum()
         t_qty, c_qty = treated["quantity"].sum(), control["quantity"].sum()
         t_ord, c_ord = treated["transaction_id"].nunique(), control["transaction_id"].nunique()
@@ -450,8 +523,12 @@ def compute_incrementality_waterfall(
     agg["incremental_revenue_qty"] = agg["incremental_revenue_qty"].fillna(0)
     agg["incremental_revenue_price"] = agg["incremental_revenue_price"].fillna(0)
     agg["incremental_revenue"] = agg["incremental_revenue_qty"] + agg["incremental_revenue_price"]
-    agg["net_incremental_revenue"] = agg["incremental_revenue"] + agg["halo_revenue"] - agg["cannibalization_revenue"]
-    agg["roi"] = np.where(agg["baseline_revenue"] > 0, agg["net_incremental_revenue"] / agg["baseline_revenue"], 0.0)
+    agg["net_incremental_revenue"] = (
+        agg["incremental_revenue"] + agg["halo_revenue"] - agg["cannibalization_revenue"]
+    )
+    agg["roi"] = np.where(
+        agg["baseline_revenue"] > 0, agg["net_incremental_revenue"] / agg["baseline_revenue"], 0.0
+    )
     return check(agg, PROMO_WATERFALL, allow_empty=True)
 
 
@@ -479,7 +556,9 @@ def promo_roi_analysis(
     for _, row in lift.iterrows():
         start, end = row["start_date"], row["end_date"]
         duration = (end - start).days + 1
-        treated = df[(df["stockcode"] == row["stockcode"]) & (df["date"] >= start) & (df["date"] <= end)]
+        treated = df[
+            (df["stockcode"] == row["stockcode"]) & (df["date"] >= start) & (df["date"] <= end)
+        ]
         control = df[
             (df["stockcode"] == row["stockcode"])
             & (df["date"] >= start - pd.Timedelta(days=duration))
@@ -494,6 +573,7 @@ def promo_roi_analysis(
                 # Bootstrap on total incremental revenue (not basket mean)
                 def _total_diff(t, c):
                     return float(np.sum(t) - np.sum(c))
+
                 res = bootstrap(
                     (t_baskets, c_baskets),
                     _total_diff,
@@ -522,7 +602,9 @@ def promo_roi_analysis(
     return check(table, PROMO_ROI)
 
 
-def promotion_timing_analysis(df: pd.DataFrame, promo_periods: pd.DataFrame) -> dict[str, pd.DataFrame]:
+def promotion_timing_analysis(
+    df: pd.DataFrame, promo_periods: pd.DataFrame
+) -> dict[str, pd.DataFrame]:
     """Promo vs baseline revenue lift by day of week and by month."""
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
@@ -543,14 +625,22 @@ def promotion_timing_analysis(df: pd.DataFrame, promo_periods: pd.DataFrame) -> 
 
 
 def _timing_table(promo: pd.DataFrame, base: pd.DataFrame, key: str) -> pd.DataFrame:
-    p = promo.groupby(key).agg(promo_revenue=("revenue", "sum"), promo_orders=("transaction_id", "nunique"))
-    b = base.groupby(key).agg(base_revenue=("revenue", "sum"), base_orders=("transaction_id", "nunique"))
+    p = promo.groupby(key).agg(
+        promo_revenue=("revenue", "sum"), promo_orders=("transaction_id", "nunique")
+    )
+    b = base.groupby(key).agg(
+        base_revenue=("revenue", "sum"), base_orders=("transaction_id", "nunique")
+    )
     table = p.join(b, how="outer").fillna(0.0).reset_index()
-    table["revenue_lift"] = (table["promo_revenue"] / table["base_revenue"].replace(0, np.nan) - 1) * 100
+    table["revenue_lift"] = (
+        table["promo_revenue"] / table["base_revenue"].replace(0, np.nan) - 1
+    ) * 100
     return table
 
 
-def halo_effect_analysis(df: pd.DataFrame, promo_periods: pd.DataFrame, window_days: int = 7) -> pd.DataFrame:
+def halo_effect_analysis(
+    df: pd.DataFrame, promo_periods: pd.DataFrame, window_days: int = 7
+) -> pd.DataFrame:
     """Basket-level halo: other products lifted in promo baskets vs pre-promo baskets."""
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
@@ -559,21 +649,46 @@ def halo_effect_analysis(df: pd.DataFrame, promo_periods: pd.DataFrame, window_d
     for _, promo in promo_periods.iterrows():
         stockcode = promo["stockcode"]
         start, end = promo["start_date"], promo["end_date"]
-        promo_txns = df[(df["stockcode"] == stockcode) & (df["date"] >= start) & (df["date"] <= end)]["transaction_id"].unique()
+        promo_txns = df[
+            (df["stockcode"] == stockcode) & (df["date"] >= start) & (df["date"] <= end)
+        ]["transaction_id"].unique()
         if len(promo_txns) == 0:
             continue
         halo = df[(df["transaction_id"].isin(promo_txns)) & (df["stockcode"] != stockcode)]
         baseline_start = start - pd.Timedelta(days=window_days * 4)
         baseline_end = start - pd.Timedelta(days=1)
-        pre_txns = df[(df["stockcode"] == stockcode) & (df["date"] >= baseline_start) & (df["date"] <= baseline_end)]["transaction_id"].unique()
-        baseline = df[(df["transaction_id"].isin(pre_txns)) & (df["stockcode"] != stockcode)] if len(pre_txns) else df.iloc[0:0]
-        halo_agg = halo.groupby("stockcode").agg(halo_revenue=("revenue", "sum"), halo_orders=("transaction_id", "nunique"))
-        base_agg = baseline.groupby("stockcode").agg(base_revenue=("revenue", "sum"), base_orders=("transaction_id", "nunique"))
-        merged = halo_agg.join(base_agg, how="outer").fillna(0.0).reset_index().rename(columns={"stockcode": "halo_product"})
+        pre_txns = df[
+            (df["stockcode"] == stockcode)
+            & (df["date"] >= baseline_start)
+            & (df["date"] <= baseline_end)
+        ]["transaction_id"].unique()
+        baseline = (
+            df[(df["transaction_id"].isin(pre_txns)) & (df["stockcode"] != stockcode)]
+            if len(pre_txns)
+            else df.iloc[0:0]
+        )
+        halo_agg = halo.groupby("stockcode").agg(
+            halo_revenue=("revenue", "sum"), halo_orders=("transaction_id", "nunique")
+        )
+        base_agg = baseline.groupby("stockcode").agg(
+            base_revenue=("revenue", "sum"), base_orders=("transaction_id", "nunique")
+        )
+        merged = (
+            halo_agg.join(base_agg, how="outer")
+            .fillna(0.0)
+            .reset_index()
+            .rename(columns={"stockcode": "halo_product"})
+        )
         merged["promo_product"] = stockcode
-        merged["revenue_lift"] = (merged["halo_revenue"] / merged["base_revenue"].replace(0, np.nan) - 1) * 100
+        merged["revenue_lift"] = (
+            merged["halo_revenue"] / merged["base_revenue"].replace(0, np.nan) - 1
+        ) * 100
         rows.append(merged)
-    table = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame(columns=list(PROMO_HALO.columns))
+    table = (
+        pd.concat(rows, ignore_index=True)
+        if rows
+        else pd.DataFrame(columns=list(PROMO_HALO.columns))
+    )
     return check(table, PROMO_HALO, allow_empty=True)
 
 
@@ -619,12 +734,16 @@ def compute_cannibalization_analysis(
             continue
         sku_category = categories[sku] if has_category and sku in categories.index else "UNKNOWN"
         if has_category:
-            peers = df[(df["stockcode"] != sku) & (df["category"] == sku_category)]["stockcode"].unique()
+            peers = df[(df["stockcode"] != sku) & (df["category"] == sku_category)][
+                "stockcode"
+            ].unique()
         else:
             peers = df[df["stockcode"] != sku]["stockcode"].unique()
 
         in_promo = df[(df["stockcode"].isin(peers)) & (df["date"] >= start) & (df["date"] <= end)]
-        in_pre = df[(df["stockcode"].isin(peers)) & (df["date"] >= pre_start) & (df["date"] <= pre_end)]
+        in_pre = df[
+            (df["stockcode"].isin(peers)) & (df["date"] >= pre_start) & (df["date"] <= pre_end)
+        ]
 
         promo_agg = in_promo.groupby("stockcode").agg(
             promo_revenue=("revenue", "sum"), promo_orders=("transaction_id", "nunique")
@@ -632,7 +751,12 @@ def compute_cannibalization_analysis(
         pre_agg = in_pre.groupby("stockcode").agg(
             base_revenue=("revenue", "sum"), base_orders=("transaction_id", "nunique")
         )
-        merged = promo_agg.join(pre_agg, how="outer").fillna(0.0).reset_index().rename(columns={"stockcode": "peer_product"})
+        merged = (
+            promo_agg.join(pre_agg, how="outer")
+            .fillna(0.0)
+            .reset_index()
+            .rename(columns={"stockcode": "peer_product"})
+        )
 
         for _, peer in merged.iterrows():
             base_rev = float(peer["base_revenue"])
@@ -656,7 +780,11 @@ def compute_cannibalization_analysis(
             )
 
     if not rows:
-        return check(pd.DataFrame(columns=list(PROMO_CANNIBALIZATION.columns)), PROMO_CANNIBALIZATION, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(PROMO_CANNIBALIZATION.columns)),
+            PROMO_CANNIBALIZATION,
+            allow_empty=True,
+        )
     table = pd.DataFrame(rows, columns=list(PROMO_CANNIBALIZATION.columns))
     return check(table, PROMO_CANNIBALIZATION)
 
@@ -718,13 +846,23 @@ def compute_category_cannibalization(
         pre_end = start - pd.Timedelta(days=1)
 
         peer_categories = [c for c in df["category"].unique() if c != promo_category]
-        in_promo = df[(df["date"] >= start) & (df["date"] <= end) & (df["category"].isin(peer_categories))]
-        in_pre = df[(df["date"] >= pre_start) & (df["date"] <= pre_end) & (df["category"].isin(peer_categories))]
+        in_promo = df[
+            (df["date"] >= start) & (df["date"] <= end) & (df["category"].isin(peer_categories))
+        ]
+        in_pre = df[
+            (df["date"] >= pre_start)
+            & (df["date"] <= pre_end)
+            & (df["category"].isin(peer_categories))
+        ]
 
         promo_agg = in_promo.groupby("category")["revenue"].sum().rename("promo_revenue")
         pre_agg = in_pre.groupby("category")["revenue"].sum().rename("base_revenue")
-        merged = promo_agg.to_frame().join(pre_agg, how="outer").fillna(0.0).reset_index().rename(
-            columns={"category": "peer_category"}
+        merged = (
+            promo_agg.to_frame()
+            .join(pre_agg, how="outer")
+            .fillna(0.0)
+            .reset_index()
+            .rename(columns={"category": "peer_category"})
         )
 
         for _, peer in merged.iterrows():
@@ -749,21 +887,20 @@ def compute_category_cannibalization(
         return check(empty, CATEGORY_CANNIBALIZATION, allow_empty=True)
 
     table = pd.DataFrame(rows)
-    grouped = (
-        table.groupby(["promo_category", "peer_category"], as_index=False)
-        .agg(
-            n_promos=("n_promos", "sum"),
-            promo_revenue=("promo_revenue", "sum"),
-            base_revenue=("base_revenue", "sum"),
-            cannibalized_revenue=("cannibalized_revenue", "sum"),
-        )
+    grouped = table.groupby(["promo_category", "peer_category"], as_index=False).agg(
+        n_promos=("n_promos", "sum"),
+        promo_revenue=("promo_revenue", "sum"),
+        base_revenue=("base_revenue", "sum"),
+        cannibalized_revenue=("cannibalized_revenue", "sum"),
     )
     grouped["cannibalization_index"] = (
         grouped["cannibalized_revenue"] / grouped["base_revenue"].replace(0, np.nan)
     ).clip(0.0, 1.0)
-    grouped = grouped[list(CATEGORY_CANNIBALIZATION.columns)].sort_values(
-        ["promo_category", "peer_category"]
-    ).reset_index(drop=True)
+    grouped = (
+        grouped[list(CATEGORY_CANNIBALIZATION.columns)]
+        .sort_values(["promo_category", "peer_category"])
+        .reset_index(drop=True)
+    )
     return check(grouped, CATEGORY_CANNIBALIZATION)
 
 
@@ -800,24 +937,49 @@ def build_uplift_dataset(
     weekly["treatment"] = weekly["is_promo"].astype(int)
     weekly["week_of_year"] = weekly["week"].dt.weekofyear
     weekly["month"] = weekly["week"].dt.month
-    weekly["qty_lag1"] = weekly.groupby(["customer_id", "stockcode"])["total_qty"].shift(1).fillna(0.0)
-    weekly["price_lag1"] = weekly.groupby(["customer_id", "stockcode"])["avg_price"].shift(1).fillna(0.0)
+    weekly["qty_lag1"] = (
+        weekly.groupby(["customer_id", "stockcode"])["total_qty"].shift(1).fillna(0.0)
+    )
+    weekly["price_lag1"] = (
+        weekly.groupby(["customer_id", "stockcode"])["avg_price"].shift(1).fillna(0.0)
+    )
     cust = (
         df.groupby("customer_id")
-        .agg(cust_total_qty=("quantity", "sum"), cust_total_rev=("revenue", "sum"), cust_n_products=("stockcode", "nunique"), cust_n_txns=("transaction_id", "nunique"))
+        .agg(
+            cust_total_qty=("quantity", "sum"),
+            cust_total_rev=("revenue", "sum"),
+            cust_n_products=("stockcode", "nunique"),
+            cust_n_txns=("transaction_id", "nunique"),
+        )
         .reset_index()
     )
     weekly = weekly.merge(cust, on="customer_id", how="left")
     prod = (
         df.groupby("stockcode")
-        .agg(prod_total_qty=("quantity", "sum"), prod_total_rev=("revenue", "sum"), prod_price_cv=("price", lambda s: s.std() / s.mean() if s.mean() > 0 else 0))
+        .agg(
+            prod_total_qty=("quantity", "sum"),
+            prod_total_rev=("revenue", "sum"),
+            prod_price_cv=("price", lambda s: s.std() / s.mean() if s.mean() > 0 else 0),
+        )
         .reset_index()
     )
     weekly = weekly.merge(prod, on="stockcode", how="left")
     feature_cols = [
-        "total_qty", "total_rev", "avg_price", "n_txns", "week_of_year", "month",
-        "qty_lag1", "price_lag1", "cust_total_qty", "cust_total_rev", "cust_n_products", "cust_n_txns",
-        "prod_total_qty", "prod_total_rev", "prod_price_cv",
+        "total_qty",
+        "total_rev",
+        "avg_price",
+        "n_txns",
+        "week_of_year",
+        "month",
+        "qty_lag1",
+        "price_lag1",
+        "cust_total_qty",
+        "cust_total_rev",
+        "cust_n_products",
+        "cust_n_txns",
+        "prod_total_qty",
+        "prod_total_rev",
+        "prod_price_cv",
     ]
     X = weekly[feature_cols].fillna(0.0)
     return X, weekly["treatment"].astype(int), weekly["next_week_qty"].astype(float)
@@ -839,7 +1001,11 @@ def check_propensity_overlap(
     treated_ps = propensity[treatment == 1]
     control_ps = propensity[treatment == 0]
     if len(treated_ps) == 0 or len(control_ps) == 0:
-        return {"overlap": False, "overlap_proportion": 0.0, "warnings": ["No treated or control units"]}
+        return {
+            "overlap": False,
+            "overlap_proportion": 0.0,
+            "warnings": ["No treated or control units"],
+        }
     treated_range = (treated_ps.min(), treated_ps.max())
     control_range = (control_ps.min(), control_ps.max())
     lower, upper = max(treated_range[0], control_range[0]), min(treated_range[1], control_range[1])
@@ -874,13 +1040,17 @@ def train_uplift_learner(
 ) -> tuple[object, pd.Series]:
     """T- or S-learner uplift. Returns (model, uplift scores over X)."""
     if base_estimator == "hgb":
+
         def _make() -> HistGradientBoostingRegressor:
             return HistGradientBoostingRegressor(
                 max_iter=n_estimators, max_depth=max_depth, random_state=random_state
             )
     elif base_estimator == "rf":
+
         def _make() -> RandomForestRegressor:
-            return RandomForestRegressor(n_estimators=min(n_estimators, 200), max_depth=max_depth, random_state=random_state)
+            return RandomForestRegressor(
+                n_estimators=min(n_estimators, 200), max_depth=max_depth, random_state=random_state
+            )
     else:
         raise ValueError(f"Unknown base_estimator: {base_estimator}")
     X = X.reset_index(drop=True)
@@ -940,7 +1110,11 @@ def evaluate_uplift_model(
     auuc_norm = max(0.0, auuc / (qini_y[-1] - random_y[-1])) if qini_y[-1] != random_y[-1] else 0.0
     top_end = min(3 * bin_size, n)
     t_top, y_top = t_sorted[:top_end], y_sorted[:top_end]
-    uplift_at_k = (y_top[t_top == 1].mean() - y_top[t_top == 0].mean()) if t_top.sum() > 0 and (len(t_top) - t_top.sum()) > 0 else 0.0
+    uplift_at_k = (
+        (y_top[t_top == 1].mean() - y_top[t_top == 0].mean())
+        if t_top.sum() > 0 and (len(t_top) - t_top.sum()) > 0
+        else 0.0
+    )
     metrics = pd.DataFrame(
         {
             "metric": ["qini_coefficient", "auuc", "auuc_normalized", "uplift_at_top_k"],
@@ -948,7 +1122,9 @@ def evaluate_uplift_model(
         }
     )
 
-    ci_lower, ci_upper = _bootstrap_qini_ci(t_sorted, y_sorted, uplift_pred.to_numpy(), qini_x, n_bins)
+    ci_lower, ci_upper = _bootstrap_qini_ci(
+        t_sorted, y_sorted, uplift_pred.to_numpy(), qini_x, n_bins
+    )
     curve = pd.DataFrame(
         {
             "x": qini_x,
@@ -1051,7 +1227,9 @@ def score_uplift_by_customer(
     return check(pd.DataFrame(rows, columns=list(UPLIFT_SCORES.columns)), UPLIFT_SCORES)
 
 
-def _bootstrap_mean_ci(values: np.ndarray, n_resamples: int = 50, seed: int = 42) -> tuple[float, float]:
+def _bootstrap_mean_ci(
+    values: np.ndarray, n_resamples: int = 50, seed: int = 42
+) -> tuple[float, float]:
     """Percentile-bootstrap CI on the mean of a small array (NaN if too few)."""
     values = values[~np.isnan(values)]
     if len(values) < 2:

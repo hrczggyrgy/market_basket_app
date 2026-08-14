@@ -1,4 +1,5 @@
 """Behavioral Segmentation based on purchase patterns."""
+
 from __future__ import annotations
 
 from typing import Optional
@@ -210,16 +211,15 @@ def compute_segment_radar(
     long = long.copy()
     long.loc[long["mean_value"] < 0, "mean_value"] = np.nan
 
-    normalizer = (
-        long.groupby("feature")["mean_value"]
-        .transform(lambda s: (s - s.min()) / (s.max() - s.min()) if s.max() > s.min() else 0.0)
+    normalizer = long.groupby("feature")["mean_value"].transform(
+        lambda s: (s - s.min()) / (s.max() - s.min()) if s.max() > s.min() else 0.0
     )
     long["normalized_value"] = normalizer.clip(0.0, 1.0)
     long["mean_value"] = long["mean_value"].fillna(0.0)
 
-    result = long[list(SEGMENT_RADAR.columns)].sort_values(
-        ["segment", "feature"]
-    ).reset_index(drop=True)
+    result = (
+        long[list(SEGMENT_RADAR.columns)].sort_values(["segment", "feature"]).reset_index(drop=True)
+    )
     return check(result, SEGMENT_RADAR)
 
 
@@ -298,7 +298,9 @@ def compute_segment_migration(
     counts["period_from"] = "first_half"
     counts["period_to"] = "second_half"
 
-    result = counts[list(SEGMENT_MIGRATION.columns)].sort_values(
-        ["segment_from", "segment_to"]
-    ).reset_index(drop=True)
+    result = (
+        counts[list(SEGMENT_MIGRATION.columns)]
+        .sort_values(["segment_from", "segment_to"])
+        .reset_index(drop=True)
+    )
     return check(result, SEGMENT_MIGRATION)

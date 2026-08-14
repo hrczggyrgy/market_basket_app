@@ -36,12 +36,14 @@ def _theme_skus(sample_df: pd.DataFrame, theme: tuple[str, str]) -> tuple[str, .
     cat_a, cat_b = theme
     sku_a = sample_df[sample_df["category"] == cat_a]["stockcode"].unique()
     sku_b = sample_df[sample_df["category"] == cat_b]["stockcode"].unique()
-    
+
     # Pick first SKU from each category
     a = sku_a[0] if len(sku_a) > 0 else None
     b = sku_b[0] if len(sku_b) > 0 else None
-    
-    assert a is not None and b is not None, f"Categories {cat_a} and {cat_b} must exist in the fixture"
+
+    assert a is not None and b is not None, (
+        f"Categories {cat_a} and {cat_b} must exist in the fixture"
+    )
     return (a, b)
 
 
@@ -178,7 +180,9 @@ def test_addon_theme_members_suggested(sample_df: pd.DataFrame) -> None:
     cat_a_skus = set(sample_df[sample_df["category"] == cat_a]["stockcode"].unique())
     cat_b_skus = set(sample_df[sample_df["category"] == cat_b]["stockcode"].unique())
     all_theme_skus = cat_a_skus | cat_b_skus
-    assert any(t in partners for t in all_theme_skus if t != anchor), "theme partners should appear as add-ons"
+    assert any(t in partners for t in all_theme_skus if t != anchor), (
+        "theme partners should appear as add-ons"
+    )
 
 
 def test_anchor_addon_matrix(sample_df: pd.DataFrame) -> None:
@@ -203,7 +207,8 @@ def _switching_df() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "date": pd.to_datetime(
-                ["2024-01-01", "2024-02-01", "2024-03-01", "2024-01-10", "2024-02-10", "2024-03-10"] * 2
+                ["2024-01-01", "2024-01-10", "2024-02-01", "2024-02-10", "2024-03-01", "2024-03-10"]
+                * 2
             ),
             "transaction_id": [f"T{i}" for i in range(12)],
             "stockcode": ["A", "B", "A", "B", "A", "B", "C", "A", "B", "C", "B", "A"],
@@ -329,7 +334,9 @@ def test_event_slices_partition_date_range() -> None:
     from src.analytics.switching import build_event_slices
 
     df = pd.DataFrame({"date": pd.date_range("2024-01-01", periods=120, freq="D")})
-    events = pd.DataFrame({"start_date": [pd.Timestamp("2024-02-01")], "end_date": [pd.Timestamp("2024-02-14")]})
+    events = pd.DataFrame(
+        {"start_date": [pd.Timestamp("2024-02-01")], "end_date": [pd.Timestamp("2024-02-14")]}
+    )
 
     slices = build_event_slices(df, events, pre_days=30, post_days=30)
 

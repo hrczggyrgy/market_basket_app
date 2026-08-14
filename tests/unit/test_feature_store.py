@@ -75,6 +75,18 @@ def test_store_weekly_revenue_matches_total(sample_df: pd.DataFrame) -> None:
 
 
 def test_store_empty_input() -> None:
-    fs = build_feature_store(pd.DataFrame(columns=["date", "transaction_id", "stockcode", "product", "customer_id", "price", "quantity"]))
+    fs = build_feature_store(
+        pd.DataFrame(
+            columns=[
+                "date",
+                "transaction_id",
+                "stockcode",
+                "product",
+                "customer_id",
+                "price",
+                "quantity",
+            ]
+        )
+    )
     assert fs.customer_features.empty
     assert fs.weekly_product_panel.empty

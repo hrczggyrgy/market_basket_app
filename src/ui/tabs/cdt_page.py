@@ -27,6 +27,7 @@ def _render_similarity_heatmap(sim: pd.DataFrame, top_n: int = 25) -> None:
     # Order by hierarchical clustering for better visualization
     linkage_matrix, _ = perform_hierarchical_clustering(sim, method="ward")
     from scipy.cluster.hierarchy import leaves_list
+
     order = leaves_list(linkage_matrix)
     ordered_products = sim.index[order].tolist()
 
@@ -52,7 +53,9 @@ def _render_similarity_heatmap(sim: pd.DataFrame, top_n: int = 25) -> None:
         height=max(400, 18 * top_n),
     )
     show(fig)
-    st.caption(f"Top {top_n} products by dendrogram order. Red = high similarity, Blue = dissimilar.")
+    st.caption(
+        f"Top {top_n} products by dendrogram order. Red = high similarity, Blue = dissimilar."
+    )
 
 
 def _render_dendrogram(sim: pd.DataFrame) -> None:
@@ -65,6 +68,7 @@ def _render_dendrogram(sim: pd.DataFrame) -> None:
 
     # Build dendrogram coordinates using scipy
     from scipy.cluster.hierarchy import dendrogram
+
     ddata = dendrogram(linkage_matrix, labels=sim.index.tolist(), no_plot=True)
 
     # Plotly dendrogram: create line segments for branches
@@ -81,7 +85,12 @@ def _render_dendrogram(sim: pd.DataFrame) -> None:
             )
         )
     fig.update_layout(
-        xaxis={"title": "Product index (clustered)", "tickvals": list(range(len(ddata["ivl"]))), "ticktext": ddata["ivl"], "tickangle": -45},
+        xaxis={
+            "title": "Product index (clustered)",
+            "tickvals": list(range(len(ddata["ivl"]))),
+            "ticktext": ddata["ivl"],
+            "tickangle": -45,
+        },
         yaxis={"title": "Distance (1 - similarity)"},
         height=500,
     )
@@ -163,7 +172,18 @@ def _render_tree_table(nodes: pd.DataFrame) -> None:
         show(empty_state("No CDT nodes"))
         return
 
-    display = nodes[["node_id", "name", "attribute", "attribute_value", "size", "is_leaf", "similarity_within", "parent_id"]].copy()
+    display = nodes[
+        [
+            "node_id",
+            "name",
+            "attribute",
+            "attribute_value",
+            "size",
+            "is_leaf",
+            "similarity_within",
+            "parent_id",
+        ]
+    ].copy()
     display["is_leaf"] = display["is_leaf"].map({1: "Yes", 0: "No"})
     st.dataframe(display, use_container_width=True, hide_index=True)
 
@@ -203,7 +223,7 @@ def render(df: pd.DataFrame) -> None:
             "Similarity method",
             ["embedding", "phi", "jaccard", "pmi", "cosine_tfidf", "ensemble"],
             index=0,
-            help="embedding: latent SVD cosine (fast, scalable). Legacy: pairwise metrics."
+            help="embedding: latent SVD cosine (fast, scalable). Legacy: pairwise metrics.",
         )
         n_clusters = c2.number_input("Clusters", 2, 15, 6)
         max_depth = c3.number_input("Max tree depth", 2, 6, 3)
@@ -230,7 +250,9 @@ def render(df: pd.DataFrame) -> None:
     )
     nodes, products = tree_to_dataframe(tree)
 
-    st.caption(f"Tree: {len(nodes)} nodes ({nodes['is_leaf'].sum()} leaves), {len(nodes[~nodes['is_leaf'].astype(bool)])} splits")
+    st.caption(
+        f"Tree: {len(nodes)} nodes ({nodes['is_leaf'].sum()} leaves), {len(nodes[~nodes['is_leaf'].astype(bool)])} splits"
+    )
 
     st.divider()
     _render_similarity_heatmap(sim, top_n=top_n)

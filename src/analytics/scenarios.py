@@ -30,11 +30,15 @@ def _category_baselines(df: pd.DataFrame, n_weeks: int = 12) -> pd.DataFrame:
     df["revenue"] = df["price"] * df["quantity"]
     rows = []
     for cat, g in df.groupby("category"):
-        weekly = g.groupby("_week").agg(
-            revenue=("revenue", "sum"),
-            transactions=("transaction_id", "nunique"),
-            customers=("customer_id", "nunique"),
-        ).sort_index()
+        weekly = (
+            g.groupby("_week")
+            .agg(
+                revenue=("revenue", "sum"),
+                transactions=("transaction_id", "nunique"),
+                customers=("customer_id", "nunique"),
+            )
+            .sort_index()
+        )
         if len(weekly) < 4:
             continue
         tail = weekly.tail(n_weeks)
@@ -125,7 +129,9 @@ def compute_scenario_grid(
         }
         for scenario, (raw_pct, lever) in scenario_levers.items():
             band_hit = abs(raw_pct) > weekly_band or np.isnan(raw_pct)
-            weekly_pct = float(np.clip(raw_pct, -weekly_band, weekly_band)) if not np.isnan(raw_pct) else 0.0
+            weekly_pct = (
+                float(np.clip(raw_pct, -weekly_band, weekly_band)) if not np.isnan(raw_pct) else 0.0
+            )
             compounded = (1 + weekly_pct / 100) ** projection_weeks
             projected = base_revenue * compounded
 

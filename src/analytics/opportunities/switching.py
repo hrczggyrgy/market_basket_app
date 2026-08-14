@@ -41,18 +41,24 @@ def generate_switching_opportunities(
 
     work = sdp_df.copy()
     if revenue_by_product is not None and not revenue_by_product.empty:
-        work = work.merge(revenue_by_product.rename("revenue"), left_on="stockcode", right_index=True, how="left")
+        work = work.merge(
+            revenue_by_product.rename("revenue"), left_on="stockcode", right_index=True, how="left"
+        )
         work["revenue"] = work["revenue"].fillna(0.0)
     else:
         work["revenue"] = 0.0
 
-    substitutable = work[
-        (work["sdp"] >= _SDP_SUBSTITUTABLE) & (work["revenue"] >= _MIN_REVENUE)
-    ].sort_values(["sdp", "revenue"], ascending=[False, False]).head(top_n)
+    substitutable = (
+        work[(work["sdp"] >= _SDP_SUBSTITUTABLE) & (work["revenue"] >= _MIN_REVENUE)]
+        .sort_values(["sdp", "revenue"], ascending=[False, False])
+        .head(top_n)
+    )
 
     delist_net: dict[str, float] = {}
     if delist_impact_df is not None and not delist_impact_df.empty:
-        delist_net = dict(zip(delist_impact_df["stockcode"], delist_impact_df["net_revenue_impact"], strict=True))
+        delist_net = dict(
+            zip(delist_impact_df["stockcode"], delist_impact_df["net_revenue_impact"], strict=True)
+        )
 
     for _, row in substitutable.iterrows():
         sku = str(row["stockcode"])
@@ -101,5 +107,7 @@ def generate_switching_opportunities(
 
     table = opportunities_to_dataframe(opportunities)
     if not table.empty:
-        table = table.sort_values("value", ascending=False, na_position="last").reset_index(drop=True)
+        table = table.sort_values("value", ascending=False, na_position="last").reset_index(
+            drop=True
+        )
     return check(table, OPPORTUNITY_LIST, allow_empty=True)

@@ -83,7 +83,12 @@ def _anomaly_flag(df: pd.DataFrame) -> pd.DataFrame:
     """SPC anomalies on the weekly revenue series."""
     work = df.copy()
     work["date"] = pd.to_datetime(work["date"])
-    revenue = (work["price"] * work["quantity"]).groupby(work["date"].dt.to_period("W").dt.start_time).sum().sort_index()
+    revenue = (
+        (work["price"] * work["quantity"])
+        .groupby(work["date"].dt.to_period("W").dt.start_time)
+        .sum()
+        .sort_index()
+    )
     if len(revenue) < 5:
         return pd.DataFrame()
     try:

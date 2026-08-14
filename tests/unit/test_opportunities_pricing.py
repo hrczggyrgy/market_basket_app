@@ -8,11 +8,11 @@ import pytest
 from src.analytics.opportunities import generate_pricing_opportunities
 from src.analytics.pricing import compute_pricing_decision_matrix, run_pricing_analysis
 from src.analytics.schemas import OPPORTUNITY_LIST
-from tests.unit.pricing_fixtures import build_kvi_fixture, build_pricing_df
+from tests.unit.pricing_fixtures import build_kvi_fixture, build_pricing_df, build_kvi_decision_fixture
 
 
 def _decision_matrix() -> pd.DataFrame:
-    return compute_pricing_decision_matrix(build_kvi_fixture())
+    return compute_pricing_decision_matrix(build_kvi_decision_fixture())
 
 
 def test_opportunities_from_decision_matrix() -> None:
@@ -40,8 +40,8 @@ def test_opportunities_illustrative_value_semantics() -> None:
     invest = opps[opps["entity"] == "ELASTIC_HI"].iloc[0]
     # price_lever value = illustrative incremental revenue of a -5% cut (> 0)
     assert price_lever["value"] > 0
-    # invest/protect value = revenue exposure
-    assert invest["value"] == pytest.approx(632000.0)
+    # invest/protect value = revenue exposure (ELASTIC_HI has total_revenue=1000.0)
+    assert invest["value"] == pytest.approx(1000.0)
 
 
 def test_opportunities_exclude_low_confidence() -> None:
@@ -52,7 +52,9 @@ def test_opportunities_exclude_low_confidence() -> None:
 
 
 def test_opportunities_empty_input() -> None:
-    opps = generate_pricing_opportunities(pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
+    opps = generate_pricing_opportunities(
+        pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    )
     assert opps.empty
     OPPORTUNITY_LIST.validate(opps, allow_empty=True)
 
@@ -79,5 +81,8 @@ def test_opportunities_synthetic_pipeline() -> None:
     OPPORTUNITY_LIST.validate(opps, allow_empty=True)
     if not opps.empty:
         # opportunities must be ranked by value
-        assert (opps["value"].fillna(-1).sort_values(ascending=False).values == opps["value"].fillna(-1).values).all()
+        assert (
+            opps["value"].fillna(-1).sort_values(ascending=False).values
+            == opps["value"].fillna(-1).values
+        ).all()
         assert opps["entity"].str.len().notna().all()

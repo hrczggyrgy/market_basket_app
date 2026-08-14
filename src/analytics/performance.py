@@ -41,11 +41,15 @@ def compute_product_metrics(df: pd.DataFrame) -> pd.DataFrame:
 
 def abc_analysis(df: pd.DataFrame) -> pd.DataFrame:
     """ABC classification by cumulative revenue share (A <= 70%, B <= 90%, C rest)."""
-    revenue = (df["price"] * df["quantity"]).groupby(df["stockcode"]).sum().sort_values(ascending=False)
+    revenue = (
+        (df["price"] * df["quantity"]).groupby(df["stockcode"]).sum().sort_values(ascending=False)
+    )
     cumulative = revenue.cumsum() / revenue.sum()
     # Clip to [0, 1] to handle floating-point precision issues on the last row
     cumulative = cumulative.clip(upper=1.0)
-    table = pd.DataFrame({"stockcode": revenue.index, "revenue": revenue, "cumulative_share": cumulative})
+    table = pd.DataFrame(
+        {"stockcode": revenue.index, "revenue": revenue, "cumulative_share": cumulative}
+    )
     table["abc_class"] = np.select(
         [cumulative <= 0.7, cumulative <= 0.9],
         ["A", "B"],
@@ -82,9 +86,7 @@ def xyz_analysis(df: pd.DataFrame, period: str = "W") -> pd.DataFrame:
     df["_period"] = df["date"].dt.to_period(period).astype(str)
     units = df["quantity"]
     revenue = df["price"] * df["quantity"]
-    pivot = (
-        units.groupby([df["stockcode"], df["_period"]]).sum().unstack(fill_value=0)
-    )
+    pivot = units.groupby([df["stockcode"], df["_period"]]).sum().unstack(fill_value=0)
     # Per-SKU span: from first to last observed period (handles product
     # launches/end-of-life without counting pre-launch zeros).
     spans = []
@@ -239,7 +241,9 @@ def compute_time_to_second_purchase(df: pd.DataFrame) -> pd.DataFrame:
     second = df2[df2["_rank"] == 1].set_index(["stockcode", "customer_id"])["date"]
     delta = (second - first).dropna().dt.days
     if delta.empty:
-        return check(pd.DataFrame(columns=list(SECOND_PURCHASE.columns)), SECOND_PURCHASE, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(SECOND_PURCHASE.columns)), SECOND_PURCHASE, allow_empty=True
+        )
     grouped = delta.groupby(level=0)
     table = pd.DataFrame(
         {
@@ -258,13 +262,20 @@ def compute_sku_rationalization_df(df: pd.DataFrame) -> pd.DataFrame:
     xyz = xyz_analysis(df).set_index("stockcode")
     velocity = compute_velocity(df).set_index("stockcode")
     repeat = compute_repeat_rate(df).set_index("stockcode")
-    table = abc.join(xyz[["xyz_class", "demand_profile"]], how="outer").join(velocity[["velocity"]], how="outer").join(
-        repeat[["repeat_rate"]], how="outer"
+    table = (
+        abc.join(xyz[["xyz_class", "demand_profile"]], how="outer")
+        .join(velocity[["velocity"]], how="outer")
+        .join(repeat[["repeat_rate"]], how="outer")
     )
     table = table.reset_index().rename(columns={"index": "stockcode"})
     table = table.fillna({"velocity": 0.0, "repeat_rate": 0.0, "xyz_class": "Z", "abc_class": "C"})
     table["action"] = table.apply(_classify_sku_action, axis=1)
-    return check(table[["stockcode", "revenue", "abc_class", "xyz_class", "velocity", "repeat_rate", "action"]], SKU_RATIONALIZATION)
+    return check(
+        table[
+            ["stockcode", "revenue", "abc_class", "xyz_class", "velocity", "repeat_rate", "action"]
+        ],
+        SKU_RATIONALIZATION,
+    )
 
 
 def _stage_from_growth(growth_pct: float) -> str:

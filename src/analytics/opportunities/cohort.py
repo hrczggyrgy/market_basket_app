@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import pandas as pd
 
-from src.analytics.cohort import compute_cohorts, compute_cohort_sizes
+from src.analytics.cohort import compute_cohort_sizes, compute_cohorts
 from src.analytics.intelligence import Opportunity, opportunities_to_dataframe
 from src.analytics.schemas import OPPORTUNITY_LIST, check
 
-_HIGH_RETENTION_THRESHOLD = 0.6   # 60% retention in period 1 is strong
-_HIGH_LTV_THRESHOLD = 500.0       # Example threshold, adjust as needed
+_HIGH_RETENTION_THRESHOLD = 0.6  # 60% retention in period 1 is strong
+_HIGH_LTV_THRESHOLD = 500.0  # Example threshold, adjust as needed
 
 
 def generate_cohort_opportunities(
@@ -95,14 +95,14 @@ def generate_cohort_opportunities(
     if len(opportunities) < top_n:
         remaining = top_n - len(opportunities)
         # Look for cohorts with high retention (any period)
-        high_retention = retention_df[
-            retention_df["retention_rate"] >= _HIGH_RETENTION_THRESHOLD
-        ]
+        high_retention = retention_df[retention_df["retention_rate"] >= _HIGH_RETENTION_THRESHOLD]
         # Exclude the latest cohort if we already used it
         used_entities = [opp.entity for opp in opportunities]
         high_retention = high_retention[~high_retention["cohort"].isin(used_entities)]
         if not high_retention.empty:
-            high_retention = high_retention.sort_values("retention_rate", ascending=False).head(remaining)
+            high_retention = high_retention.sort_values("retention_rate", ascending=False).head(
+                remaining
+            )
             for _, row in high_retention.iterrows():
                 cohort_size_row = sizes_df[sizes_df["cohort"] == row["cohort"]]
                 if not cohort_size_row.empty:
@@ -131,5 +131,7 @@ def generate_cohort_opportunities(
 
     table = opportunities_to_dataframe(opportunities)
     if not table.empty:
-        table = table.sort_values("value", ascending=False, na_position="last").reset_index(drop=True)
+        table = table.sort_values("value", ascending=False, na_position="last").reset_index(
+            drop=True
+        )
     return check(table, OPPORTUNITY_LIST, allow_empty=True)

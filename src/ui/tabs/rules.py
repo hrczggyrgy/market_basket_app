@@ -69,29 +69,27 @@ def _render_strength_stability_scatter(rules: pd.DataFrame, table: pd.DataFrame)
     if with_ci.empty:
         st.info("No rules have valid bootstrap confidence intervals at current settings.")
         return
-    
+
     with_ci["ci_width"] = with_ci["lift_ci_upper"] - with_ci["lift_ci_lower"]
-    
+
     # Add antecedent category for coloring
     def get_first_antecedent(itemset) -> str | None:
         if itemset:
             return sorted(itemset)[0]
         return None
-    
+
     with_ci["anchor"] = with_ci["antecedents"].apply(get_first_antecedent)
     with_ci = with_ci[with_ci["anchor"].notna()]
-    
+
     if with_ci.empty:
         st.info("No rules with identifiable anchors.")
         return
-    
-    # Get product names for hover
-    lookup = table.set_index("antecedent")["consequent"].to_dict()  # not quite right
+
     # Build a simple label for each rule
     with_ci["rule_label"] = with_ci.apply(
         lambda r: f"{list(r['antecedents'])[0]} → {list(r['consequents'])[0]}", axis=1
     )
-    
+
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -111,20 +109,20 @@ def _render_strength_stability_scatter(rules: pd.DataFrame, table: pd.DataFrame)
             name="Rules",
         )
     )
-    
+
     # Add quadrant lines (median splits)
     med_lift = with_ci["lift"].median()
     med_ci = with_ci["ci_width"].median()
     fig.add_hline(y=med_ci, line_dash="dash", line_color="gray", annotation_text="Median CI Width")
     fig.add_vline(x=med_lift, line_dash="dash", line_color="gray", annotation_text="Median Lift")
-    
+
     fig.update_layout(
         xaxis={"title": "Lift (Strength)"},
         yaxis={"title": "CI Width (Stability) — lower = more stable"},
         height=450,
     )
     show(fig)
-    
+
     st.caption(
         "Quadrants: High Lift + Low CI Width (bottom-right) = Strong & Stable. "
         "High Lift + High CI Width (top-right) = Strong but Uncertain. "
@@ -141,7 +139,9 @@ def _render_anchor_drilldown(df: pd.DataFrame, rules: pd.DataFrame, table: pd.Da
 
     lookup = get_product_lookup(df)
     display_options = {
-        str(lookup.loc[lookup["stockcode"] == p, "product"].iloc[0]) if (lookup["stockcode"] == p).any() else p: p
+        str(lookup.loc[lookup["stockcode"] == p, "product"].iloc[0])
+        if (lookup["stockcode"] == p).any()
+        else p: p
         for p in products
     }
 
@@ -166,7 +166,9 @@ def _render_anchor_drilldown(df: pd.DataFrame, rules: pd.DataFrame, table: pd.Da
         go.Bar(
             x=labels,
             y=related["lift"],
-            marker={"color": [PALETTE[1] if anchor in r else PALETTE[0] for r in related["antecedents"]]},
+            marker={
+                "color": [PALETTE[1] if anchor in r else PALETTE[0] for r in related["antecedents"]]
+            },
             name="Lift",
         )
     )
@@ -309,20 +311,31 @@ def render(df: pd.DataFrame) -> None:
             cat_display["lift"] = cat_display["lift"].apply(lambda x: f"{x:.2f}")
             cat_display["avg_lift"] = cat_display["avg_lift"].apply(lambda x: f"{x:.2f}")
             cat_display["max_lift"] = cat_display["max_lift"].apply(lambda x: f"{x:.2f}")
-            
+
             st.dataframe(
-                cat_display[["antecedent_category", "consequent_category", "rule_count", "support", "confidence", "lift", "avg_lift", "max_lift"]],
+                cat_display[
+                    [
+                        "antecedent_category",
+                        "consequent_category",
+                        "rule_count",
+                        "support",
+                        "confidence",
+                        "lift",
+                        "avg_lift",
+                        "max_lift",
+                    ]
+                ],
                 use_container_width=True,
                 hide_index=True,
             )
-            
+
             # Category affinity heatmap
             st.caption("Heatmap: Lift by Category Pair")
             pivot = cat_rules.pivot_table(
                 index="antecedent_category",
                 columns="consequent_category",
                 values="lift",
-                fill_value=0
+                fill_value=0,
             )
             if not pivot.empty:
                 fig = go.Figure(
@@ -341,7 +354,7 @@ def render(df: pd.DataFrame) -> None:
                     height=max(300, len(pivot) * 30 + 100),
                 )
                 show(fig)
-            
+
             csv_cat = cat_rules.to_csv(index=False)
             st.download_button(
                 ":material/download: Download Category Rules CSV",

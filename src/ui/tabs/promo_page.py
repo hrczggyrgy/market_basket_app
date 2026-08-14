@@ -17,7 +17,6 @@ from src.analytics.insights.promotion import classify_promo_score
 from src.analytics.opportunities import generate_promotion_opportunities
 from src.analytics.promo import (
     compute_cannibalization_analysis,
-    compute_causal_waterfall,
     compute_incrementality_waterfall,
     compute_promo_baseline,
     detect_promotions,
@@ -96,7 +95,10 @@ def _render_incremental_vs_observed(waterfall: pd.DataFrame) -> None:
     if waterfall.empty:
         show(empty_state("No waterfall data"))
         return
-    top = waterfall.sort_values("actual_revenue" if "actual_revenue" in waterfall.columns else "baseline_revenue", ascending=False).head(15)
+    top = waterfall.sort_values(
+        "actual_revenue" if "actual_revenue" in waterfall.columns else "baseline_revenue",
+        ascending=False,
+    ).head(15)
     if "actual_revenue" not in top.columns:
         top["actual_revenue"] = top["baseline_revenue"] + top["incremental_revenue"].fillna(0)
     top["actual_revenue"] = top["actual_revenue"].fillna(0)
@@ -104,14 +106,18 @@ def _render_incremental_vs_observed(waterfall: pd.DataFrame) -> None:
     fig = new_fig()
     fig.add_trace(
         go.Bar(
-            x=top["stockcode"], y=top["actual_revenue"], name="Observed revenue",
+            x=top["stockcode"],
+            y=top["actual_revenue"],
+            name="Observed revenue",
             marker={"color": PALETTE[2]},
             hovertemplate="%{x}<br>Observed: %{y:,.0f}<extra></extra>",
         )
     )
     fig.add_trace(
         go.Bar(
-            x=top["stockcode"], y=top["incremental_revenue"].fillna(0), name="Incremental (vs baseline)",
+            x=top["stockcode"],
+            y=top["incremental_revenue"].fillna(0),
+            name="Incremental (vs baseline)",
             marker={"color": PALETTE[0]},
             hovertemplate="%{x}<br>Incremental: %{y:,.0f}<extra></extra>",
         )
@@ -162,7 +168,9 @@ def _render_promo_periods(promos: pd.DataFrame) -> None:
                 hovertemplate=f"{row['stockcode']}<br>Start: {row['start_date']}<br>End: {row['end_date']}<br>Discount: {row['avg_discount_pct']:.1f}%<extra></extra>",
             )
         )
-    fig2.update_layout(yaxis={"title": "SKU"}, xaxis={"title": "Date"}, height=max(300, 20 * len(promos)))
+    fig2.update_layout(
+        yaxis={"title": "SKU"}, xaxis={"title": "Date"}, height=max(300, 20 * len(promos))
+    )
     show(fig2)
 
     st.dataframe(promos, use_container_width=True, hide_index=True)
@@ -272,7 +280,9 @@ def _render_roi(roi: pd.DataFrame) -> None:
             height=450,
         )
         show(fig)
-        st.caption("ROI % with 95% bootstrap confidence intervals. Error bars show uncertainty in incremental revenue estimation.")
+        st.caption(
+            "ROI % with 95% bootstrap confidence intervals. Error bars show uncertainty in incremental revenue estimation."
+        )
 
     # Incremental profit scatter (secondary view)
     fig2 = go.Figure()
@@ -281,7 +291,10 @@ def _render_roi(roi: pd.DataFrame) -> None:
             x=roi["stockcode"],
             y=roi["incremental_profit"],
             mode="markers",
-            marker={"size": roi["incremental_profit"].abs().apply(lambda v: max(6, min(30, v / 1000))), "color": PALETTE[2]},
+            marker={
+                "size": roi["incremental_profit"].abs().apply(lambda v: max(6, min(30, v / 1000))),
+                "color": PALETTE[2],
+            },
             name="Incremental Profit",
             hovertemplate="%{x}: $%{y:,.0f}<extra></extra>",
         )
@@ -355,12 +368,16 @@ def render(df: pd.DataFrame) -> None:
     baseline_df = compute_promo_baseline(df, promo_periods=promos)
     cannibalization = compute_cannibalization_analysis(df, promo_periods=promos)
     cannibalization_agg = (
-        cannibalization.groupby("promo_product")["cannibalized_revenue"]
-        .sum()
-        .rename("cannibalization_revenue")
-        .reset_index()
-        .rename(columns={"promo_product": "stockcode"})
-    ) if not cannibalization.empty else None
+        (
+            cannibalization.groupby("promo_product")["cannibalized_revenue"]
+            .sum()
+            .rename("cannibalization_revenue")
+            .reset_index()
+            .rename(columns={"promo_product": "stockcode"})
+        )
+        if not cannibalization.empty
+        else None
+    )
     waterfall = compute_incrementality_waterfall(
         baseline_df,
         cannibalization_revenue=cannibalization_agg,
@@ -374,7 +391,9 @@ def render(df: pd.DataFrame) -> None:
     _render_incremental_vs_observed(waterfall)
 
     st.divider()
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Promo Periods", "Lift Analysis", "Waterfall", "ROI", "Timing"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["Promo Periods", "Lift Analysis", "Waterfall", "ROI", "Timing"]
+    )
 
     with tab1:
         _render_promo_periods(promos)
@@ -414,7 +433,10 @@ def render(df: pd.DataFrame) -> None:
                         hovertemplate="%{x}: %{y:.1%}<extra></extra>",
                     )
                 )
-                fig.update_layout(xaxis={"tickangle": -45}, yaxis={"title": "Avg Cannibalization Index", "tickformat": ".0%"})
+                fig.update_layout(
+                    xaxis={"tickangle": -45},
+                    yaxis={"title": "Avg Cannibalization Index", "tickformat": ".0%"},
+                )
                 show(fig)
             st.dataframe(
                 cannibalization.sort_values("cannibalized_revenue", ascending=False),
@@ -438,6 +460,7 @@ def render(df: pd.DataFrame) -> None:
 
                 # Run causal engine
                 from src.analytics.promo.causal import compute_causal_waterfall
+
                 causal_wf = compute_causal_waterfall(df_clean, promos)
 
                 if causal_wf.empty:

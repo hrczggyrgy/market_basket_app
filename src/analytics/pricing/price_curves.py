@@ -70,7 +70,9 @@ def _cluster_and_label(
         cat_data = cat_data.copy()
         cat_data["tier"] = 0
         tier_labels = {0: "Value", 1: "Mainstream", 2: "Premium", 3: "Ultra", 4: "Luxury"}
-        cat_data["tier_label"] = cat_data["tier"].map(tier_labels).fillna("Tier " + cat_data["tier"].astype(str))
+        cat_data["tier_label"] = (
+            cat_data["tier"].map(tier_labels).fillna("Tier " + cat_data["tier"].astype(str))
+        )
         return cat_data
 
     X = cat_data[feature_cols].fillna(0).replace([np.inf, -np.inf], 0).values
@@ -135,7 +137,9 @@ def diagnose_price_curves_1d(
         all_results.append(cat_data)
 
     if not all_results:
-        return check(pd.DataFrame(columns=list(PRICE_CURVE_1D.columns)), PRICE_CURVE_1D, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(PRICE_CURVE_1D.columns)), PRICE_CURVE_1D, allow_empty=True
+        )
 
     result_df = pd.concat(all_results, ignore_index=True)
 
@@ -147,9 +151,9 @@ def diagnose_price_curves_1d(
 
     # Detect violations
     violations = _detect_price_curve_violations(result_df)
-    result_df["has_violation"] = result_df["stockcode"].isin(violations.get("larger_pack", [])) | result_df[
-        "stockcode"
-    ].isin(violations.get("smaller_pack", []))
+    result_df["has_violation"] = result_df["stockcode"].isin(
+        violations.get("larger_pack", [])
+    ) | result_df["stockcode"].isin(violations.get("smaller_pack", []))
 
     output_cols = [
         "stockcode",
@@ -246,7 +250,11 @@ def diagnose_price_curves_multivariate(
         all_results.append(cat_data)
 
     if not all_results:
-        return check(pd.DataFrame(columns=list(PRICE_CURVE_MULTI.columns)), PRICE_CURVE_MULTI, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(PRICE_CURVE_MULTI.columns)),
+            PRICE_CURVE_MULTI,
+            allow_empty=True,
+        )
 
     result_df = pd.concat(all_results, ignore_index=True)
 
@@ -258,9 +266,9 @@ def diagnose_price_curves_multivariate(
 
     # Detect violations
     violations = _detect_price_curve_violations(result_df)
-    result_df["has_violation"] = result_df["stockcode"].isin(violations.get("larger_pack", [])) | result_df[
-        "stockcode"
-    ].isin(violations.get("smaller_pack", []))
+    result_df["has_violation"] = result_df["stockcode"].isin(
+        violations.get("larger_pack", [])
+    ) | result_df["stockcode"].isin(violations.get("smaller_pack", []))
 
     output_cols = [
         "stockcode",

@@ -122,18 +122,26 @@ def compute_switching_matrix(
     """
     if switching_df is not None:
         if switching_df.empty:
-            return check(pd.DataFrame(columns=list(SWITCHING_MATRIX.columns)), SWITCHING_MATRIX, allow_empty=True)
+            return check(
+                pd.DataFrame(columns=list(SWITCHING_MATRIX.columns)),
+                SWITCHING_MATRIX,
+                allow_empty=True,
+            )
         # Aggregate the switching matrix by from_product and to_product, summing counts
         matrix = switching_df.groupby(["from_product", "to_product"], as_index=False)["count"].sum()
         # Normalize the provided switching matrix
-        matrix["pct"] = matrix.groupby("from_product")["count"].transform(lambda x: x / x.sum() if x.sum() > 0 else 0)
+        matrix["pct"] = matrix.groupby("from_product")["count"].transform(
+            lambda x: x / x.sum() if x.sum() > 0 else 0
+        )
         # When switching_df is provided, the count column contains the normalized values
         matrix["count"] = matrix["pct"]
         return check(matrix, SWITCHING_MATRIX)
 
     seq = _customer_sequences(df, window_days, min_transactions, seasonal_adjustment)
     if seq.empty:
-        return check(pd.DataFrame(columns=list(SWITCHING_MATRIX.columns)), SWITCHING_MATRIX, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(SWITCHING_MATRIX.columns)), SWITCHING_MATRIX, allow_empty=True
+        )
 
     # Vectorized: expand products into lists, then create all cross pairs
     seq = seq.copy()
@@ -148,18 +156,24 @@ def compute_switching_matrix(
     switched = exploded[exploded["from_product"] != exploded["to_product"]]
 
     if switched.empty:
-        return check(pd.DataFrame(columns=list(SWITCHING_MATRIX.columns)), SWITCHING_MATRIX, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(SWITCHING_MATRIX.columns)), SWITCHING_MATRIX, allow_empty=True
+        )
 
-    matrix = (
-        switched.groupby(["from_product", "to_product"])
-        .size()
-        .reset_index(name="count")
+    matrix = switched.groupby(["from_product", "to_product"]).size().reset_index(name="count")
+    matrix["pct"] = matrix.groupby("from_product")["count"].transform(
+        lambda x: x / x.sum() if x.sum() > 0 else 0
     )
-    matrix["pct"] = matrix.groupby("from_product")["count"].transform(lambda x: x / x.sum() if x.sum() > 0 else 0)
     return check(matrix, SWITCHING_MATRIX)
 
 
-def compute_transition_matrix(df: pd.DataFrame, window_days: int = 90, min_transactions: int = 3, normalize: bool = True, switching_df: pd.DataFrame | None = None) -> pd.DataFrame:
+def compute_transition_matrix(
+    df: pd.DataFrame,
+    window_days: int = 90,
+    min_transactions: int = 3,
+    normalize: bool = True,
+    switching_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """Square from->to observed transition probability matrix (rows sum to 1).
 
     WARNING: This is an OBSERVED correlation, NOT a causal counterfactual estimate.
@@ -226,7 +240,10 @@ def build_event_slices(
         event_rows = events[["start_date", "end_date"]].to_dict("records")
     else:
         event_rows = [
-            {"start_date": pd.Timestamp(e.get("start_date")), "end_date": pd.Timestamp(e.get("end_date", e.get("start_date")))}
+            {
+                "start_date": pd.Timestamp(e.get("start_date")),
+                "end_date": pd.Timestamp(e.get("end_date", e.get("start_date"))),
+            }
             for e in events
         ]
     if not event_rows:
@@ -303,12 +320,20 @@ def compute_category_switching_matrix(
     """
     matrix = compute_switching_matrix(df, window_days, min_transactions)
     if matrix.empty:
-        return check(pd.DataFrame(columns=list(CATEGORY_SWITCHING.columns)), CATEGORY_SWITCHING, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(CATEGORY_SWITCHING.columns)),
+            CATEGORY_SWITCHING,
+            allow_empty=True,
+        )
 
     if product_lookup is not None and not product_lookup.empty:
         cat_map = product_lookup.set_index("stockcode")["category"].to_dict()
     else:
-        cat_map = df.groupby("stockcode")["category"].first().to_dict() if "category" in df.columns else {}
+        cat_map = (
+            df.groupby("stockcode")["category"].first().to_dict()
+            if "category" in df.columns
+            else {}
+        )
 
     def cat(item: str) -> str:
         return str(cat_map.get(item, "Unknown"))
@@ -336,7 +361,9 @@ def get_top_switching_paths(
     """Most common switching paths."""
     matrix = compute_switching_matrix(df, window_days, min_transactions)
     if matrix.empty:
-        return check(pd.DataFrame(columns=list(SWITCHING_MATRIX.columns)), SWITCHING_MATRIX, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(SWITCHING_MATRIX.columns)), SWITCHING_MATRIX, allow_empty=True
+        )
     top = matrix.sort_values("count", ascending=False).head(top_n).reset_index(drop=True)
     return check(top, SWITCHING_MATRIX)
 
@@ -370,8 +397,8 @@ def get_customer_loyalty_metrics(df: pd.DataFrame) -> pd.DataFrame:
     metrics = cust_txn.join(repeat, how="left").join(n_products, how="left")
     metrics["switching_count"] = switch_count.reindex(metrics.index).fillna(0)
     metrics["switching_rate"] = (
-        metrics["switching_count"] / (metrics["n_transactions"] - 1)
-    ).clip(upper=1.0).fillna(0.0)
+        (metrics["switching_count"] / (metrics["n_transactions"] - 1)).clip(upper=1.0).fillna(0.0)
+    )
     metrics = metrics.reset_index()
     metrics = metrics.fillna(
         {"repeat_purchase_rate": 0.0, "n_distinct_products": 1, "switching_count": 0}
@@ -445,8 +472,8 @@ def compute_switching_status(
             in_transitions = matrix[matrix["to_product"] == product]["count"].sum()
             n_transitions = int(out_transitions + in_transitions)
             n_switchers = len(
-                set(matrix[matrix["from_product"] == product]["to_product"].tolist()) |
-                set(matrix[matrix["to_product"] == product]["from_product"].tolist())
+                set(matrix[matrix["from_product"] == product]["to_product"].tolist())
+                | set(matrix[matrix["to_product"] == product]["from_product"].tolist())
             )
         else:
             n_transitions = 0
@@ -464,14 +491,16 @@ def compute_switching_status(
         else:
             status = "estimated"
 
-        rows.append({
-            "stockcode": product,
-            "switching_status": status,
-            "n_switchers": n_switchers,
-            "n_transitions": n_transitions,
-            "n_observations": n_observations,
-            "n_customers": n_customers,
-        })
+        rows.append(
+            {
+                "stockcode": product,
+                "switching_status": status,
+                "n_switchers": n_switchers,
+                "n_transitions": n_transitions,
+                "n_observations": n_observations,
+                "n_customers": n_customers,
+            }
+        )
 
     status_df = pd.DataFrame(rows)
     return check(status_df, SWITCHING_STATUS)
@@ -504,7 +533,16 @@ def compute_switch_in_out_rates(
         True
     """
     if matrix.empty:
-        return pd.DataFrame(columns=["stockcode", "switch_out_rate", "switch_in_rate", "net_rate", "n_switchers_out", "n_switchers_in"])
+        return pd.DataFrame(
+            columns=[
+                "stockcode",
+                "switch_out_rate",
+                "switch_in_rate",
+                "net_rate",
+                "n_switchers_out",
+                "n_switchers_in",
+            ]
+        )
 
     # Get customer counts per product
     product_customers = df.groupby("stockcode")["customer_id"].nunique()
@@ -526,14 +564,16 @@ def compute_switch_in_out_rates(
         switch_in_rate = n_in / n_customers if n_customers > 0 else 0.0
         net_rate = switch_in_rate - switch_out_rate
 
-        rows.append({
-            "stockcode": product,
-            "switch_out_rate": switch_out_rate,
-            "switch_in_rate": switch_in_rate,
-            "net_rate": net_rate,
-            "n_switchers_out": n_out,
-            "n_switchers_in": n_in,
-        })
+        rows.append(
+            {
+                "stockcode": product,
+                "switch_out_rate": switch_out_rate,
+                "switch_in_rate": switch_in_rate,
+                "net_rate": net_rate,
+                "n_switchers_out": n_out,
+                "n_switchers_in": n_in,
+            }
+        )
 
     return pd.DataFrame(rows)
 
@@ -575,8 +615,7 @@ def _bootstrap_switching_matrix(
             boot_matrix = compute_switching_matrix(resample, window_days, min_transactions)
             if not boot_matrix.empty:
                 match = boot_matrix[
-                    (boot_matrix["from_product"] == frm) &
-                    (boot_matrix["to_product"] == to)
+                    (boot_matrix["from_product"] == frm) & (boot_matrix["to_product"] == to)
                 ]
                 if not match.empty:
                     replicates.append(float(match["pct"].iloc[0]))
@@ -593,16 +632,28 @@ def _bootstrap_switching_matrix(
     # Merge back to point matrix
     result = point_matrix.copy()
     result["ci_lower"] = result.apply(
-        lambda r: replicates_dict.get((r["from_product"], r["to_product"]), {}).get("ci_lower", 0.0), axis=1
+        lambda r: replicates_dict.get((r["from_product"], r["to_product"]), {}).get(
+            "ci_lower", 0.0
+        ),
+        axis=1,
     )
     result["ci_upper"] = result.apply(
-        lambda r: replicates_dict.get((r["from_product"], r["to_product"]), {}).get("ci_upper", 0.0), axis=1
+        lambda r: replicates_dict.get((r["from_product"], r["to_product"]), {}).get(
+            "ci_upper", 0.0
+        ),
+        axis=1,
     )
     result["std_error"] = result.apply(
-        lambda r: replicates_dict.get((r["from_product"], r["to_product"]), {}).get("std_error", 0.0), axis=1
+        lambda r: replicates_dict.get((r["from_product"], r["to_product"]), {}).get(
+            "std_error", 0.0
+        ),
+        axis=1,
     )
     result["n_resamples"] = result.apply(
-        lambda r: replicates_dict.get((r["from_product"], r["to_product"]), {}).get("n_resamples", n_resamples), axis=1
+        lambda r: replicates_dict.get((r["from_product"], r["to_product"]), {}).get(
+            "n_resamples", n_resamples
+        ),
+        axis=1,
     )
 
     return result
@@ -633,15 +684,23 @@ def compute_substitution_strength(
     from src.analytics.schemas import SWITCHING_SUBSTITUTION, check
 
     if demand_transference_df.empty:
-        return check(pd.DataFrame(columns=list(SWITCHING_SUBSTITUTION.columns)), SWITCHING_SUBSTITUTION, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(SWITCHING_SUBSTITUTION.columns)),
+            SWITCHING_SUBSTITUTION,
+            allow_empty=True,
+        )
 
     # Total revenue per product
-    rev = df.groupby("stockcode").apply(
-        lambda x: (x["price"] * x["quantity"]).sum()
-    ).rename("revenue")
+    rev = (
+        df.groupby("stockcode")
+        .apply(lambda x: (x["price"] * x["quantity"]).sum())
+        .rename("revenue")
+    )
 
     # Merge with SDP
-    sdp_lookup = sdp_df.set_index("stockcode")["sdp"] if not sdp_df.empty else pd.Series(dtype=float)
+    sdp_lookup = (
+        sdp_df.set_index("stockcode")["sdp"] if not sdp_df.empty else pd.Series(dtype=float)
+    )
 
     # Prepare bootstrap CI lookup if needed
     ci_lookup = {}
@@ -713,18 +772,20 @@ def compute_substitution_strength(
         ci_lower = ci_lookup.get((frm, to), {}).get("ci_lower", 0.0)
         ci_upper = ci_lookup.get((frm, to), {}).get("ci_upper", 0.0)
 
-        rows.append({
-            "from_product": frm,
-            "to_product": to,
-            "switch_rate": switch_rate,
-            "switch_rate_ci_lower": ci_lower,
-            "switch_rate_ci_upper": ci_upper,
-            "revenue_at_risk": revenue_at_risk,
-            "recovery_proxy": recovery_proxy,
-            "substitution_strength": strength,
-            "classification": classification,
-            "confidence": confidence,
-        })
+        rows.append(
+            {
+                "from_product": frm,
+                "to_product": to,
+                "switch_rate": switch_rate,
+                "switch_rate_ci_lower": ci_lower,
+                "switch_rate_ci_upper": ci_upper,
+                "revenue_at_risk": revenue_at_risk,
+                "recovery_proxy": recovery_proxy,
+                "substitution_strength": strength,
+                "classification": classification,
+                "confidence": confidence,
+            }
+        )
 
     table = pd.DataFrame(rows, columns=list(SWITCHING_SUBSTITUTION.columns))
     return check(table, SWITCHING_SUBSTITUTION, allow_empty=True)
@@ -752,7 +813,11 @@ def compute_high_value_switching(
     from src.analytics.schemas import HIGH_VALUE_SWITCHING, check
 
     if clv_customer_df.empty or demand_transference_df.empty:
-        return check(pd.DataFrame(columns=list(HIGH_VALUE_SWITCHING.columns)), HIGH_VALUE_SWITCHING, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(HIGH_VALUE_SWITCHING.columns)),
+            HIGH_VALUE_SWITCHING,
+            allow_empty=True,
+        )
 
     # Identify high-value customers (top decile by predicted CLV)
     clv_threshold = clv_customer_df["predicted_clv"].quantile(0.9)
@@ -761,7 +826,11 @@ def compute_high_value_switching(
     )
 
     if not high_value_customers:
-        return check(pd.DataFrame(columns=list(HIGH_VALUE_SWITCHING.columns)), HIGH_VALUE_SWITCHING, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(HIGH_VALUE_SWITCHING.columns)),
+            HIGH_VALUE_SWITCHING,
+            allow_empty=True,
+        )
 
     # Filter transactions to high-value customers
     hv_df = df[df["customer_id"].isin(high_value_customers)].copy()
@@ -769,7 +838,11 @@ def compute_high_value_switching(
     # Compute switching matrix for high-value customers
     hv_matrix = compute_switching_matrix(hv_df, window_days=90, min_transactions=2)
     if hv_matrix.empty:
-        return check(pd.DataFrame(columns=list(HIGH_VALUE_SWITCHING.columns)), HIGH_VALUE_SWITCHING, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(HIGH_VALUE_SWITCHING.columns)),
+            HIGH_VALUE_SWITCHING,
+            allow_empty=True,
+        )
 
     # Compute per-segment analysis if segments available
     rows = []
@@ -793,46 +866,57 @@ def compute_high_value_switching(
                 seg_rev = seg_hv.groupby("stockcode").apply(
                     lambda x: (x["price"] * x["quantity"]).sum()
                 )
-                rev_at_risk = seg_rev.get(frm, 0.0) * (row["count"] / max(seg_matrix[seg_matrix["from_product"] == frm]["count"].sum(), 1))
+                rev_at_risk = seg_rev.get(frm, 0.0) * (
+                    row["count"]
+                    / max(seg_matrix[seg_matrix["from_product"] == frm]["count"].sum(), 1)
+                )
 
                 # Switch rate within segment
                 seg_total_switches = seg_matrix[seg_matrix["from_product"] == frm]["count"].sum()
                 switch_rate = row["count"] / max(seg_total_switches, 1)
 
                 # Avg CLV of switchers
-                avg_clv = clv_customer_df[clv_customer_df["customer_id"].isin(seg_customers)]["predicted_clv"].mean()
+                avg_clv = clv_customer_df[clv_customer_df["customer_id"].isin(seg_customers)][
+                    "predicted_clv"
+                ].mean()
 
-                rows.append({
-                    "from_product": frm,
-                    "to_product": to,
-                    "high_value_customers_switched": high_value_customers_switched,
-                    "high_value_revenue_at_risk": rev_at_risk,
-                    "high_value_switch_rate": switch_rate,
-                    "segment": segment,
-                    "avg_clv_of_switchers": float(avg_clv) if pd.notna(avg_clv) else 0.0,
-                })
+                rows.append(
+                    {
+                        "from_product": frm,
+                        "to_product": to,
+                        "high_value_customers_switched": high_value_customers_switched,
+                        "high_value_revenue_at_risk": rev_at_risk,
+                        "high_value_switch_rate": switch_rate,
+                        "segment": segment,
+                        "avg_clv_of_switchers": float(avg_clv) if pd.notna(avg_clv) else 0.0,
+                    }
+                )
     else:
         # Aggregate high-value switching
         for _, row in hv_matrix.iterrows():
             frm, to = row["from_product"], row["to_product"]
             high_value_customers_switched = int(row["count"])
-            hv_rev = hv_df.groupby("stockcode").apply(
-                lambda x: (x["price"] * x["quantity"]).sum()
+            hv_rev = hv_df.groupby("stockcode").apply(lambda x: (x["price"] * x["quantity"]).sum())
+            rev_at_risk = hv_rev.get(frm, 0.0) * (
+                row["count"] / max(hv_matrix[hv_matrix["from_product"] == frm]["count"].sum(), 1)
             )
-            rev_at_risk = hv_rev.get(frm, 0.0) * (row["count"] / max(hv_matrix[hv_matrix["from_product"] == frm]["count"].sum(), 1))
             seg_total_switches = hv_matrix[hv_matrix["from_product"] == frm]["count"].sum()
             switch_rate = row["count"] / max(seg_total_switches, 1)
-            avg_clv = clv_customer_df[clv_customer_df["customer_id"].isin(high_value_customers)]["predicted_clv"].mean()
+            avg_clv = clv_customer_df[clv_customer_df["customer_id"].isin(high_value_customers)][
+                "predicted_clv"
+            ].mean()
 
-            rows.append({
-                "from_product": frm,
-                "to_product": to,
-                "high_value_customers_switched": high_value_customers_switched,
-                "high_value_revenue_at_risk": rev_at_risk,
-                "high_value_switch_rate": switch_rate,
-                "segment": "high_value",
-                "avg_clv_of_switchers": float(avg_clv) if pd.notna(avg_clv) else 0.0,
-            })
+            rows.append(
+                {
+                    "from_product": frm,
+                    "to_product": to,
+                    "high_value_customers_switched": high_value_customers_switched,
+                    "high_value_revenue_at_risk": rev_at_risk,
+                    "high_value_switch_rate": switch_rate,
+                    "segment": "high_value",
+                    "avg_clv_of_switchers": float(avg_clv) if pd.notna(avg_clv) else 0.0,
+                }
+            )
 
     table = pd.DataFrame(rows, columns=list(HIGH_VALUE_SWITCHING.columns))
     return check(table, HIGH_VALUE_SWITCHING, allow_empty=True)
@@ -867,7 +951,11 @@ def generate_switching_opportunity_matrix(
     from src.analytics.schemas import SWITCHING_OPPORTUNITY, check
 
     if demand_transference_df.empty:
-        return check(pd.DataFrame(columns=list(SWITCHING_OPPORTUNITY.columns)), SWITCHING_OPPORTUNITY, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(SWITCHING_OPPORTUNITY.columns)),
+            SWITCHING_OPPORTUNITY,
+            allow_empty=True,
+        )
 
     # Build lookup dictionaries
     sub_lookup = {}
@@ -881,7 +969,11 @@ def generate_switching_opportunity_matrix(
             hv_lookup[(row["from_product"], row["to_product"])] = row
 
     sdp_lookup = sdp_df.set_index("stockcode")["sdp"].to_dict() if not sdp_df.empty else {}
-    delist_lookup = delist_impact_df.set_index("stockcode")["net_revenue_impact"].to_dict() if not delist_impact_df.empty else {}
+    delist_lookup = (
+        delist_impact_df.set_index("stockcode")["net_revenue_impact"].to_dict()
+        if not delist_impact_df.empty
+        else {}
+    )
 
     opportunities = []
 
@@ -893,7 +985,9 @@ def generate_switching_opportunity_matrix(
         sub_row = sub_lookup.get((frm, to))
         hv_row = hv_lookup.get((frm, to))
 
-        classification = sub_row["classification"] if sub_row is not None else "insufficient_evidence"
+        classification = (
+            sub_row["classification"] if sub_row is not None else "insufficient_evidence"
+        )
         strength = sub_row["substitution_strength"] if sub_row is not None else "weak"
         confidence = sub_row["confidence"] if sub_row is not None else "low"
 
@@ -928,7 +1022,9 @@ def generate_switching_opportunity_matrix(
             if delist_impact is not None and delist_impact > 0:
                 opportunity_type = "delist_candidate"
                 action = f"Consider delisting {frm} — positive net impact (€{delist_impact:,.0f})"
-                rationale = f"Simulated delist recovers more than it loses: net +€{delist_impact:,.0f}."
+                rationale = (
+                    f"Simulated delist recovers more than it loses: net +€{delist_impact:,.0f}."
+                )
             else:
                 opportunity_type = "protect"
                 action = f"Monitor {frm} -> {to} — insufficient evidence for action"
@@ -936,22 +1032,34 @@ def generate_switching_opportunity_matrix(
 
         net_impact = recovery_proxy - revenue_at_risk
 
-        opportunities.append({
-            "from_product": frm,
-            "to_product": to,
-            "opportunity_type": opportunity_type,
-            "revenue_at_risk": revenue_at_risk,
-            "recoverable_revenue": recovery_proxy,
-            "net_impact": net_impact,
-            "action": action,
-            "confidence": confidence,
-            "rationale": rationale,
-        })
+        opportunities.append(
+            {
+                "from_product": frm,
+                "to_product": to,
+                "opportunity_type": opportunity_type,
+                "revenue_at_risk": revenue_at_risk,
+                "recoverable_revenue": recovery_proxy,
+                "net_impact": net_impact,
+                "action": action,
+                "confidence": confidence,
+                "rationale": rationale,
+            }
+        )
 
     # Sort by revenue at risk descending, then by opportunity priority
-    priority_order = {"protect": 0, "win_back": 1, "steal_share": 2, "consolidate": 3, "delist_candidate": 4}
+    priority_order = {
+        "protect": 0,
+        "win_back": 1,
+        "steal_share": 2,
+        "consolidate": 3,
+        "delist_candidate": 4,
+    }
     opp_df = pd.DataFrame(opportunities)
     opp_df["priority"] = opp_df["opportunity_type"].map(priority_order).fillna(5)
-    opp_df = opp_df.sort_values(["priority", "revenue_at_risk"], ascending=[True, False]).head(top_n)
+    opp_df = opp_df.sort_values(["priority", "revenue_at_risk"], ascending=[True, False]).head(
+        top_n
+    )
 
-    return check(opp_df[list(SWITCHING_OPPORTUNITY.columns)], SWITCHING_OPPORTUNITY, allow_empty=True)
+    return check(
+        opp_df[list(SWITCHING_OPPORTUNITY.columns)], SWITCHING_OPPORTUNITY, allow_empty=True
+    )

@@ -51,7 +51,17 @@ def test_train_choice_model_importance_sum_to_one(sample_df: pd.DataFrame) -> No
 
 
 def test_train_choice_model_insufficient_data() -> None:
-    df = pd.DataFrame(columns=["stockcode", "customer_id", "price", "quantity", "transaction_id", "date", "category"])
+    df = pd.DataFrame(
+        columns=[
+            "stockcode",
+            "customer_id",
+            "price",
+            "quantity",
+            "transaction_id",
+            "date",
+            "category",
+        ]
+    )
     features = build_customer_features(df, prediction_window_days=7)
     assert features.empty
     metrics, importance, rules = train_choice_model(features)

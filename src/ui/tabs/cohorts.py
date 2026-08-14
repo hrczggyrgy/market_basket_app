@@ -45,7 +45,9 @@ def _render_retention_heatmap(cohort_table: pd.DataFrame) -> None:
         height=max(350, 25 * len(pivot)),
     )
     show(fig)
-    st.caption("Rows = acquisition cohort (first period), columns = periods since first purchase. Green = high retention.")
+    st.caption(
+        "Rows = acquisition cohort (first period), columns = periods since first purchase. Green = high retention."
+    )
 
 
 def _render_revenue_heatmap(df: pd.DataFrame, cohort_period: str) -> None:
@@ -88,6 +90,7 @@ def _render_aov_curves(df: pd.DataFrame, cohort_period: str) -> None:
 
     # cumulative_revenue / retained_customers at each period
     from src.analytics.cohort import compute_cohorts
+
     cohort_table = compute_cohorts(df, cohort_period=cohort_period)
     if cohort_table.empty:
         show(empty_state("No cohort data"))
@@ -128,15 +131,21 @@ def _render_aov_curves(df: pd.DataFrame, cohort_period: str) -> None:
     )
 
 
-def _render_role_retention_curves(df: pd.DataFrame, cohort_period: str, min_role_customers: int) -> None:
+def _render_role_retention_curves(
+    df: pd.DataFrame, cohort_period: str, min_role_customers: int
+) -> None:
     st.subheader(":material/group_work: Retention by Category Role")
-    overview = compute_role_retention(df, cohort_period=cohort_period, min_role_customers=min_role_customers)
+    overview = compute_role_retention(
+        df, cohort_period=cohort_period, min_role_customers=min_role_customers
+    )
     if overview.empty:
         show(empty_state("No role retention data"))
         return
 
     # Weighted-average retention curve per role (pool retain and size across cohorts)
-    agg = overview.groupby(["role", "period_index"], as_index=False).agg(retained=("retained", "sum"), cohort_size=("cohort_size", "sum"))
+    agg = overview.groupby(["role", "period_index"], as_index=False).agg(
+        retained=("retained", "sum"), cohort_size=("cohort_size", "sum")
+    )
     agg["retention_rate"] = agg["retained"] / agg["cohort_size"]
 
     role_order = sorted(overview["role"].unique().tolist())
@@ -162,12 +171,25 @@ def _render_role_retention_curves(df: pd.DataFrame, cohort_period: str, min_role
     show(fig)
 
     # Cohort sizes per role
-    sizes = overview.groupby("cohort", as_index=False).apply(
-        lambda g: pd.Series({r: int(g.loc[g["role"] == r, "cohort_size"].max()) if (g["role"] == r).any() else 0 for r in role_order}),
-        include_groups=False,
-    ).reset_index()
+    sizes = (
+        overview.groupby("cohort", as_index=False)
+        .apply(
+            lambda g: pd.Series(
+                {
+                    r: int(g.loc[g["role"] == r, "cohort_size"].max())
+                    if (g["role"] == r).any()
+                    else 0
+                    for r in role_order
+                }
+            ),
+            include_groups=False,
+        )
+        .reset_index()
+    )
     st.dataframe(sizes, use_container_width=True, hide_index=True)
-    st.caption("Customers per acquisition cohort by the role of their first basket's dominant category. Curves show weighted-average retention per role.")
+    st.caption(
+        "Customers per acquisition cohort by the role of their first basket's dominant category. Curves show weighted-average retention per role."
+    )
 
 
 def _render_yoy_bars(df: pd.DataFrame) -> None:
@@ -213,7 +235,9 @@ def _render_yoy_bars(df: pd.DataFrame) -> None:
     fig2.add_hline(y=0, line_dash="dash", line_color="gray")
     fig2.update_layout(xaxis={"title": "ISO Week"}, yaxis={"title": "Revenue YoY Growth (%)"})
     show(fig2)
-    st.caption("Bars = weekly revenue by year; line = YoY growth rate. Positive = growth vs prior year.")
+    st.caption(
+        "Bars = weekly revenue by year; line = YoY growth rate. Positive = growth vs prior year."
+    )
 
 
 def render(df: pd.DataFrame) -> None:
@@ -221,7 +245,12 @@ def render(df: pd.DataFrame) -> None:
 
     with st.expander("Parameters", expanded=True):
         c1, c2 = st.columns(2)
-        period = c1.selectbox("Cohort period", ["W", "M"], index=0, format_func=lambda x: "Weekly" if x == "W" else "Monthly")
+        period = c1.selectbox(
+            "Cohort period",
+            ["W", "M"],
+            index=0,
+            format_func=lambda x: "Weekly" if x == "W" else "Monthly",
+        )
         min_role_customers = int(c2.number_input("Min customers per role cohort", 1, 200, 5))
 
     cohort_table = compute_cohorts(df, cohort_period=period)

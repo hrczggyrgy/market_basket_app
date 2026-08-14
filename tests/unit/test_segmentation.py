@@ -128,15 +128,19 @@ def test_survival_analysis(sample_df: pd.DataFrame) -> None:
     SURVIVAL_DIAGNOSTICS.validate(diag)
     assert surv["survival_prob"].between(0, 1).all()
     assert surv["churn_risk"].between(0, 1).all()
-    assert diag["metric"].isin(["concordance_index", "n_events", "n_censored", "model_params"]).all()
+    assert (
+        diag["metric"].isin(["concordance_index", "n_events", "n_censored", "model_params"]).all()
+    )
 
 
 def test_value_based_segmentation(sample_df: pd.DataFrame) -> None:
     segments = value_based_segmentation(sample_df, prediction_horizon_days=60)
     VALUE_BASED_SEGMENTS.validate(segments)
-    assert segments["value_segment"].isin(
-        {"VIP", "High Potential", "Loyal", "New", "Churned", "Regular"}
-    ).all()
+    assert (
+        segments["value_segment"]
+        .isin({"VIP", "High Potential", "Loyal", "New", "Churned", "Regular"})
+        .all()
+    )
     assert segments["predicted_clv"].notna().all()
 
 

@@ -6,8 +6,7 @@ analytical outputs, along with conversion functions to DataFrames.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 import pandas as pd
 
@@ -30,7 +29,9 @@ class Insight:
     impact_value: float | None = None  # quantitative impact (revenue, etc.)
     sample_size: int | None = None  # n observations
     stability: float | None = None  # [0,1] stability score
-    evidence_level: int | None = None  # 1-5: exploratory, descriptive, predictive, quasi-causal, causal
+    evidence_level: int | None = (
+        None  # 1-5: exploratory, descriptive, predictive, quasi-causal, causal
+    )
     n_transition_pairs: int | None = None  # number of switching transition pairs
     n_unique_products: int | None = None  # number of unique products involved in switching
     confidence_gate: bool | None = None  # whether insight meets minimum evidence threshold
@@ -63,11 +64,24 @@ def insights_to_dataframe(insights: list[Insight]) -> pd.DataFrame:
         DataFrame with columns matching PRICING_INSIGHTS contract
     """
     if not insights:
-        return pd.DataFrame(columns=[
-            "domain", "entity", "kind", "title", "evidence",
-            "impact_value", "confidence", "sample_size", "stability", "action",
-            "evidence_level", "n_transition_pairs", "n_unique_products", "confidence_gate"
-        ])
+        return pd.DataFrame(
+            columns=[
+                "domain",
+                "entity",
+                "kind",
+                "title",
+                "evidence",
+                "impact_value",
+                "confidence",
+                "sample_size",
+                "stability",
+                "action",
+                "evidence_level",
+                "n_transition_pairs",
+                "n_unique_products",
+                "confidence_gate",
+            ]
+        )
 
     data = [
         {
@@ -102,10 +116,18 @@ def opportunities_to_dataframe(opportunities: list[Opportunity]) -> pd.DataFrame
         DataFrame with columns matching OPPORTUNITY_LIST contract
     """
     if not opportunities:
-        return pd.DataFrame(columns=[
-            "domain", "entity", "title", "value", "confidence",
-            "action", "source", "rationale"
-        ])
+        return pd.DataFrame(
+            columns=[
+                "domain",
+                "entity",
+                "title",
+                "value",
+                "confidence",
+                "action",
+                "source",
+                "rationale",
+            ]
+        )
 
     data = [
         {

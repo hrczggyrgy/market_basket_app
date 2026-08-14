@@ -34,25 +34,40 @@ def build_customer_features(
     horizon = df[df["date"] >= horizon_start]
     history = df[df["date"] < horizon_start]
     if history.empty or horizon.empty:
-        return check(pd.DataFrame(columns=list(CUSTOMER_FEATURES.columns)), CUSTOMER_FEATURES, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(CUSTOMER_FEATURES.columns)),
+            CUSTOMER_FEATURES,
+            allow_empty=True,
+        )
 
     if top_products:
         top = (
-            horizon.groupby("stockcode")["quantity"].sum()
+            horizon.groupby("stockcode")["quantity"]
+            .sum()
             .sort_values(ascending=False)
             .head(top_products)
             .index
         )
     else:
         top = horizon["stockcode"].unique()
-    support = horizon.groupby("stockcode")["transaction_id"].nunique() / horizon["transaction_id"].nunique()
+    support = (
+        horizon.groupby("stockcode")["transaction_id"].nunique()
+        / horizon["transaction_id"].nunique()
+    )
     targets = support[support.ge(min_support)].index.intersection(top)
     if targets.empty:
-        return check(pd.DataFrame(columns=list(CUSTOMER_FEATURES.columns)), CUSTOMER_FEATURES, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(CUSTOMER_FEATURES.columns)),
+            CUSTOMER_FEATURES,
+            allow_empty=True,
+        )
 
-    target_rank = horizon[horizon["stockcode"].isin(targets)].groupby("customer_id")["stockcode"].apply(
-        lambda s: s.value_counts().idxmax()
-    ).rename("target_product")
+    target_rank = (
+        horizon[horizon["stockcode"].isin(targets)]
+        .groupby("customer_id")["stockcode"]
+        .apply(lambda s: s.value_counts().idxmax())
+        .rename("target_product")
+    )
 
     agg = {
         "recency_days": ("date", lambda s: (history["date"].max() - s.max()).days),
@@ -90,21 +105,36 @@ def train_choice_model(
     """
     check(features, CUSTOMER_FEATURES, allow_empty=True)
     if features.empty:
-        empty = check(pd.DataFrame(columns=list(MODEL_METRICS.columns)), MODEL_METRICS, allow_empty=True)
+        empty = check(
+            pd.DataFrame(columns=list(MODEL_METRICS.columns)), MODEL_METRICS, allow_empty=True
+        )
         empty_imp = pd.DataFrame(columns=["feature", "importance"])
-        empty_rules = check(pd.DataFrame(columns=list(TREE_RULES.columns)), TREE_RULES, allow_empty=True)
+        empty_rules = check(
+            pd.DataFrame(columns=list(TREE_RULES.columns)), TREE_RULES, allow_empty=True
+        )
         return empty, empty_imp, empty_rules
     feature_cols = [
         c
-        for c in ("recency_days", "frequency", "monetary", "n_baskets", "avg_basket_size", "n_distinct_products")
+        for c in (
+            "recency_days",
+            "frequency",
+            "monetary",
+            "n_baskets",
+            "avg_basket_size",
+            "n_distinct_products",
+        )
         if c in features.columns
     ]
     X = features[feature_cols].fillna(0.0).to_numpy()
     y = features["target_product"].astype(str).to_numpy()
     if len(np.unique(y)) < 2 or len(y) < 20:
-        empty = check(pd.DataFrame(columns=list(MODEL_METRICS.columns)), MODEL_METRICS, allow_empty=True)
+        empty = check(
+            pd.DataFrame(columns=list(MODEL_METRICS.columns)), MODEL_METRICS, allow_empty=True
+        )
         empty_imp = pd.DataFrame(columns=["feature", "importance"])
-        empty_rules = check(pd.DataFrame(columns=list(TREE_RULES.columns)), TREE_RULES, allow_empty=True)
+        empty_rules = check(
+            pd.DataFrame(columns=list(TREE_RULES.columns)), TREE_RULES, allow_empty=True
+        )
         return empty, empty_imp, empty_rules
 
     from sklearn.metrics import accuracy_score, f1_score

@@ -43,7 +43,6 @@ def generate_cdt_insights(df: pd.DataFrame, max_depth: int = 3) -> pd.DataFrame:
     # Insight 1: Root product (if exists)
     root_nodes = tree_df[tree_df["depth"] == 0]
     if not root_nodes.empty:
-        root_node = root_nodes.iloc[0]
         # The mutual information of the root split is not directly in the tree_df,
         # but we can look at the attribute used for the split.
         # However, for simplicity, we note the root product (if the tree is product-based).
@@ -55,14 +54,16 @@ def generate_cdt_insights(df: pd.DataFrame, max_depth: int = 3) -> pd.DataFrame:
 
     # Insight 2: Leaf nodes (final groups) - these are product groups that are similar
     leaf_nodes = tree_df[tree_df["is_leaf"]]
-    if not leaf_nodes.empty:
-        # We can take the largest leaf node (by count) as an opportunity for bundling
-        if "count" in leaf_nodes.columns:
+    if not leaf_nodes.empty and "count" in leaf_nodes.columns:
             largest_leaf = leaf_nodes.loc[leaf_nodes["count"].idxmax()]
             insights.append(
                 Insight(
                     domain="cdt",
-                    entity=", ".join(largest_leaf["product"].split(",") if isinstance(largest_leaf["product"], str) else [str(largest_leaf["product"])]),
+                    entity=", ".join(
+                        largest_leaf["product"].split(",")
+                        if isinstance(largest_leaf["product"], str)
+                        else [str(largest_leaf["product"])]
+                    ),
                     kind="opportunity",
                     title=f"Largest product group: {largest_leaf.get('product', 'unknown')} (size {largest_leaf.get('count', 0)})",
                     evidence=(

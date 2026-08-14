@@ -52,7 +52,16 @@ def _treemap(scorecard: pd.DataFrame) -> None:
     )
     fig.update_traces(
         customdata=scorecard[
-            ["category", "role", "revenue_yoy_growth", "basket_penetration", "repeat_purchase_rate", "sku_share", "revenue_share", "kvi_count"]
+            [
+                "category",
+                "role",
+                "revenue_yoy_growth",
+                "basket_penetration",
+                "repeat_purchase_rate",
+                "sku_share",
+                "revenue_share",
+                "kvi_count",
+            ]
         ].to_numpy(),
         hovertemplate=(
             "<b>%{customdata[0]}</b><br>"
@@ -87,9 +96,7 @@ def _drilldown(df: pd.DataFrame, scorecard: pd.DataFrame) -> None:
 
     kvi = compute_kvi_score(df)
     cat_kvi = (
-        kvi[kvi["category"] == selected]
-        .sort_values("kvi_score", ascending=False)
-        .head(10)
+        kvi[kvi["category"] == selected].sort_values("kvi_score", ascending=False).head(10)
         if not kvi.empty
         else kvi
     )
@@ -111,7 +118,9 @@ def _drilldown(df: pd.DataFrame, scorecard: pd.DataFrame) -> None:
                 "mode": "lines+markers",
             }
         )
-        fig.update_layout(title=f"{selected} — revenue by period", margin={"l": 50, "r": 15, "t": 45, "b": 40})
+        fig.update_layout(
+            title=f"{selected} — revenue by period", margin={"l": 50, "r": 15, "t": 45, "b": 40}
+        )
         show(fig)
 
     with c2:
@@ -126,13 +135,20 @@ def _drilldown(df: pd.DataFrame, scorecard: pd.DataFrame) -> None:
             }
         )
         fig.update_yaxes(tickformat=".0%")
-        fig.update_layout(title=f"{selected} — basket penetration by period", margin={"l": 50, "r": 15, "t": 45, "b": 40})
+        fig.update_layout(
+            title=f"{selected} — basket penetration by period",
+            margin={"l": 50, "r": 15, "t": 45, "b": 40},
+        )
         show(fig)
 
     st.markdown("**Assortment efficiency** (full matrix lands in Phase 2 — item 3)")
     eff_agg = scorecard[["sku_share", "revenue_share"]].mean()
     eff_row = scorecard.loc[cat_row.name, ["sku_share", "revenue_share"]]
-    eff_ratio = float(eff_row["revenue_share"] / eff_row["sku_share"]) if eff_row["sku_share"] > 0 else float("nan")
+    eff_ratio = (
+        float(eff_row["revenue_share"] / eff_row["sku_share"])
+        if eff_row["sku_share"] > 0
+        else float("nan")
+    )
     st.write(
         f"{selected} has {eff_row['sku_share']:.1%} of SKUs and {eff_row['revenue_share']:.1%} of revenue "
         f"(category-median ratios: {eff_agg['sku_share']:.1%} SKU / {eff_agg['revenue_share']:.1%} revenue). "
@@ -306,7 +322,11 @@ def _growth_matrix(df: pd.DataFrame) -> None:
         "Stars (invest), Cash Cows (harvest), Question Marks (evaluate/turnaround), Dogs (rationalize)."
     )
 
-    table_cols = [c for c in ("category", "role", "quadrant", "revenue_share", "growth_pct", "total_revenue") if c in matrix.columns]
+    table_cols = [
+        c
+        for c in ("category", "role", "quadrant", "revenue_share", "growth_pct", "total_revenue")
+        if c in matrix.columns
+    ]
     st.dataframe(
         matrix[table_cols].sort_values("total_revenue", ascending=False),
         use_container_width=True,
@@ -351,7 +371,11 @@ def _scenario_grid(df: pd.DataFrame) -> None:
                 marker={"color": scenario_colors[scenario]},
             )
         )
-    fig.update_layout(barmode="group", xaxis={"title": "Category"}, yaxis={"title": f"Projected revenue ({projection_weeks}wk)"})
+    fig.update_layout(
+        barmode="group",
+        xaxis={"title": "Category"},
+        yaxis={"title": f"Projected revenue ({projection_weeks}wk)"},
+    )
     show(fig)
     st.caption(
         "Pessimistic = 1-sigma below trend, Neutral = historical weekly growth compounded, "
@@ -361,7 +385,16 @@ def _scenario_grid(df: pd.DataFrame) -> None:
 
     st.dataframe(
         grid[
-            ["category", "scenario", "growth_lever", "weekly_growth_pct", "projected_revenue", "revenue_change_pct", "feasible", "guard_note"]
+            [
+                "category",
+                "scenario",
+                "growth_lever",
+                "weekly_growth_pct",
+                "projected_revenue",
+                "revenue_change_pct",
+                "feasible",
+                "guard_note",
+            ]
         ].sort_values(["category", "scenario"]),
         use_container_width=True,
         hide_index=True,
@@ -371,7 +404,10 @@ def _scenario_grid(df: pd.DataFrame) -> None:
     if not infeasible.empty:
         st.warning(
             f"{len(infeasible)} infeasible scenario cell(s): "
-            + "; ".join(f"{r.category} ({r.scenario}): {r.guard_note}" for _, r in infeasible.head(3).iterrows())
+            + "; ".join(
+                f"{r.category} ({r.scenario}): {r.guard_note}"
+                for _, r in infeasible.head(3).iterrows()
+            )
             + (" …" if len(infeasible) > 3 else "")
         )
 
@@ -441,7 +477,9 @@ def _promo_timeline(df: pd.DataFrame) -> None:
         return
 
     categories = sorted(tl["category"].unique())
-    selected = st.multiselect("Categories", categories, default=categories[:3], key="promo_timeline_cats")
+    selected = st.multiselect(
+        "Categories", categories, default=categories[:3], key="promo_timeline_cats"
+    )
 
     data = tl[tl["category"].isin(selected)]
     if data.empty:
@@ -492,7 +530,9 @@ def render(df: pd.DataFrame) -> None:
 
     df, category_inferred = enrich_with_categories(df)
     if category_inferred:
-        st.info("A `category` column was not supplied; categories were inferred from product descriptions (TF-IDF + KMeans).")
+        st.info(
+            "A `category` column was not supplied; categories were inferred from product descriptions (TF-IDF + KMeans)."
+        )
 
     scorecard = compute_category_manager_scorecard(df)
     if scorecard.empty:

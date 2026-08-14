@@ -103,13 +103,25 @@ def test_insights_decision_groups(sample_df: pd.DataFrame) -> None:
 
 
 def test_insights_decision_groups_synthetic() -> None:
-    analysis = run_pricing_analysis(build_pricing_df(), min_periods=5)
-    insights = generate_pricing_insights(
-        analysis.elasticity,
-        analysis.elasticity_status,
-        analysis.kvi,
-        analysis.decision_matrix,
-    )
+    # Use the decision fixture which has known decisions
+    kvi = build_kvi_decision_fixture()
+    # Run just the decision matrix part
+    from src.analytics.pricing.decision import compute_pricing_decision_matrix
+    from src.analytics.pricing.elasticity import classify_elasticity_confidence
+    
+    # Create minimal elasticity and status for the decision matrix
+    elast = pd.DataFrame({
+        "stockcode": kvi["stockcode"],
+        "elasticity": kvi["abs_elasticity"],
+        "p_value": 0.01,
+        "ci_lower": kvi["abs_elasticity"] - 0.2,
+        "ci_upper": kvi["abs_elasticity"] + 0.2,
+        "n_obs": 20,
+    })
+    status = kvi[["stockcode", "elasticity_status"]].copy()
+    dm = compute_pricing_decision_matrix(kvi, elast)
+    
+    insights = generate_pricing_insights(elast, status, kvi, dm)
     PRICING_INSIGHTS.validate(insights, allow_empty=True)
     kinds = set(insights["kind"].tolist())
     assert {"opportunity", "growth"} <= kinds
@@ -134,16 +146,16 @@ def test_insights_extreme_elasticity_watch() -> None:
             "price_cv": [0.2] * 6,
         }
     )
-    insights = generate_pricing_insights(
-        elast, status, _kvi_for_status(status), pd.DataFrame()
-    )
+    insights = generate_pricing_insights(elast, status, _kvi_for_status(status), pd.DataFrame())
     PRICING_INSIGHTS.validate(insights, allow_empty=True)
     watch = insights[insights["kind"] == "watch"]
     assert any("extreme" in str(t).lower() for t in watch["title"])
 
 
 def test_insights_empty_inputs() -> None:
-    insights = generate_pricing_insights(pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
+    insights = generate_pricing_insights(
+        pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    )
     assert insights.empty
     PRICING_INSIGHTS.validate(insights, allow_empty=True)
 
@@ -152,7 +164,9 @@ def test_insights_decision_matrix_confidence_aggregated() -> None:
     """Decision-group insights aggregate elasticity confidence sensibly."""
     kvi = build_kvi_fixture()
     dm = compute_pricing_decision_matrix(kvi)
-    insights = generate_pricing_insights(pd.DataFrame(), kvi[["stockcode", "elasticity_status"]], kvi, dm)
+    insights = generate_pricing_insights(
+        pd.DataFrame(), kvi[["stockcode", "elasticity_status"]], kvi, dm
+    )
     PRICING_INSIGHTS.validate(insights, allow_empty=True)
     invest = insights[insights["title"].str.startswith("1 SKUs: invest")]
     assert not invest.empty

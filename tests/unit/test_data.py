@@ -76,7 +76,9 @@ def test_load_transactions_missing_required_column() -> None:
 
 def test_build_dataset_capabilities(sample_df: pd.DataFrame) -> None:
     caps = build_dataset_capabilities(sample_df)
-    assert caps["has_category"] and caps["has_brand"] and caps["has_promo_flag"] and caps["has_cost"]
+    assert (
+        caps["has_category"] and caps["has_brand"] and caps["has_promo_flag"] and caps["has_cost"]
+    )
     assert not caps["has_channel"]
     minimal = sample_df[list(TRANSACTIONS.columns)]
     caps2 = build_dataset_capabilities(minimal)

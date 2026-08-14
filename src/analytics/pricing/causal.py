@@ -9,6 +9,7 @@ import pandas as pd
 import statsmodels.api as sm
 from scipy.optimize import minimize
 from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 from src.analytics.schemas import (
@@ -36,7 +37,11 @@ def _check_propensity_overlap(
     treated_ps = propensity[treatment == 1]
     control_ps = propensity[treatment == 0]
     if len(treated_ps) == 0 or len(control_ps) == 0:
-        return {"overlap": False, "overlap_proportion": 0.0, "warnings": ["No treated or control units"]}
+        return {
+            "overlap": False,
+            "overlap_proportion": 0.0,
+            "warnings": ["No treated or control units"],
+        }
     treated_range = (treated_ps.min(), treated_ps.max())
     control_range = (control_ps.min(), control_ps.max())
     lower, upper = max(treated_range[0], control_range[0]), min(treated_range[1], control_range[1])
@@ -47,9 +52,6 @@ def _check_propensity_overlap(
         control_in = ((control_ps >= lower) & (control_ps <= upper)).mean()
         overlap = float(min(treated_in, control_in))
     return {"overlap": overlap > min_overlap, "overlap_proportion": overlap, "warnings": []}
-
-
-from sklearn.pipeline import make_pipeline
 
 
 def iv_elasticity_manual_2sls(
@@ -76,11 +78,12 @@ def iv_elasticity_manual_2sls(
     Stage 2: log(qty) ~ log(price_hat)
     """
     import warnings
+
     warnings.warn(
         "iv_elasticity_manual_2sls uses manual 2SLS; standard errors are NOT proper 2SLS SEs. "
         "Results are descriptive, not causal inference. Requires valid external instrument.",
         UserWarning,
-        stacklevel=2
+        stacklevel=2,
     )
     df = transactions_df.copy()
     df[date_col] = pd.to_datetime(df[date_col])
@@ -160,7 +163,11 @@ def iv_elasticity_manual_2sls(
         )
 
     if not results:
-        return check(pd.DataFrame(columns=list(IV_ELASTICITY_EXTERNAL.columns)), IV_ELASTICITY_EXTERNAL, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(IV_ELASTICITY_EXTERNAL.columns)),
+            IV_ELASTICITY_EXTERNAL,
+            allow_empty=True,
+        )
 
     table = pd.DataFrame(results, columns=list(IV_ELASTICITY_EXTERNAL.columns))
     return check(table, IV_ELASTICITY_EXTERNAL)
@@ -191,11 +198,12 @@ def local_price_response(
     USE FOR EXPLORATORY ANALYSIS ONLY.
     """
     import warnings
+
     warnings.warn(
         "local_price_response is NOT a valid RDD. It is a descriptive local regression "
         "around psychological price points. Results are NOT causal estimates.",
         UserWarning,
-        stacklevel=2
+        stacklevel=2,
     )
     df = transactions_df.copy()
     df[date_col] = pd.to_datetime(df[date_col])
@@ -271,7 +279,11 @@ def local_price_response(
             )
 
     if not results:
-        return check(pd.DataFrame(columns=list(LOCAL_PRICE_RESPONSE.columns)), LOCAL_PRICE_RESPONSE, allow_empty=True)
+        return check(
+            pd.DataFrame(columns=list(LOCAL_PRICE_RESPONSE.columns)),
+            LOCAL_PRICE_RESPONSE,
+            allow_empty=True,
+        )
 
     table = pd.DataFrame(results, columns=list(LOCAL_PRICE_RESPONSE.columns))
     return check(table, LOCAL_PRICE_RESPONSE)
@@ -302,11 +314,12 @@ def synthetic_control_estimate(
     USE FOR EXPLORATORY ANALYSIS ONLY. NOT FOR CAUSAL INFERENCE.
     """
     import warnings
+
     warnings.warn(
         "synthetic_control_estimate is a basic implementation without placebo tests, "
         "permutation inference, or proper standard errors. Results are NOT causal estimates.",
         UserWarning,
-        stacklevel=2
+        stacklevel=2,
     )
     df = transactions_df.copy()
     df[date_col] = pd.to_datetime(df[date_col])
@@ -318,7 +331,9 @@ def synthetic_control_estimate(
         .agg(
             avg_price=(price_col, "mean"),
             total_qty=(qty_col, "sum"),
-            has_promo=(promo_col, "max") if promo_col and promo_col in df.columns else (price_col, "first")
+            has_promo=(promo_col, "max")
+            if promo_col and promo_col in df.columns
+            else (price_col, "first"),
         )
         .dropna()
         .reset_index()
@@ -354,7 +369,9 @@ def synthetic_control_estimate(
         .bfill(axis=1)
     )
 
-    treatment_pre = pre_data[pre_data[product_col] == treatment_product].set_index("date")["log_qty"]
+    treatment_pre = pre_data[pre_data[product_col] == treatment_product].set_index("date")[
+        "log_qty"
+    ]
     treatment_pre = treatment_pre.reindex(pre_dates).ffill().bfill()
 
     n_donors = len(donor_matrix)
@@ -365,24 +382,31 @@ def synthetic_control_estimate(
         synth = donor_matrix.T @ w
         return float(np.sum((synth - treatment_pre.values) ** 2))
 
-    constraints = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1})
+    constraints = {"type": "eq", "fun": lambda w: np.sum(w) - 1}
     bounds = [(0.0, 1.0)] * n_donors
     w0 = np.ones(n_donors) / n_donors
 
-    res = minimize(objective, w0, bounds=bounds, constraints=constraints, method='SLSQP')
+    res = minimize(objective, w0, bounds=bounds, constraints=constraints, method="SLSQP")
     weights = res.x if res.success else w0
 
     # Post-period synthetic control
-    post_donor = post_data[post_data[product_col].isin(donor_products)].pivot_table(
-        index=product_col, columns="date", values="log_qty", aggfunc="mean"
-    ).ffill(axis=1).bfill(axis=1)
+    post_donor = (
+        post_data[post_data[product_col].isin(donor_products)]
+        .pivot_table(index=product_col, columns="date", values="log_qty", aggfunc="mean")
+        .ffill(axis=1)
+        .bfill(axis=1)
+    )
 
     synthetic_post = post_donor.T @ weights
-    treatment_post = post_data[post_data[product_col] == treatment_product].set_index("date")["log_qty"]
+    treatment_post = post_data[post_data[product_col] == treatment_product].set_index("date")[
+        "log_qty"
+    ]
     treatment_post = treatment_post.reindex(post_dates).ffill().bfill()
 
     effect = float(np.mean(treatment_post - synthetic_post))
-    effect_pct = float(np.mean((np.exp(treatment_post) - np.exp(synthetic_post)) / np.exp(synthetic_post)))
+    effect_pct = float(
+        np.mean((np.exp(treatment_post) - np.exp(synthetic_post)) / np.exp(synthetic_post))
+    )
 
     # Pre-period fit diagnostics
     pre_synth = donor_matrix.T @ weights

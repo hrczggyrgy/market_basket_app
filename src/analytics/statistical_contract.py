@@ -16,10 +16,11 @@ import pandas as pd
 
 class StatisticalClaimType(Enum):
     """Type of statistical claim being made."""
-    DESCRIPTIVE = "descriptive"           # Simple summary statistics
-    OBSERVATIONAL = "observational"       # Correlational/associational
-    CAUSAL = "causal"                     # Causal inference claim
-    PREDICTIVE = "predictive"             # Forecast/prediction
+
+    DESCRIPTIVE = "descriptive"  # Simple summary statistics
+    OBSERVATIONAL = "observational"  # Correlational/associational
+    CAUSAL = "causal"  # Causal inference claim
+    PREDICTIVE = "predictive"  # Forecast/prediction
 
 
 class ReliabilityLevel(Enum):
@@ -32,6 +33,7 @@ class ReliabilityLevel(Enum):
 @dataclass
 class StatisticalAssumption:
     """A statistical assumption with validation."""
+
     name: str
     description: str
     check_fn: Optional[Callable[[Any], bool]] = None
@@ -47,6 +49,7 @@ class StatisticalContract:
     Every analytical function should declare its contract and validate
     its output against it before returning.
     """
+
     # Core identification
     function_name: str
     claim_type: StatisticalClaimType
@@ -121,7 +124,9 @@ class StatisticalContract:
                     if not satisfied and assumption.severity == "critical":
                         raise ValueError(f"Critical assumption violated: {assumption.name}")
                     elif not satisfied and assumption.severity == "warning":
-                        warnings.append(f"Assumption violated ({assumption.severity}): {assumption.name} - {assumption.description}")
+                        warnings.append(
+                            f"Assumption violated ({assumption.severity}): {assumption.name} - {assumption.description}"
+                        )
                 except Exception as e:
                     warnings.append(f"Assumption check failed ({assumption.name}): {e}")
 
@@ -155,8 +160,17 @@ ELASTICITY_CONTRACT = StatisticalContract(
     estimate_type="point",
     estimate_unit="elasticity",
     required_columns=[
-        "stockcode", "elasticity", "std_err", "p_value", "r_squared",
-        "ci_lower", "ci_upper", "n_obs", "avg_price", "avg_weekly_qty", "price_cv"
+        "stockcode",
+        "elasticity",
+        "std_err",
+        "p_value",
+        "r_squared",
+        "ci_lower",
+        "ci_upper",
+        "n_obs",
+        "avg_price",
+        "avg_weekly_qty",
+        "price_cv",
     ],
     column_descriptions={
         "elasticity": "Point estimate of price elasticity (observed, NOT causal)",
@@ -205,9 +219,19 @@ CLV_CONTRACT = StatisticalContract(
     estimate_type="point",
     estimate_unit="currency",
     required_columns=[
-        "customer_id", "frequency", "recency", "T", "monetary_value",
-        "predicted_purchases", "expected_avg_value", "predicted_clv",
-        "ci_lower", "ci_upper", "ci_status", "p_alive", "clv_segment"
+        "customer_id",
+        "frequency",
+        "recency",
+        "T",
+        "monetary_value",
+        "predicted_purchases",
+        "expected_avg_value",
+        "predicted_clv",
+        "ci_lower",
+        "ci_upper",
+        "ci_status",
+        "p_alive",
+        "clv_segment",
     ],
     column_descriptions={
         "predicted_clv": "Point estimate of CLV over prediction horizon",
@@ -254,9 +278,7 @@ ASSORTMENT_CONTRACT = StatisticalContract(
     estimate_name="optimal_assortment",
     estimate_type="set",
     estimate_unit="SKUs",
-    required_columns=[
-        "stockcode", "selected", "revenue", "rank"
-    ],
+    required_columns=["stockcode", "selected", "revenue", "rank"],
     column_descriptions={
         "selected": "1 if SKU is in optimal assortment, 0 otherwise",
         "revenue": "SKU's revenue contribution",
@@ -301,6 +323,7 @@ def attach_contract(
 ) -> pd.DataFrame:
     """Attach contract metadata to output DataFrame."""
     import json
+
     result = output.copy()
     meta = {
         "statistical_contract": contract.function_name,
@@ -321,6 +344,8 @@ CONTRACT_REGISTRY: Dict[str, StatisticalContract] = {
     "predict_clv_bg_nbd": CLV_CONTRACT,
     "optimize_assortment_milp": ASSORTMENT_CONTRACT,
 }
+
+
 def get_contract(name: str) -> Optional[StatisticalContract]:
     """Get a contract by name."""
     return CONTRACT_REGISTRY.get(name)

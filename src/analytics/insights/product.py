@@ -115,7 +115,10 @@ def generate_product_insights(
         if not declining.empty:
             decline_rev = float(declining["recent_revenue"].sum())
             entities = ", ".join(
-                declining.sort_values("recent_revenue", ascending=False)["stockcode"].astype(str).head(5).tolist()
+                declining.sort_values("recent_revenue", ascending=False)["stockcode"]
+                .astype(str)
+                .head(5)
+                .tolist()
             )
             insights.append(
                 Insight(
