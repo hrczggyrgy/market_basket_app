@@ -163,10 +163,8 @@ def render_insight_cards(insights_df: pd.DataFrame) -> None:
             metric_cols = st.columns(4)
 
             with metric_cols[0]:
-                # Display impact as delta badge for visual indication of positive/negative impact
                 if impact_value is not None and pd.notna(impact_value):
-                    # For impact, positive is generally good (revenue increase, cost savings, etc.)
-                    render_delta_badge(impact_value, as_pct=False, suffix="€", positive_good=True)
+                    render_delta_badge(impact_value, is_percent=False, positive_good=True)
                     st.caption(f"Impact: €{impact_value:,.0f}")
                 else:
                     st.metric("Impact", "—")
