@@ -53,6 +53,11 @@ class DataQualityReport:
     n_transactions: int = 0
     n_products: int = 0
 
+    # Customer coverage (for customer analytics validity)
+    customer_coverage: float = 1.0
+    n_customers_valid: int = 0
+    n_customers_total: int = 0
+
     # User-selected exclusions (set via UI)
     excluded_products: List[str] = field(default_factory=list)
     excluded_txn_ids: List[str] = field(default_factory=list)
@@ -84,6 +89,9 @@ class DataQualityReport:
             "volume_warning": self.volume_warning,
             "n_transactions": self.n_transactions,
             "n_products": self.n_products,
+            "customer_coverage": self.customer_coverage,
+            "n_customers_valid": self.n_customers_valid,
+            "n_customers_total": self.n_customers_total,
             "excluded_products": self.excluded_products,
             "excluded_txn_ids": self.excluded_txn_ids,
         }
@@ -104,6 +112,9 @@ class DataQualityReport:
             volume_warning=d.get("volume_warning"),
             n_transactions=d.get("n_transactions", 0),
             n_products=d.get("n_products", 0),
+            customer_coverage=d.get("customer_coverage", 1.0),
+            n_customers_valid=d.get("n_customers_valid", 0),
+            n_customers_total=d.get("n_customers_total", 0),
             excluded_products=d.get("excluded_products", []),
             excluded_txn_ids=d.get("excluded_txn_ids", []),
         )
@@ -149,6 +160,20 @@ def assess_data_quality(
     report = DataQualityReport()
     report.n_transactions = df["transaction_id"].nunique()
     report.n_products = df["stockcode"].nunique()
+
+    # Customer coverage for customer analytics
+    if "customer_id" in df.columns:
+        report.n_customers_total = df["customer_id"].nunique()
+        customer_valid = df["customer_id"].notna() & df["customer_id"].ne("")
+        report.n_customers_valid = int(df.loc[customer_valid, "customer_id"].nunique())
+        if report.n_customers_total > 0:
+            report.customer_coverage = report.n_customers_valid / report.n_customers_total
+        else:
+            report.customer_coverage = 0.0
+    else:
+        report.n_customers_total = 0
+        report.n_customers_valid = 0
+        report.customer_coverage = 0.0
 
     # 1. Check for low-frequency products
     product_txn_counts = df.groupby("stockcode")["transaction_id"].nunique()

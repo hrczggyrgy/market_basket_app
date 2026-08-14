@@ -546,4 +546,5 @@ MODE_SPEC: ModeSpec = ModeSpec(
     label="Segmentation",
     icon=":material/groups:",
     handler=render,
+    requires=("sufficient_customers_200", "sufficient_baskets_500"),
 )

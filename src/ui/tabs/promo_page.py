@@ -508,4 +508,5 @@ MODE_SPEC: ModeSpec = ModeSpec(
     label="Promotions",
     icon=":material/local_offer:",
     handler=render,
+    requires=("has_promo_flag", "has_price_variation", "sufficient_baskets_500"),
 )

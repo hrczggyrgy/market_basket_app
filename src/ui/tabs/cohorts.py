@@ -284,4 +284,5 @@ MODE_SPEC: ModeSpec = ModeSpec(
     label="Cohorts",
     icon=":material/timeline:",
     handler=render,
+    requires=("sufficient_customers_100", "sufficient_baskets_500"),
 )

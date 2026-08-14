@@ -481,4 +481,5 @@ MODE_SPEC: ModeSpec = ModeSpec(
     label="Performance",
     icon=":material/insights:",
     handler=render,
+    requires=(),
 )

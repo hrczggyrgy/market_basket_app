@@ -564,4 +564,5 @@ MODE_SPEC: ModeSpec = ModeSpec(
     label="Category Overview",
     icon=":material/category:",
     handler=render,
+    requires=("has_category",),
 )

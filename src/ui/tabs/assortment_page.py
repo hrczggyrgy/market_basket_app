@@ -218,4 +218,5 @@ MODE_SPEC: ModeSpec = ModeSpec(
     label="Assortment",
     icon=":material/inventory_2:",
     handler=render,
+    requires=("has_category", "sufficient_skus_20", "sufficient_baskets_500"),
 )

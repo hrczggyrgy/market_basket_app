@@ -329,4 +329,5 @@ MODE_SPEC: ModeSpec = ModeSpec(
     label="Co-purchase",
     icon=":material/link:",
     handler=render,
+    requires=("sufficient_baskets_200", "sufficient_skus_20"),
 )

@@ -385,4 +385,5 @@ MODE_SPEC: ModeSpec = ModeSpec(
     label="Association Rules",
     icon=":material/schema:",
     handler=render,
+    requires=("sufficient_baskets_200", "sufficient_skus_20"),
 )

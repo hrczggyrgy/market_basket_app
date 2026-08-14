@@ -584,4 +584,5 @@ MODE_SPEC: ModeSpec = ModeSpec(
     label="Switching",
     icon=":material/swap_horiz:",
     handler=render,
+    requires=("sufficient_customers_100", "sufficient_baskets_500"),
 )

@@ -85,4 +85,5 @@ MODE_SPEC: ModeSpec = ModeSpec(
     label="Decision Center",
     icon=":material/dashboard:",
     handler=render,
+    requires=(),
 )

@@ -347,4 +347,5 @@ MODE_SPEC: ModeSpec = ModeSpec(
     label="CLV",
     icon=":material/account_balance_wallet:",
     handler=render,
+    requires=("sufficient_customers_500", "sufficient_baskets_1000"),
 )

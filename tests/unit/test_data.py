@@ -82,7 +82,9 @@ def test_build_dataset_capabilities(sample_df: pd.DataFrame) -> None:
     assert not caps["has_channel"]
     minimal = sample_df[list(TRANSACTIONS.columns)]
     caps2 = build_dataset_capabilities(minimal)
-    assert not any(v for v in caps2.values())
+    # Column-based capabilities should all be False for minimal data
+    column_caps = ["has_category", "has_brand", "has_size", "has_flavor", "has_promo_flag", "has_cost", "has_is_online", "has_channel"]
+    assert not any(caps2.get(c, False) for c in column_caps)
 
 
 def test_get_data_summary(sample_df: pd.DataFrame) -> None:

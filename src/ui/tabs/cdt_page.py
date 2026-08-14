@@ -275,4 +275,5 @@ MODE_SPEC: ModeSpec = ModeSpec(
     label="CDT",
     icon=":material/account_tree:",
     handler=render,
+    requires=("sufficient_skus_50", "sufficient_baskets_1000"),
 )

@@ -130,10 +130,11 @@ def load_transactions(
         & df["stockcode"].ne("")
     )
     # Customer-level validity (required for customer analytics)
-    df["customer_id"].notna() & df["customer_id"].ne("")
+    customer_valid = df["customer_id"].notna() & df["customer_id"].ne("")
 
     # For general transaction analyses, only transaction_valid is required
     # Customer analytics will use the intersection
+    customer_analytics_valid = transaction_valid & customer_valid
     df = df.loc[transaction_valid].copy()
     # Preserve fractional quantities (e.g., weighted goods)
     df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce")
@@ -184,8 +185,26 @@ def load_transactions(
 
 
 def build_dataset_capabilities(df: pd.DataFrame) -> dict[str, bool]:
-    """Detect which optional analyses are possible given available columns."""
+    """Detect which optional analyses are possible given available columns and data quality."""
+    # Price variation check
+    price_cv = 0.0
+    if "price" in df.columns and "stockcode" in df.columns:
+        price_stats = df.groupby("stockcode")["price"].agg(["mean", "std"]).reset_index()
+        price_stats["cv"] = price_stats["std"] / price_stats["mean"].replace(0, pd.NA)
+        price_cv = price_stats["cv"].max() if not price_stats["cv"].isna().all() else 0.0
+    
+    # Distinct price points per SKU
+    min_distinct_prices = 0
+    if "price" in df.columns and "stockcode" in df.columns:
+        distinct_prices = df.groupby("stockcode")["price"].nunique()
+        min_distinct_prices = int(distinct_prices.min()) if len(distinct_prices) > 0 else 0
+    
+    n_customers = df["customer_id"].nunique() if "customer_id" in df.columns else 0
+    n_skus = df["stockcode"].nunique() if "stockcode" in df.columns else 0
+    n_baskets = df["transaction_id"].nunique() if "transaction_id" in df.columns else 0
+    
     return {
+        # Column-based capabilities
         "has_category": "category" in df.columns,
         "has_brand": "brand" in df.columns,
         "has_size": "size" in df.columns,
@@ -194,6 +213,17 @@ def build_dataset_capabilities(df: pd.DataFrame) -> dict[str, bool]:
         "has_cost": "cost" in df.columns,
         "has_is_online": "is_online" in df.columns,
         "has_channel": "channel" in df.columns,
+        
+        # Data quality / volume capabilities
+        "has_price_variation": price_cv >= 0.05,  # 5% min CV
+        "min_distinct_prices_3": min_distinct_prices >= 3,
+        "sufficient_customers_100": n_customers >= 100,
+        "sufficient_customers_500": n_customers >= 500,
+        "sufficient_skus_20": n_skus >= 20,
+        "sufficient_skus_50": n_skus >= 50,
+        "sufficient_baskets_200": n_baskets >= 200,
+        "sufficient_baskets_500": n_baskets >= 500,
+        "sufficient_baskets_1000": n_baskets >= 1000,
     }
 
 
@@ -336,7 +366,9 @@ def add_segment_columns(df: pd.DataFrame) -> pd.DataFrame:
     try:
         from src.analytics.segmentation import behavioral_segmentation
 
-        beh_seg = behavioral_segmentation(df)
+        beh_seg = behavioral_segmentation(df, return_metrics=False)
+        if isinstance(beh_seg, tuple):
+            beh_seg = beh_seg[0]
         if "segment" in beh_seg.columns:
             seg_map = beh_seg.set_index("customer_id")["segment"].to_dict()
             df["behavioral_segment"] = df["customer_id"].map(seg_map)

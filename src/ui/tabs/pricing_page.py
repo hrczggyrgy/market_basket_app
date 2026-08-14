@@ -564,4 +564,5 @@ MODE_SPEC: ModeSpec = ModeSpec(
     label="Pricing",
     icon=":material/price_check:",
     handler=render,
+    requires=("has_price_variation", "min_distinct_prices_3", "sufficient_baskets_500"),
 )

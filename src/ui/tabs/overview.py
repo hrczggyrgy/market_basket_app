@@ -556,4 +556,5 @@ MODE_SPEC: ModeSpec = ModeSpec(
     label="Overview",
     icon=":material/dashboard:",
     handler=render,
+    requires=(),
 )
