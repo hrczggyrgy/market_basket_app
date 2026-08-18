@@ -103,6 +103,42 @@ def _get_reliability_badge(reliability: ReliabilityLevel) -> str:
     return f'<span style="background-color: {color}; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: bold;">{reliability.value.upper()}</span>'
 
 
+def _get_confidence_rgba(confidence: Any) -> str:
+    """Get rgba color string for confidence opacity.
+
+    Maps confidence level to an rgba color where the alpha channel
+    represents opacity (0.3-1.0). Used for bubble opacity in matrices
+    and conditional formatting in the strategic table.
+
+    Args:
+        confidence: Confidence value (e.g., "high", "medium", "low",
+                    "h", "m", "l", or numeric 0-10)
+
+    Returns:
+        rgba color string like "rgba(0, 0, 0, 0.6)"
+    """
+    if confidence is None:
+        return "rgba(0, 0, 0, 0.5)"
+    conf_str = str(confidence).lower().strip()
+    if conf_str in ("high", "h"):
+        return "rgba(0, 0, 0, 1.0)"
+    elif conf_str in ("medium", "m"):
+        return "rgba(0, 0, 0, 0.6)"
+    elif conf_str in ("low", "l"):
+        return "rgba(0, 0, 0, 0.3)"
+    else:
+        try:
+            val = float(confidence)
+            if val >= 8:
+                return "rgba(0, 0, 0, 1.0)"
+            elif val >= 5:
+                return "rgba(0, 0, 0, 0.6)"
+            else:
+                return "rgba(0, 0, 0, 0.3)"
+        except (ValueError, TypeError):
+            return "rgba(0, 0, 0, 0.5)"
+
+
 def _get_action_badge(action: str) -> str:
     """Get HTML for action badge."""
     colors = {
@@ -336,6 +372,23 @@ def create_strategic_table_config(
     **kwargs: Any,
 ) -> TableConfig:
     """Create TableConfig from simplified column definitions.
+
+    Available column configuration keys:
+        - name: Column name (must match DataFrame column)
+        - label: Display label (defaults to name)
+        - format: Format string for values (e.g., ",.0f", ".1%", ".2f")
+        - conditional_format: Callable[[Any], str] returning CSS color.
+          For confidence column, use _get_confidence_rgba() to map confidence
+          to text opacity (rgba(r,g,b,a) where a=1.0/0.6/0.3 for high/med/low).
+        - evidence_class: EvidenceClass enum (OBSERVED/ESTIMATED/CAUSAL).
+          When set, displays an evidence badge with color coding.
+        - reliability: ReliabilityLevel enum (HIGH/MEDIUM/LOW/INSUFFICIENT).
+          When set, displays a reliability badge with color coding.
+        - action: bool or str. When True or a valid action key,
+          displays an action badge with color coding.
+        - sortable: Whether the column is sortable (default True).
+        - filterable: Whether the column is filterable (default True).
+        - help: Help text displayed on hover.
 
     Args:
         columns: List of dicts with keys: name, label, format, evidence, reliability, action, etc.

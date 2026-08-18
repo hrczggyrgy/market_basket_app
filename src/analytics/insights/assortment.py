@@ -58,6 +58,10 @@ def generate_assortment_insights(
             impact_value=float(best["expected_revenue"]),
             sample_size=n_skus,
             stability=round(recovery, 3),
+            evidence_level=2,  # descriptive: assortment scenario analysis
+            n_transition_pairs=0,  # not applicable for assortment insights
+            n_unique_products=0,  # not applicable for assortment insights
+            confidence_gate=False,  # not applicable for assortment insights
         )
     )
 
@@ -75,6 +79,10 @@ def generate_assortment_insights(
                 action="Prioritize keeping unique-demand SKUs and deepen substitutes first.",
                 confidence="medium",
                 impact_value=unmet if unmet > 0 else None,
+                evidence_level=2,  # descriptive: assortment cut analysis
+                n_transition_pairs=0,  # not applicable for assortment insights
+                n_unique_products=0,  # not applicable for assortment insights
+                confidence_gate=False,  # not applicable for assortment insights
             )
         )
     else:
@@ -88,6 +96,10 @@ def generate_assortment_insights(
                 action="Proceed cautiously; validate the long tail before cutting.",
                 confidence="medium",
                 impact_value=unmet if unmet > 0 else None,
+                evidence_level=2,  # descriptive: assortment cut analysis
+                n_transition_pairs=0,  # not applicable for assortment insights
+                n_unique_products=0,  # not applicable for assortment insights
+                confidence_gate=False,  # not applicable for assortment insights
             )
         )
 
@@ -108,6 +120,10 @@ def generate_assortment_insights(
                 action="Compare against current assortment before any change.",
                 confidence="medium",
                 sample_size=n_kept,
+                evidence_level=2,  # descriptive: assortment optimization analysis
+                n_transition_pairs=0,  # not applicable for assortment insights
+                n_unique_products=0,  # not applicable for assortment insights
+                confidence_gate=False,  # not applicable for assortment insights
             )
         )
 

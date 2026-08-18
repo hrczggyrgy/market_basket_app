@@ -123,7 +123,7 @@ def build_promo_causal_panel(
     panel["log_revenue"] = np.log(panel["revenue"].replace(0, np.nan))
 
     # Add time controls
-    panel["week_num"] = panel["week"].dt.week
+    panel["week_num"] = panel["week"].dt.to_timestamp().dt.isocalendar().week.astype(int)
     panel["month"] = panel["week"].dt.month
     panel["year"] = panel["week"].dt.year
 
@@ -169,7 +169,7 @@ def estimate_twfe_promo_effect(
     # Entity = stockcode, Time = week
     panel = panel.set_index(["stockcode", "week"])
     X = X.set_index(panel.index)
-    y = y.reindex(panel.index)
+    y.index = panel.index
 
     # Run PanelOLS with entity and time effects
     model = PanelOLS(y, X, entity_effects=True, time_effects=True)

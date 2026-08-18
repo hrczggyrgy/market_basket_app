@@ -80,7 +80,13 @@ def insights_to_dataframe(insights: list[Insight]) -> pd.DataFrame:
                 "n_transition_pairs",
                 "n_unique_products",
                 "confidence_gate",
-            ]
+            ],
+            dtype={
+                "evidence_level": "Int64",
+                "n_transition_pairs": "Int64",
+                "n_unique_products": "Int64",
+                "confidence_gate": "boolean",
+            }
         )
 
     data = [
@@ -95,15 +101,22 @@ def insights_to_dataframe(insights: list[Insight]) -> pd.DataFrame:
             "sample_size": insight.sample_size,
             "stability": insight.stability,
             "action": insight.action,
-            "evidence_level": insight.evidence_level,
-            "n_transition_pairs": insight.n_transition_pairs,
-            "n_unique_products": insight.n_unique_products,
-            "confidence_gate": insight.confidence_gate,
+            "evidence_level": insight.evidence_level if insight.evidence_level is not None else 2,
+            "n_transition_pairs": insight.n_transition_pairs if insight.n_transition_pairs is not None else 0,
+            "n_unique_products": insight.n_unique_products if insight.n_unique_products is not None else 0,
+            "confidence_gate": insight.confidence_gate if insight.confidence_gate is not None else False,
         }
         for insight in insights
     ]
 
-    return pd.DataFrame(data)
+    df = pd.DataFrame(data)
+    # Ensure proper types for validation
+    df["evidence_level"] = df["evidence_level"].fillna(2).astype("Int64")
+    df["n_transition_pairs"] = df["n_transition_pairs"].fillna(0).astype("Int64")
+    df["n_unique_products"] = df["n_unique_products"].fillna(0).astype("Int64")
+    df["confidence_gate"] = df["confidence_gate"].fillna(False).astype(bool)
+
+    return df
 
 
 def opportunities_to_dataframe(opportunities: list[Opportunity]) -> pd.DataFrame:

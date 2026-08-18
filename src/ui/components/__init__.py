@@ -36,6 +36,11 @@ from src.ui.components.reliability_badge import (
     render_reliability_inline,
     render_reliability_legend,
 )
+from src.ui.components.evidence_badge import (
+    render_evidence_badge,
+    map_evidence_to_reliability,
+    map_reliability_to_evidence,
+)
 from src.ui.components.strategic_table import (
     ColumnConfig,
     EvidenceClass,
@@ -64,6 +69,10 @@ __all__ = [
     "render_reliability_legend",
     "RELIABILITY_COLORS",
     "RELIABILITY_ICONS",
+    # evidence_badge
+    "render_evidence_badge",
+    "map_evidence_to_reliability",
+    "map_reliability_to_evidence",
     # filter_bar
     "FilterConfig",
     "FilterBarConfig",

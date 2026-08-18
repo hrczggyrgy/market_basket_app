@@ -66,6 +66,10 @@ def generate_cohort_insights(df: pd.DataFrame, cohort_period: str = "M") -> pd.D
                     confidence="medium",
                     impact_value=float(size_change),
                     sample_size=int(latest["cohort_size"]),
+                    evidence_level=2,  # descriptive: cohort size trend analysis
+                    n_transition_pairs=0,  # not applicable for cohort insights
+                    n_unique_products=0,  # not applicable for cohort insights
+                    confidence_gate=False,  # not applicable for cohort insights
                 )
             )
         elif size_change > 0.1:  # Significant growth
@@ -86,6 +90,10 @@ def generate_cohort_insights(df: pd.DataFrame, cohort_period: str = "M") -> pd.D
                     confidence="medium",
                     impact_value=float(size_change),
                     sample_size=int(latest["cohort_size"]),
+                    evidence_level=2,  # descriptive: cohort size trend analysis
+                    n_transition_pairs=0,  # not applicable for cohort insights
+                    n_unique_products=0,  # not applicable for cohort insights
+                    confidence_gate=False,  # not applicable for cohort insights
                 )
             )
 
@@ -117,6 +125,10 @@ def generate_cohort_insights(df: pd.DataFrame, cohort_period: str = "M") -> pd.D
                         confidence="medium",
                         impact_value=float(retention_rate),
                         sample_size=int(latest_retention.iloc[0]["cohort_size"]),
+                        evidence_level=2,  # descriptive: cohort retention analysis
+                        n_transition_pairs=0,  # not applicable for cohort insights
+                        n_unique_products=0,  # not applicable for cohort insights
+                        confidence_gate=False,  # not applicable for cohort insights
                     )
                 )
 

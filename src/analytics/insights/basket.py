@@ -57,6 +57,10 @@ def generate_basket_insights(df: pd.DataFrame) -> pd.DataFrame:
                     confidence="medium",
                     impact_value=float(row["revenue_share"]),
                     sample_size=int(row["basket_count"]),
+                    evidence_level=2,  # descriptive: basket penetration analysis
+                    n_transition_pairs=0,  # not applicable for basket insights
+                    n_unique_products=0,  # not applicable for basket insights
+                    confidence_gate=False,  # not applicable for basket insights
                 )
             )
 
@@ -83,6 +87,10 @@ def generate_basket_insights(df: pd.DataFrame) -> pd.DataFrame:
                     confidence="medium",
                     impact_value=float(row["revenue_share"]),
                     sample_size=int(row["basket_count"]),
+                    evidence_level=2,  # descriptive: basket penetration analysis
+                    n_transition_pairs=0,  # not applicable for basket insights
+                    n_unique_products=0,  # not applicable for basket insights
+                    confidence_gate=False,  # not applicable for basket insights
                 )
             )
 

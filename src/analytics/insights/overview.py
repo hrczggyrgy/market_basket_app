@@ -150,6 +150,10 @@ def generate_overview_insights(df: pd.DataFrame) -> pd.DataFrame:
                     ),
                     confidence="high" if len(comps) >= 8 else "medium",
                     sample_size=int(curr["transactions"]),
+                    evidence_level=2,  # descriptive: historical revenue decomposition
+                    n_transition_pairs=0,  # not applicable for overview insights
+                    n_unique_products=0,  # not applicable for overview insights
+                    confidence_gate=False,  # not applicable for overview insights
                 )
             )
 
@@ -174,6 +178,10 @@ def generate_overview_insights(df: pd.DataFrame) -> pd.DataFrame:
                     confidence="high" if top_share >= _TOP_SHARE_RISK else "medium",
                     impact_value=None,
                     stability=round(hhi, 3),
+                    evidence_level=2,  # descriptive: concentration analysis
+                    n_transition_pairs=0,  # not applicable for overview insights
+                    n_unique_products=0,  # not applicable for overview insights
+                    confidence_gate=False,  # not applicable for overview insights
                 )
             )
         else:
@@ -187,6 +195,10 @@ def generate_overview_insights(df: pd.DataFrame) -> pd.DataFrame:
                     action="No concentration-driven action required; keep monitoring.",
                     confidence="high",
                     stability=round(hhi, 3),
+                    evidence_level=2,  # descriptive: concentration analysis
+                    n_transition_pairs=0,  # not applicable for overview insights
+                    n_unique_products=0,  # not applicable for overview insights
+                    confidence_gate=False,  # not applicable for overview insights
                 )
             )
 
@@ -211,6 +223,10 @@ def generate_overview_insights(df: pd.DataFrame) -> pd.DataFrame:
                     action="Investigate the anomalous weeks before extrapolating trends.",
                     confidence="medium",
                     sample_size=int(len(spc)),
+                    evidence_level=2,  # descriptive: statistical anomaly detection
+                    n_transition_pairs=0,  # not applicable for overview insights
+                    n_unique_products=0,  # not applicable for overview insights
+                    confidence_gate=False,  # not applicable for overview insights
                 )
             )
 

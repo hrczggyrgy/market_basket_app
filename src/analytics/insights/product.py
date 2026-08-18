@@ -54,6 +54,10 @@ def generate_product_insights(
                     confidence="medium",
                     impact_value=delist_rev,
                     sample_size=n_delist,
+                    evidence_level=2,  # descriptive: SKU rationalization analysis
+                    n_transition_pairs=0,  # not applicable for product insights
+                    n_unique_products=0,  # not applicable for product insights
+                    confidence_gate=False,  # not applicable for product insights
                 )
             )
         if n_review > 0:
@@ -67,6 +71,10 @@ def generate_product_insights(
                     action="Give them more observation time or a causal test before deciding.",
                     confidence="medium",
                     sample_size=n_review,
+                    evidence_level=2,  # descriptive: SKU rationalization analysis
+                    n_transition_pairs=0,  # not applicable for product insights
+                    n_unique_products=0,  # not applicable for product insights
+                    confidence_gate=False,  # not applicable for product insights
                 )
             )
 
@@ -84,6 +92,10 @@ def generate_product_insights(
                     confidence="high" if n_total >= 30 else "medium",
                     sample_size=n_total,
                     stability=round(1.0 - n_actionable / n_total, 3),
+                    evidence_level=2,  # descriptive: SKU rationalization analysis
+                    n_transition_pairs=0,  # not applicable for product insights
+                    n_unique_products=0,  # not applicable for product insights
+                    confidence_gate=False,  # not applicable for product insights
                 )
             )
 
@@ -107,6 +119,10 @@ def generate_product_insights(
                     confidence="medium",
                     impact_value=top_rev,
                     sample_size=int(len(volatile)),
+                    evidence_level=2,  # descriptive: XYZ volatility analysis
+                    n_transition_pairs=0,  # not applicable for product insights
+                    n_unique_products=0,  # not applicable for product insights
+                    confidence_gate=False,  # not applicable for product insights
                 )
             )
 
@@ -131,6 +147,10 @@ def generate_product_insights(
                     confidence="medium",
                     impact_value=decline_rev,
                     sample_size=int(len(declining)),
+                    evidence_level=2,  # descriptive: lifecycle analysis
+                    n_transition_pairs=0,  # not applicable for product insights
+                    n_unique_products=0,  # not applicable for product insights
+                    confidence_gate=False,  # not applicable for product insights
                 )
             )
 

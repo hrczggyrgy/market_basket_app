@@ -75,6 +75,10 @@ def generate_cdt_insights(df: pd.DataFrame, max_depth: int = 3) -> pd.DataFrame:
                 confidence="medium",
                 impact_value=float(largest_leaf.get("size", 0)),
                 sample_size=int(largest_leaf.get("size", 0)),
+                evidence_level=2,  # descriptive: CDT grouping analysis
+                n_transition_pairs=0,  # not applicable for CDT insights
+                n_unique_products=0,  # not applicable for CDT insights
+                confidence_gate=False,  # not applicable for CDT insights
             )
         )
 
@@ -96,6 +100,10 @@ def generate_cdt_insights(df: pd.DataFrame, max_depth: int = 3) -> pd.DataFrame:
                 ),
                 action="Check data quality and consider increasing max_depth if appropriate.",
                 confidence="medium",
+                evidence_level=2,  # descriptive: CDT tree structure analysis
+                n_transition_pairs=0,  # not applicable for CDT insights
+                n_unique_products=0,  # not applicable for CDT insights
+                confidence_gate=False,  # not applicable for CDT insights
             )
         )
 

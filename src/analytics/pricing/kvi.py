@@ -193,7 +193,18 @@ def _kvi_heuristic(
 
     # Weights: penetration (0.30), revenue (0.25), elasticity (0.15),
     # customer reach (0.10), revenue-per-customer / customer value (0.20).
-    weights = np.array([0.30, 0.25, 0.15, 0.10, 0.20])[: len(feature_cols)]
+    # Map weights by feature name and renormalize available weights.
+    weight_map = {
+        "basket_penetration": 0.30,
+        "total_revenue": 0.25,
+        "abs_elasticity": 0.15,
+        "customers": 0.10,
+        "revenue_per_customer": 0.20,
+    }
+    available_weights = {k: v for k, v in weight_map.items() if k in feature_cols}
+    if not available_weights:
+        available_weights = {k: v for k, v in weight_map.items()}
+    weights = np.array(list(available_weights.values()))
     weights = weights / weights.sum()
 
     features["kvi_score"] = X_scaled @ weights

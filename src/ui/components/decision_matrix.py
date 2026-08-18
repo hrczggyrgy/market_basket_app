@@ -2,6 +2,12 @@
 
 A heatmap-style matrix with numeric backing for proper color scaling
 and text annotations for actions. Supports 2D strategic matrices.
+
+Decision Confidence System:
+- Bubble position  = analytical result value (x/y axis)
+- Bubble size      = economic impact (revenue units)
+- Bubble opacity   = evidence confidence (HIGH=opaque, MEDIUM=semi-transparent, LOW=faint)
+- Evidence class   = OBSERVED/ESTIMATED/CAUSAL (integrated with evidence badge convention)
 """
 
 from __future__ import annotations
@@ -13,6 +19,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from src.ui.components.strategic_table import EvidenceClass
 from src.ui.plots import PALETTE, new_fig, show
 
 
@@ -31,9 +38,156 @@ class MatrixConfig:
     colorscale: Optional[list] = None  # Custom colorscale
     colorbar_title: str = "Value"
     height: int = 400
-    size_col: Optional[str] = None  # Optional bubble size column
+    size_col: Optional[str] = None  # Optional bubble size column (economic impact/revenue)
     color_col: Optional[str] = None  # Optional color category column
     color_map: Optional[dict] = None  # Mapping for color_col
+    evidence_col: Optional[str] = None  # Column for evidence class (OBSERVED/ESTIMATED/CAUSAL)
+    confidence_col: Optional[str] = None  # Column for confidence level (HIGH/MEDIUM/LOW)
+
+
+def _confidence_opacity(confidence: str) -> float:
+    """Map confidence level to bubble opacity alpha.
+
+    Uses the same scale as strategic_table._get_confidence_rgba():
+    HIGH   -> 1.0 (opaque)
+    MEDIUM -> 0.6 (semi-transparent)
+    LOW    -> 0.3 (faint/transparent)
+
+    Args:
+        confidence: Confidence level string ("high", "medium", "low", or abbreviations "h", "m", "l")
+
+    Returns:
+        Alpha value in [0.0, 1.0] for Plotly marker opacity
+    """
+    conf_str = str(confidence).lower().strip()
+    if conf_str in ("high", "h"):
+        return 1.0
+    elif conf_str in ("medium", "m"):
+        return 0.6
+    elif conf_str in ("low", "l"):
+        return 0.3
+    else:
+        return 0.6
+
+
+def _apply_confidence_mixin(
+    fig: go.Figure,
+    df: pd.DataFrame,
+    config: MatrixConfig,
+    opacity_col: str,
+    default_opacity: float = 0.6,
+    customdata_col_names: Optional[list[str]] = None,
+) -> go.Figure:
+    """Apply confidence-based opacity to matrix figure traces.
+
+    Modifies marker opacity on Scatter traces based on a confidence column.
+    If opacity_col is set and present in df, each trace's markers receive
+    per-point opacity; otherwise all markers use default_opacity.
+
+    Args:
+        fig: Plotly Figure to modify
+        df: DataFrame with matrix data
+        config: MatrixConfig with column mappings
+        opacity_col: Column name containing confidence levels
+        default_opacity: Fallback opacity if opacity_col is unavailable
+        customdata_col_names: Optional list of customdata column names
+            (e.g., hover_cols) for index-based lookup
+
+    Returns:
+        Modified Plotly Figure with confidence-based opacity applied
+    """
+    if not opacity_col or opacity_col not in df.columns:
+        for trace in fig.data:
+            if hasattr(trace, "marker") and trace.marker:
+                trace.marker.opacity = default_opacity
+        return fig
+
+    for trace in fig.data:
+        if not hasattr(trace, "marker") or not trace.marker:
+            continue
+
+        customdata = trace.customdata
+        if customdata is None:
+            trace.marker.opacity = default_opacity
+            continue
+
+        # Find the column index of opacity_col within customdata
+        col_idx: Optional[int] = None
+        if customdata_col_names:
+            try:
+                col_idx = customdata_col_names.index(opacity_col)
+            except ValueError:
+                col_idx = None
+        if col_idx is None:
+            try:
+                col_idx = list(df.columns).index(opacity_col)
+            except ValueError:
+                col_idx = -1
+
+        if col_idx is not None and 0 <= col_idx < customdata.shape[1]:
+            conf_values = customdata[:, col_idx]
+            opacities: list[float] = []
+            for cv in conf_values:
+                try:
+                    cv_str = str(cv).lower().strip()
+                    opacities.append(_confidence_opacity(cv_str))
+                except Exception:
+                    opacities.append(default_opacity)
+            trace.marker.opacity = opacities  # type: ignore[attr-mis]
+        else:
+            trace.marker.opacity = default_opacity
+
+    return fig
+
+
+def _render_with_confidence(
+    fig: go.Figure,
+    df: pd.DataFrame,
+    config: MatrixConfig,
+) -> go.Figure:
+    """Render-time confidence system mixin.
+
+    Applies confidence-based opacity and evidence class color mapping
+    to a matrix figure. Integrates with the evidence badge convention
+    from strategic_table.py.
+
+    Args:
+        fig: Plotly Figure from the matrix renderer
+        df: DataFrame with matrix data
+        config: MatrixConfig with column mappings
+
+    Returns:
+        Modified Plotly Figure with confidence system applied
+    """
+    # Apply confidence-based opacity
+    if config.confidence_col and config.confidence_col in df.columns:
+        fig = _apply_confidence_mixin(fig, df, config, config.confidence_col)
+    else:
+        for trace in fig.data:
+            if hasattr(trace, "marker") and trace.marker:
+                trace.marker.opacity = 0.6
+
+    # Apply evidence class color mapping if evidence_col is set
+    if config.evidence_col and config.evidence_col in df.columns:
+        evidence_color_map = {
+            EvidenceClass.OBSERVED: "#59A14F",
+            EvidenceClass.ESTIMATED: "#F28E2B",
+            EvidenceClass.CAUSAL: "#E15759",
+        }
+        for trace in fig.data:
+            if not hasattr(trace, "marker") or not trace.marker:
+                continue
+            if hasattr(trace, "customdata") and trace.customdata is not None:
+                ev_colors: list[str] = []
+                for i in range(min(trace.customdata.shape[0], len(df))):
+                    try:
+                        ev_val = str(trace.customdata[i]).strip()
+                        ev_colors.append(evidence_color_map.get(ev_val, PALETTE[0]))
+                    except Exception:
+                        ev_colors.append(PALETTE[0])
+                trace.marker.color = ev_colors  # type: ignore[attr-mis]
+
+    return fig
 
 
 def render_decision_matrix(
@@ -150,6 +304,7 @@ def render_bubble_matrix(
     add_quadrant_lines: bool = False,
     x_ref: Optional[float] = None,
     y_ref: Optional[float] = None,
+    config: Optional[MatrixConfig] = None,
 ) -> None:
     """Render a bubble scatter matrix (like BCG matrix).
 
@@ -157,7 +312,7 @@ def render_bubble_matrix(
         df: DataFrame with data
         x: X-axis column
         y: Y-axis column
-        size: Bubble size column
+        size: Bubble size column (economic impact / revenue units)
         color: Color category column
         text: Text label column
         hover_cols: Additional columns for hover
@@ -171,12 +326,19 @@ def render_bubble_matrix(
         add_quadrant_lines: Add median reference lines
         x_ref: X reference line value
         y_ref: Y reference line value
+        config: Optional MatrixConfig for confidence/evidence integration
     """
     if df.empty:
         st.info("No data for matrix")
         return
 
     fig = new_fig(height=height)
+
+    # Determine opacity base value
+    base_opacity = 0.8
+    if config and config.confidence_col:
+        # Per-point opacity will be applied by the mixin after trace creation
+        base_opacity = 0.8
 
     if color_map and color in df.columns:
         for cat, cat_df in df.groupby(color):
@@ -192,7 +354,7 @@ def render_bubble_matrix(
                         "sizeref": 2.0 * max(cat_df[size]) / (size_max**2),
                         "sizemin": 4,
                         "color": cat_color,
-                        "opacity": 0.8,
+                        "opacity": base_opacity,
                         "line": {"width": 1, "color": "white"},
                     },
                     text=cat_df[text],
@@ -222,7 +384,7 @@ def render_bubble_matrix(
                     "sizeref": 2.0 * max(df[size]) / (size_max**2),
                     "sizemin": 4,
                     "color": PALETTE[0],
-                    "opacity": 0.8,
+                    "opacity": base_opacity,
                     "line": {"width": 1, "color": "white"},
                 },
                 text=df[text],
@@ -238,6 +400,13 @@ def render_bubble_matrix(
                     ]
                 ),
             )
+        )
+
+    # Apply confidence mixin after all traces are created
+    if config:
+        fig = _apply_confidence_mixin(
+            fig, df, config, config.confidence_col,
+            customdata_col_names=hover_cols,
         )
 
     if add_quadrant_lines:

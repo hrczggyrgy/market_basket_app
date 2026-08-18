@@ -1,12 +1,20 @@
-"""Association Rules tab."""
+"""Association Rules tab — five-layer redesign.
+
+Rule Opportunity Matrix (lift × revenue opportunity quadrants)
+Top basket missions ranked by incremental basket value
+Cross-sell opportunity matrix (anchor × add-on = expected incremental revenue)
+Manager table (anchor | add-on | lift | support | revenue opportunity | evidence | action)
+Product Decision Profile integration for rule-level data
+"""
 
 from __future__ import annotations
 
-import networkx as nx
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from src.analytics.profile_service import init_profile_service, get_profile, ProfileService
 from src.analytics.rules import (
     aggregate_rules_to_categories,
     bootstrap_lift_ci,
@@ -16,6 +24,9 @@ from src.analytics.rules import (
     rules_to_table,
     run_fpgrowth,
 )
+from src.analytics.intelligence import Opportunity, insights_to_dataframe, opportunities_to_dataframe
+from src.analytics.opportunities.cross_sell import generate_cross_sell_opportunities
+from src.analytics.schemas import check
 from src.ui.features import get_basket_matrix, get_product_lookup
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
@@ -25,236 +36,456 @@ def _rule_label(antecedent: str, consequent: str) -> str:
     return f"{antecedent}  →  {consequent}"
 
 
-def _render_lift_ci_chart(rules: pd.DataFrame, table: pd.DataFrame, top_n: int) -> None:
-    st.subheader(":material/error: Lift with Bootstrap Confidence Intervals")
-    with_ci = rules[rules["lift_ci_lower"].notna()]
-    if with_ci.empty:
-        st.info("No rules have a valid bootstrap CI at current settings.")
+def _compute_incremental_basket_value(
+    row: pd.Series,
+    revenue_by_product: dict[str, float],
+    basket: pd.DataFrame,
+) -> float:
+    """Compute incremental basket value for a rule.
+
+    Incremental basket value = (lift - 1) × antecedent_revenue_per_basket ×
+    antecedent_penetration. This measures the actual revenue impact of the
+    rule, not just the lift magnitude.
+    """
+    # Antecedent revenue per basket
+    ante_rev = 0.0
+    for sid in row["antecedents"]:
+        if sid in revenue_by_product:
+            ante_rev += revenue_by_product[sid]
+
+    ante_count = len(row["antecedents"])
+    if ante_count > 0:
+        ante_rev_per_item = ante_rev / ante_count
+    else:
+        ante_rev_per_item = 0.0
+
+    # Support = % of baskets containing antecedent
+    ante_support = row["support"]
+
+    # Incremental value: (lift - 1) × revenue × support
+    lift_impact = max(row["lift"] - 1.0, 0.0)
+    incremental = lift_impact * ante_rev_per_item * ante_support
+    return round(incremental, 4)
+
+
+def _quadrant_label(lift: float, support: float, lift_median: float, support_median: float) -> str:
+    """Classify a rule into one of four opportunity quadrants."""
+    high_lift = lift >= lift_median
+    high_support = support >= support_median
+
+    if high_lift and high_support:
+        return "scale"
+    elif high_lift and not high_support:
+        return "optimize"
+    elif not high_lift and high_support:
+        return "rethink"
+    else:
+        return "stop"
+
+
+def _render_rule_opportunity_matrix(
+    rules: pd.DataFrame,
+    revenue_by_product: dict[str, float],
+    basket: pd.DataFrame,
+) -> None:
+    """Render the Rule Opportunity Matrix with 4 quadrants."""
+    st.subheader(":material/quadrin: Rule Opportunity Matrix")
+
+    if rules.empty:
+        st.info("No rules to classify into opportunity quadrants.")
         return
 
-    chart_rules = with_ci.nlargest(top_n, "lift")
-    labels = [
-        _rule_label(table.loc[idx, "antecedent"], table.loc[idx, "consequent"])
-        for idx in chart_rules.index
-    ]
-
-    fig = new_fig()
-    fig.add_trace(
-        go.Bar(
-            x=labels[::-1],
-            y=chart_rules["lift"].values[::-1],
-            error_y={
-                "array": (chart_rules["lift_ci_upper"] - chart_rules["lift"]).values[::-1],
-                "arrayminus": (chart_rules["lift"] - chart_rules["lift_ci_lower"]).values[::-1],
-                "type": "data",
-                "thickness": 1.2,
-            },
-            marker={"color": PALETTE[0]},
-            name="Lift",
-            orientation="h",
-        )
+    # Compute medians for quadrant splits
+    lift_median = rules["lift"].median()
+    # Use incremental basket value support proxy: support × revenue
+    # Compute a support-like metric weighted by revenue
+    rules_with_val = rules.copy()
+    rules_with_val["incr_value"] = rules_with_val.apply(
+        lambda r: _compute_incremental_basket_value(r, revenue_by_product, basket),
+        axis=1,
     )
-    fig.update_layout(
-        yaxis={"categoryorder": "array", "categoryarray": labels[::-1]},
-        xaxis={"title": "Lift"},
-        height=max(360, 28 * len(labels)),
-    )
-    show(fig)
+    support_median = rules_with_val["incr_value"].median()
 
-
-def _render_strength_stability_scatter(rules: pd.DataFrame, table: pd.DataFrame) -> None:
-    """Scatter: Lift (strength) vs CI Width (stability)."""
-    st.subheader(":material/analytics: Rule Strength vs Stability")
-    with_ci = rules[rules["lift_ci_lower"].notna() & rules["lift_ci_upper"].notna()].copy()
-    if with_ci.empty:
-        st.info("No rules have valid bootstrap confidence intervals at current settings.")
-        return
-
-    with_ci["ci_width"] = with_ci["lift_ci_upper"] - with_ci["lift_ci_lower"]
-
-    # Add antecedent category for coloring
-    def get_first_antecedent(itemset: frozenset[str]) -> str | None:
-        if itemset:
-            return sorted(itemset)[0]
-        return None
-
-    with_ci["anchor"] = with_ci["antecedents"].apply(get_first_antecedent)
-    with_ci = with_ci[with_ci["anchor"].notna()]
-
-    if with_ci.empty:
-        st.info("No rules with identifiable anchors.")
-        return
-
-    # Build a simple label for each rule
-    with_ci["rule_label"] = with_ci.apply(
-        lambda r: f"{list(r['antecedents'])[0]} → {list(r['consequents'])[0]}", axis=1
+    # Assign quadrants
+    rules_with_val["quadrant"] = rules_with_val.apply(
+        lambda r: _quadrant_label(
+            float(r["lift"]), float(r["incr_value"]), float(lift_median), float(support_median)
+        ),
+        axis=1,
     )
 
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=with_ci["lift"],
-            y=with_ci["ci_width"],
-            mode="markers",
-            marker={
-                "size": 10,
-                "color": with_ci["lift"],
-                "colorscale": "Viridis",
-                "showscale": True,
-                "colorbar": {"title": "Lift"},
-                "line": {"color": "white", "width": 1},
-            },
-            text=with_ci["rule_label"],
-            hovertemplate="Rule: %{text}<br>Lift: %{x:.2f}<br>CI Width: %{y:.3f}<extra></extra>",
-            name="Rules",
-        )
-    )
+    quadrants = {"scale": [], "optimize": [], "rethink": [], "stop": []}
+    for _, row in rules_with_val.iterrows():
+        q = row["quadrant"]
+        if q in quadrants:
+            quadrants[q].append(
+                {
+                    "rule": _rule_label(
+                        str(row["antecedent"]), str(row["consequent"])
+                    ),
+                    "lift": float(row["lift"]),
+                    "incr_value": float(row["incr_value"]),
+                    "antecedent": str(row["antecedent"]),
+                    "consequent": str(row["consequent"]),
+                }
+            )
 
-    # Add quadrant lines (median splits)
-    med_lift = with_ci["lift"].median()
-    med_ci = with_ci["ci_width"].median()
-    fig.add_hline(y=med_ci, line_dash="dash", line_color="gray", annotation_text="Median CI Width")
-    fig.add_vline(x=med_lift, line_dash="dash", line_color="gray", annotation_text="Median Lift")
-
-    fig.update_layout(
-        xaxis={"title": "Lift (Strength)"},
-        yaxis={"title": "CI Width (Stability) — lower = more stable"},
-        height=450,
-    )
-    show(fig)
-
-    st.caption(
-        "Quadrants: High Lift + Low CI Width (bottom-right) = Strong & Stable. "
-        "High Lift + High CI Width (top-right) = Strong but Uncertain. "
-        "Color = Lift magnitude."
-    )
-
-
-def _render_anchor_drilldown(df: pd.DataFrame, rules: pd.DataFrame, table: pd.DataFrame) -> None:
-    st.subheader(":material/filter_center_focus: Anchor Product Drill-down")
-    products = sorted(set(rules["antecedents"].explode()) | set(rules["consequents"].explode()))
-    if not products:
-        st.info("No rules available for drill-down.")
-        return
-
-    lookup = get_product_lookup(df)
-    display_options = {
-        str(lookup.loc[lookup["stockcode"] == p, "product"].iloc[0])
-        if (lookup["stockcode"] == p).any()
-        else p: p
-        for p in products
+    # Display quadrants
+    col_labels = {
+        "scale": ":green[Scale — High lift + High incremental value]",
+        "optimize": ":orange[Optimize — High lift + Medium incremental value]",
+        "rethink": ":blue[Rethink — Medium lift + High incremental value]",
+        "stop": ":red[Stop — Low lift + Low incremental value]",
     }
 
-    selected = st.selectbox("Select anchor product", options=list(display_options.keys()))
-    anchor = display_options[selected]
+    for q_name in ["scale", "optimize", "rethink", "stop"]:
+        q_data = quadrants[q_name]
+        if not q_data:
+            st.info(f"No rules in the **{q_name}** quadrant.")
+            continue
 
-    related = rules[
-        rules["antecedents"].apply(lambda s: anchor in s)
-        | rules["consequents"].apply(lambda s: anchor in s)
-    ]
-    if related.empty:
-        st.info(f"No rules involve {selected}.")
-        return
-
-    labels = [
-        _rule_label(table.loc[idx, "antecedent"], table.loc[idx, "consequent"])
-        for idx in related.index
-    ]
-
-    fig = new_fig()
-    fig.add_trace(
-        go.Bar(
-            x=labels,
-            y=related["lift"],
-            marker={
-                "color": [PALETTE[1] if anchor in r else PALETTE[0] for r in related["antecedents"]]
-            },
-            name="Lift",
-        )
-    )
-    fig.update_layout(xaxis={"tickangle": -30}, yaxis={"title": "Lift"})
-    show(fig)
+        with st.expander(f"**{q_name.title()}** ({len(q_data)} rules)", expanded=q_name == "scale"):
+            st.caption(q_labels[q_name])
+            for r in q_data:
+                st.write(
+                    f"- **{r['rule']}** — Lift: {r['lift']:.2f}x, "
+                    f"Incremental value: ${r['incr_value']:.4f}"
+                )
 
 
-def _render_rule_network(df: pd.DataFrame, rules: pd.DataFrame, top_n: int) -> None:
-    st.subheader(":material/hub: Rule Network")
+def _render_top_basket_missions(
+    rules: pd.DataFrame,
+    revenue_by_product: dict[str, float],
+    basket: pd.DataFrame,
+    top_n: int = 20,
+) -> None:
+    """Render top basket missions ranked by incremental basket value."""
+    st.subheader(":material/star: Top Basket Missions")
+
     if rules.empty:
-        show(empty_state("No rules to display"))
+        st.info("No rules to rank as basket missions.")
         return
 
-    top = rules.nlargest(top_n, "lift")
+    # Compute incremental basket value for each rule
+    rules_with_val = rules.copy()
+    rules_with_val["incr_value"] = rules_with_val.apply(
+        lambda r: _compute_incremental_basket_value(r, revenue_by_product, basket),
+        axis=1,
+    )
+
+    # Rank by incremental value descending
+    ranked = rules_with_val.nlargest(top_n, "incr_value")
+
+    # Build display table
+    mission_rows = []
+    for _, row in ranked.iterrows():
+        ante = str(row["antecedent"])
+        cons = str(row["consequent"])
+        lift = float(row["lift"])
+        support = float(row["support"])
+        incr = float(row["incr_value"])
+        mission_rows.append(
+            {
+                "Rank": len(mission_rows) + 1,
+                "Rule": _rule_label(ante, cons),
+                "Lift": f"{lift:.2f}x",
+                "Support": f"{support:.2%}",
+                "Incremental Value": f"${incr:.4f}",
+                "Antecedent": ante,
+                "Consequent": cons,
+            }
+        )
+
+    if mission_rows:
+        mission_df = pd.DataFrame(mission_rows)
+        st.dataframe(mission_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No basket missions could be ranked.")
+
+
+def _render_cross_sell_opportunity_matrix(
+    rules: pd.DataFrame,
+    df: pd.DataFrame,
+    top_n: int = 20,
+) -> None:
+    """Render cross-sell opportunity matrix showing expected incremental revenue per anchor×add-on pair."""
+    st.subheader(":material/add_cross: Cross-Sell Opportunity Matrix")
+
+    if rules.empty:
+        st.info("No rules available for cross-sell analysis.")
+        return
+
+    # Build basket matrix and revenue lookup
     basket = get_basket_matrix(df)
-    product_support = basket.mean(axis=0)
+    product_lookup = get_product_lookup(df)
 
-    graph = nx.DiGraph()
-    for _, row in top.iterrows():
-        for a in row["antecedents"]:
-            for c in row["consequents"]:
-                if a != c:
-                    graph.add_edge(a, c, lift=row["lift"], support=row["support"])
+    # Compute revenue by product
+    revenue_by_product: dict[str, float] = {}
+    if "price" in df.columns and "quantity" in df.columns:
+        rev_series = df.groupby("stockcode").apply(
+            lambda x: float((x["price"] * x["quantity"]).sum()), include_groups=False
+        )
+        revenue_by_product = {
+            str(k): v for k, v in rev_series.items()
+        }
 
-    if graph.number_of_nodes() == 0:
-        show(empty_state("No connected rules"))
+    # Use cross_sell module with addon recommendations derived from rules
+    # Build addon_df from rules: anchor → addon with lift/support
+    addon_rows = []
+    for _, rule in rules.head(100).iterrows():
+        # Use consequents as add-ons for each antecedent
+        for addon in rule["consequents"]:
+            anchor_str = (
+                str(rule["antecedents"]).strip("{}")
+                .replace("frozenset", "")
+                .replace("'", "")
+                .replace(", ", "+")
+                .replace(" ", "")
+                or "unknown"
+            )
+            addon_rows.append(
+                {
+                    "anchor": anchor_str,
+                    "addon": str(addon).strip("'"),
+                    "lift": float(rule["lift"]),
+                    "support": float(rule["support"]),
+                }
+            )
+
+    if addon_rows:
+        addon_df = pd.DataFrame(addon_rows)
+        # Aggregate: for each unique anchor→addon pair, take max lift and total support
+        addon_df = (
+            addon_df.groupby(["anchor", "addon"])
+            .agg(max_lift=("lift", "max"), total_support=("support", "sum"))
+            .reset_index()
+        )
+        addon_df = addon_df.sort_values("max_lift", ascending=False).head(top_n)
+
+        # Compute expected incremental revenue for each pair
+        matrix_rows = []
+        for _, row in addon_df.iterrows():
+            anchor = row["anchor"]
+            addon = row["addon"]
+            lift = row["max_lift"]
+            support = row["total_support"]
+
+            # Expected incremental revenue
+            if anchor in revenue_by_product:
+                anchor_rev = float(revenue_by_product[anchor])
+                # Every 1% of anchor basket that attaches addon → (lift-1) × revenue
+                value = round(anchor_rev * support * max(lift - 1.0, 0.0), 2)
+            else:
+                value = 0.0
+
+            matrix_rows.append(
+                {
+                    "Anchor": anchor,
+                    "Add-on": addon,
+                    "Lift": f"{lift:.2f}x",
+                    "Support": f"{support:.2%}",
+                    "Expected Incremental Revenue": f"${value:.2f}",
+                    "Rationale": f"Lift {lift:.1f}x, Support {support:.1%} of anchor baskets",
+                }
+            )
+
+        if matrix_rows:
+            matrix_df = pd.DataFrame(matrix_rows)
+            st.dataframe(matrix_df, use_container_width=True, hide_index=True)
+
+            # Summary chart
+            st.caption(
+                f"Showing top {len(matrix_rows)} anchor×add-on pairs sorted by expected incremental revenue"
+            )
+        else:
+            st.info("No cross-sell opportunities found.")
+    else:
+        st.info("No rule-derived add-on recommendations available.")
+
+
+def _render_manager_table(
+    rules: pd.DataFrame,
+    df: pd.DataFrame,
+    revenue_by_product: dict[str, float],
+    basket: pd.DataFrame,
+    profile_service: ProfileService | None,
+) -> None:
+    """Render the manager decision table with all required columns.
+
+    Columns: anchor | add-on | lift | support | revenue opportunity | evidence | action
+    Action includes "Do not act" option.
+    """
+    st.subheader(":material/clipboard: Manager Decision Table")
+
+    if rules.empty:
+        st.info("No rules to display in manager table.")
         return
 
-    pos = nx.spring_layout(graph, seed=42, k=0.6)
-
-    edge_x: list[float] = []
-    edge_y: list[float] = []
-    for u, v in graph.edges():
-        x0, y0 = pos[u]
-        x1, y1 = pos[v]
-        edge_x += [x0, x1, float("nan")]
-        edge_y += [y0, y1, float("nan")]
-
-    edge_trace = go.Scatter(
-        x=edge_x,
-        y=edge_y,
-        mode="lines",
-        line={"color": "#B0B0B0", "width": 1},
-        hoverinfo="none",
+    # Compute incremental basket value for each rule
+    rules_with_val = rules.copy()
+    rules_with_val["incr_value"] = rules_with_val.apply(
+        lambda r: _compute_incremental_basket_value(r, revenue_by_product, basket),
+        axis=1,
     )
 
-    node_x = [pos[n][0] for n in graph.nodes()]
-    node_y = [pos[n][1] for n in graph.nodes()]
-    node_sizes = [6 + 18 * product_support.get(n, 0) for n in graph.nodes()]
-    node_text = [n for n in graph.nodes()]
+    # Build product lookup for display names
+    lookup = get_product_lookup(df)
 
-    node_trace = go.Scatter(
-        x=node_x,
-        y=node_y,
-        mode="markers+text",
-        text=node_text,
-        textposition="bottom center",
-        marker={
-            "size": node_sizes,
-            "color": PALETTE[0],
-            "line": {"color": "white", "width": 1},
-        },
-        hoverinfo="text",
-    )
+    # Build manager table rows
+    manager_rows = []
+    for idx, row in rules_with_val.iterrows():
+        antecedent = str(row["antecedents"])
+        consequent = str(row["consequents"])
+        lift = float(row["lift"])
+        support = float(row["support"])
+        incr_value = float(row["incr_value"])
 
-    fig = new_fig()
-    fig.add_trace(edge_trace)
-    fig.add_trace(node_trace)
-    fig.update_layout(
-        xaxis={"visible": False},
-        yaxis={"visible": False},
-        showlegend=False,
-    )
-    show(fig)
+        # Get product names for display
+        ante_name = (
+            lookup.loc[lookup["stockcode"] == antecedent.split()[0], "product"].iloc[0]
+            if lookup is not None and antecedent != "unknown"
+            else antecedent
+        )
+        cons_name = (
+            lookup.loc[lookup["stockcode"] == consequent.split()[0], "product"].iloc[0]
+            if lookup is not None and consequent != "unknown"
+            else consequent
+        )
+
+        # Evidence: lift magnitude + support confidence
+        evidence = f"Lift {lift:.2f}x, Support {support:.1%} of baskets"
+
+        # Revenue opportunity label
+        if incr_value > 0:
+            revenue_label = f"${incr_value:.4f} incremental per anchor basket"
+        else:
+            revenue_label = "Minimal revenue impact"
+
+        # Action options - include "Do not act"
+        action = st.selectbox(
+            f"Action for {ante_name} → {cons_name}",
+            options=["Proceed", "Test bundle", "Monitor only", "Do not act"],
+            key=f"action_{idx}",
+            index=0,
+        )
+
+        manager_rows.append(
+            {
+                "Anchor": ante_name,
+                "Add-on": cons_name,
+                "Lift": f"{lift:.2f}x",
+                "Support": f"{support:.2%}",
+                "Revenue Opportunity": revenue_label,
+                "Evidence": evidence,
+                "Action": action,
+            }
+        )
+
+    if manager_rows:
+        manager_df = pd.DataFrame(manager_rows)
+        st.dataframe(
+            manager_df,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        # Summary: count of each action
+        st.caption(
+            f"Total rules: {len(manager_rows)} | "
+            f"Do not act: {sum(1 for r in manager_rows if r['Action'] == 'Do not act')} | "
+            f"Proceed: {sum(1 for r in manager_rows if r['Action'] == 'Proceed')} | "
+            f"Test bundle: {sum(1 for r in manager_rows if r['Action'] == 'Test bundle')} | "
+            f"Monitor only: {sum(1 for r in manager_rows if r['Action'] == 'Monitor only')}"
+        )
+    else:
+        st.info("No manager table rows to display.")
+
+
+def _integrate_product_profile(
+    rules: pd.DataFrame,
+    df: pd.DataFrame,
+    profile_service: ProfileService,
+) -> pd.DataFrame:
+    """Integrate Product Decision Profile data into rules DataFrame.
+
+    Adds profile fields per-SKU to each rule for manager decision support.
+    """
+    if rules.empty:
+        return rules
+
+    # Ensure profile service is initialized
+    if profile_service is None:
+        profile_service = init_profile_service(df)
+
+    # Enrich each rule with profile data for antecedent and consequent SKUs
+    enriched_rows = []
+    for _, rule in rules.iterrows():
+        row_dict = {"antecedents": rule["antecedents"], "consequents": rule["consequents"]}
+
+        # Get profile for first antecedent SKU
+        ante_sku = sorted(rule["antecedents"])[0] if rule["antecedents"] else None
+        con_sku = sorted(rule["consequents"])[0] if rule["consequents"] else None
+
+        if ante_sku:
+            try:
+                ante_profile = profile_service.get_profile(str(ante_sku))
+                row_dict["ante_revenue"] = ante_profile.get("revenue", 0.0)
+                row_dict["ante_abc"] = ante_profile.get("abc", "C")
+                row_dict["ante_xyz"] = ante_profile.get("xyz", "Z")
+            except Exception:
+                row_dict["ante_revenue"] = 0.0
+                row_dict["ante_abc"] = "C"
+                row_dict["ante_xyz"] = "Z"
+        else:
+            row_dict["ante_revenue"] = 0.0
+            row_dict["ante_abc"] = "C"
+            row_dict["ante_xyz"] = "Z"
+
+        if con_sku:
+            try:
+                con_profile = profile_service.get_profile(str(con_sku))
+                row_dict["con_revenue"] = con_profile.get("revenue", 0.0)
+                row_dict["con_abc"] = con_profile.get("abc", "C")
+                row_dict["con_xyz"] = con_profile.get("xyz", "Z")
+            except Exception:
+                row_dict["con_revenue"] = 0.0
+                row_dict["con_abc"] = "C"
+                row_dict["con_xyz"] = "Z"
+        else:
+            row_dict["con_revenue"] = 0.0
+            row_dict["con_abc"] = "C"
+            row_dict["con_xyz"] = "Z"
+
+        enriched_rows.append(row_dict)
+
+    enriched_df = pd.DataFrame(enriched_rows)
+    return pd.concat([rules.reset_index(drop=True), enriched_df], axis=1)
 
 
 def render(df: pd.DataFrame) -> None:
+    """Render the five-layer Rules tab.
+
+    Five layers:
+    1. Rule Opportunity Matrix — 4 quadrants (scale/optimize/rethink/stop)
+    2. Top basket missions ranked by incremental basket value
+    3. Cross-sell opportunity matrix (anchor × add-on = expected incremental revenue)
+    4. Manager table (anchor | add-on | lift | support | revenue opportunity | evidence | action)
+    5. Product Decision Profile integration for rule-level data
+    """
     st.subheader(":material/schema: Association Rules (FP-Growth)")
 
+    # Initialize profile service
+    profile_service = init_profile_service(df)
+
     with st.expander("Parameters", expanded=True):
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3, c4, c5 = st.columns(5)
         min_support = c1.number_input("Min Support", 0.001, 0.5, 0.01, 0.001)
         max_len = c2.number_input("Max Itemset Length", 2, 5, 3)
         min_threshold = c3.number_input("Min Confidence", 0.01, 1.0, 0.05, 0.01)
         n_bootstrap = c4.number_input("Bootstrap Resamples", 5, 100, 25, 5)
+        top_n_missions = c5.number_input("Top Missions to Show", 5, 50, 20, 5)
 
+    # Build basket matrix and compute rules
     basket = get_basket_matrix(df)
     st.caption(f"Basket matrix: {basket.shape[0]} transactions × {basket.shape[1]} products")
 
@@ -279,7 +510,63 @@ def render(df: pd.DataFrame) -> None:
         filtered = flag_redundant_rules(filtered)
         filtered = bootstrap_lift_ci(df, filtered, n_resamples=n_bootstrap)
 
+        # Integrate Product Decision Profile
+        enriched = _integrate_product_profile(filtered, df, profile_service)
+
+        # Build revenue lookup
+        revenue_by_product: dict[str, float] = {}
+        if "price" in df.columns and "quantity" in df.columns:
+            rev_series = df.groupby("stockcode").apply(
+                lambda x: float((x["price"] * x["quantity"]).sum()), include_groups=False
+            )
+            revenue_by_product = {
+                str(k): v for k, v in rev_series.items()
+            }
+
         lookup = get_product_lookup(df)
+
+        # === Layer 1: Rule Opportunity Matrix ===
+        st.divider()
+        _render_rule_opportunity_matrix(filtered, revenue_by_product, basket)
+
+        # === Layer 2: Top basket missions ranked by incremental basket value ===
+        st.divider()
+        _render_top_basket_missions(filtered, revenue_by_product, basket, top_n=int(top_n_missions))
+
+        # === Layer 3: Cross-sell opportunity matrix ===
+        st.divider()
+        _render_cross_sell_opportunity_matrix(filtered, df, top_n=int(top_n_missions))
+
+        # === Layer 4: Manager table ===
+        st.divider()
+        _render_manager_table(filtered, df, revenue_by_product, basket, profile_service)
+
+        # === Layer 5: Product Decision Profile integration ===
+        st.divider()
+        st.subheader(":material/dashboard: Product Decision Profile Integration")
+
+        if not enriched.empty:
+            # Show profile-enriched rules summary
+            profile_cols = ["ante_revenue", "ante_abc", "ante_xyz", "con_revenue", "con_abc", "con_xyz"]
+            available_profile_cols = [c for c in profile_cols if c in enriched.columns]
+
+            if available_profile_cols:
+                st.caption("Profile fields enriched per rule (antecedent/consequent ABC/XZ/revenue):")
+                profile_display = enriched[
+                    ["antecedent", "consequent"] + available_profile_cols
+                ].head(10)
+                st.dataframe(profile_display, use_container_width=True, hide_index=True)
+
+            # Profile summary by ABC class
+            st.caption("Profile distribution by ABC class:")
+            if "ante_abc" in enriched.columns:
+                abc_dist = enriched["ante_abc"].value_counts()
+                st.bar_chart(abc_dist)
+
+        # Rule table with enhanced display
+        st.divider()
+        st.subheader(":material/data_table: Rules Detail Table")
+
         table = rules_to_table(filtered, lookup)
         table["is_redundant"] = filtered["is_redundant"].values
         table["lift_ci_lower"] = filtered["lift_ci_lower"].values
@@ -287,6 +574,11 @@ def render(df: pd.DataFrame) -> None:
 
         hide_redundant = st.checkbox("Hide redundant rules", value=False)
         display = table[~table["is_redundant"]] if hide_redundant else table
+
+        # Add incremental value column
+        if "incr_value" in enriched.columns:
+            display["incr_value"] = enriched["incr_value"].values
+
         st.dataframe(display, use_container_width=True, hide_index=True)
 
         st.caption(f"Redundant rules: {int(filtered['is_redundant'].sum())} of {len(filtered)}")
@@ -304,7 +596,6 @@ def render(df: pd.DataFrame) -> None:
         st.subheader(":material/category: Category Affinities (Rollup)")
         cat_rules = aggregate_rules_to_categories(filtered, lookup, df)
         if not cat_rules.empty:
-            # Format for display
             cat_display = cat_rules.copy()
             cat_display["support"] = cat_display["support"].apply(lambda x: f"{x:.4f}")
             cat_display["confidence"] = cat_display["confidence"].apply(lambda x: f"{x:.2%}")

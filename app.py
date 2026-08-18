@@ -17,6 +17,7 @@ from src.ui.tabs import (
     assortment_page,
     category_page,
     cdt_page,
+    delist_simulator,
     clv_page,
     cohorts,
     copurchase,
@@ -56,6 +57,7 @@ def _register_modes() -> None:
         promo_page.MODE_SPEC,
         assortment_page.MODE_SPEC,
         clv_page.MODE_SPEC,
+        delist_simulator.MODE_SPEC,
     )
     for mode in modes:
         registry.register_mode(mode)

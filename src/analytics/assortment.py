@@ -26,7 +26,6 @@ from src.analytics.schemas import (
     ASSORTMENT_SOLUTION,
     check,
 )
-from src.analytics.transference import compute_demand_transference_matrix
 
 DEFAULT_RECOVERY_MARGIN = 0.30
 MILP_STATUS = {0: "optimal", 1: "iteration_limit", 2: "infeasible", 3: "unbounded"}
@@ -143,6 +142,7 @@ def optimize_assortment_milp(
     revenue = revenue_per_product.head(top_n)
 
     if demand_transference_df is None:
+        from src.analytics.transference import compute_demand_transference_matrix
         demand_transference_df = compute_demand_transference_matrix(transactions_df, top_n=top_n)
     if demand_transference_df is None or demand_transference_df.empty:
         dt_edges = pd.DataFrame(
@@ -340,7 +340,8 @@ def optimize_assortment_heuristic(
         neighbor.discard(remove_sku)
         neighbor.add(add_sku)
         value = objective_value(neighbor)
-        if value > best_value or rng.random() < np.exp((value - best_value) / temperature):
+        accept = value > best_value or rng.random() < np.exp((value - best_value) / temperature)
+        if accept:
             current = neighbor
             if value > best_value:
                 best = set(current)
@@ -381,6 +382,7 @@ def evaluate_assortment(
     if revenue_per_product is None:
         revenue_per_product = _revenue_series(transactions_df)
     if demand_transference_df is None:
+        from src.analytics.transference import compute_demand_transference_matrix
         demand_transference_df = compute_demand_transference_matrix(transactions_df)
     transfers = (
         _transfers_by_from(demand_transference_df)
@@ -428,6 +430,7 @@ def compare_assortment_scenarios(
     """
     revenue = _revenue_series(transactions_df)
     if demand_transference_df is None:
+        from src.analytics.transference import compute_demand_transference_matrix
         demand_transference_df = compute_demand_transference_matrix(transactions_df)
     transfers = (
         _transfers_by_from(demand_transference_df)
@@ -490,6 +493,7 @@ def evaluate_selected_scenarios(
     if revenue_per_product is None:
         revenue_per_product = _revenue_series(transactions_df)
     if demand_transference_df is None:
+        from src.analytics.transference import compute_demand_transference_matrix
         demand_transference_df = compute_demand_transference_matrix(transactions_df)
     transfers = (
         _transfers_by_from(demand_transference_df)

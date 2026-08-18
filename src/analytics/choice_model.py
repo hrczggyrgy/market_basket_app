@@ -69,6 +69,17 @@ def build_customer_features(
         .rename("target_product")
     )
 
+    # Build customer × product purchase counts using distinct transaction_id
+    # to avoid counting multiple lines from the same basket
+    purchase_counts = (
+        horizon[horizon["stockcode"].isin(targets)]
+        .groupby(["customer_id", "stockcode"])["transaction_id"]
+        .nunique()
+        .rename("purchase_count")
+    )
+    # Select target product as the one with the most distinct basket purchases
+    target_rank = purchase_counts.groupby("customer_id").idxmax().rename("target_product")
+
     agg = {
         "recency_days": ("date", lambda s: (history["date"].max() - s.max()).days),
         "frequency": ("revenue", "count"),
