@@ -364,14 +364,14 @@ def _pick_basket_products(
 
     product_index = {p: i for i, p in enumerate(products)}
     picked_set = {product_index[p] for p in picked}
-    available = np.ones(len(products), dtype=bool)
+    available: np.ndarray = np.ones(len(products), dtype=bool)
     for i in picked_set:
         available[i] = False
 
     cat_cache: dict[str, np.ndarray] = {}
     sub_cache: dict[int, np.ndarray] = {}
 
-    def _candidates(idx: int) -> int | None:
+    def _candidates(idx: np.ndarray) -> int | None:
         w = weights[idx] ** affinity_boost
         total = w.sum()
         if total <= 0:
@@ -385,7 +385,7 @@ def _pick_basket_products(
             picked_cats.add(categories[i])
             picked_sub.add(sub_groups[i])
 
-        affinity_mask = np.zeros(len(products), dtype=bool)
+        affinity_mask: np.ndarray = np.zeros(len(products), dtype=bool)
         for c in picked_cats:
             if c not in cat_cache:
                 cat_cache[c] = categories == c
@@ -394,7 +394,7 @@ def _pick_basket_products(
 
         if rng.random() < 0.4:
             if substitution_strength > 0 and rng.random() < substitution_strength:
-                sub_mask = np.zeros(len(products), dtype=bool)
+                sub_mask: np.ndarray = np.zeros(len(products), dtype=bool)
                 for s in picked_sub:
                     if s not in sub_cache:
                         sub_cache[s] = sub_groups == s

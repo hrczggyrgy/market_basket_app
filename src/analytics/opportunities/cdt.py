@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from src.analytics.cdt.attributes import build_transaction_derived_attributes
+from src.analytics.cdt.similarity import build_similarity_matrix
 from src.analytics.cdt.tree import build_cdt, tree_to_dataframe
 from src.analytics.intelligence import Opportunity, opportunities_to_dataframe
 from src.analytics.schemas import OPPORTUNITY_LIST, check
@@ -33,25 +35,29 @@ def generate_cdt_opportunities(
 
     # Build the CDT
     try:
-        root = build_cdt(df, max_depth=max_depth)
+        attributes_df = build_transaction_derived_attributes(df)
+        similarity_matrix = build_similarity_matrix(df)
+        root = build_cdt(attributes_df, similarity_matrix, max_depth=max_depth)
     except Exception:
         return check(opportunities_to_dataframe(opportunities), OPPORTUNITY_LIST, allow_empty=True)
 
     # Convert tree to dataframe
-    tree_df = tree_to_dataframe(root)
-    if tree_df.empty:
+    nodes_df, products_df = tree_to_dataframe(root)
+    if nodes_df.empty:
         return check(opportunities_to_dataframe(opportunities), OPPORTUNITY_LIST, allow_empty=True)
 
     # We look for sibling nodes (same parent) that are leaves - these are similar products
     # Group by parent and collect leaves
-    if "parent" in tree_df.columns and "is_leaf" in tree_df.columns:
+    if "parent_id" in nodes_df.columns and "is_leaf" in nodes_df.columns:
         # We'll consider each parent that has at least two leaf children
-        parent_groups = tree_df[tree_df["is_leaf"]].groupby("parent")
+        parent_groups = nodes_df[nodes_df["is_leaf"] == 1].groupby("parent_id")
         for _parent_id, group in parent_groups:
             if len(group) >= 2:
                 # Take up to 2 pairs from this group (or just one opportunity per parent)
                 # For simplicity, we create one opportunity per parent group
-                products = ", ".join(group["product"].astype(str).head(3).tolist())
+                # Need to join with products_df to get product names
+                group_products = group.merge(products_df, on="node_id")
+                products = ", ".join(group_products["stockcode"].astype(str).head(3).tolist())
                 opportunities.append(
                     Opportunity(
                         domain="cdt",
@@ -60,8 +66,7 @@ def generate_cdt_opportunities(
                         action="Bundle or cross-promote these frequently co-purchased products.",
                         source="cdt_siblings",
                         rationale=(
-                            f"These products share a parent node in the CDT at depth "
-                            f"{group['depth'].iloc[0] if 'depth' in group.columns else 'unknown'}."
+                            "These products share a parent node in the CDT."
                         ),
                         value=len(group),  # Number of products in the group
                         confidence="medium",
@@ -73,31 +78,39 @@ def generate_cdt_opportunities(
                     break
 
     # If we need more opportunities, we can look at the root's children (if any)
-    if len(opportunities) < top_n and "depth" in tree_df.columns:
-        children = tree_df[tree_df["depth"] == 1]
-        if not children.empty and "count" in children.columns:
-            children = children.sort_values("count", ascending=False)
+    if len(opportunities) < top_n:
+        # Root is node_id='node_1'
+        children = nodes_df[nodes_df["parent_id"] == "node_1"]
+        if not children.empty:
+            # Sort by size descending
+            children = children.sort_values("size", ascending=False)
             if len(children) >= 2:
-                        child1 = children.iloc[0]
-                        child2 = children.iloc[1]
-                        opportunities.append(
-                            Opportunity(
-                                domain="cdt",
-                                entity=f"{child1['product']} vs {child2['product']}",
-                                title=f"Cross-sell opportunity: {child1['product']} -> {child2['product']}",
-                                action="Promote products from different CDT branches to increase basket size.",
-                                source="cdt_branches",
-                                rationale=(
-                                    f"Products in branch '{child1['product']}' (count {child1.get('count', 0)}) "
-                                    f"and branch '{child2['product']}' (count {child2.get('count', 0)}) "
-                                    f"are in different branches of the CDT."
-                                ),
-                                value=abs(
-                                    float(child1.get("count", 0)) - float(child2.get("count", 0))
-                                ),
-                                confidence="low",
-                            )
-                        )
+                child1 = children.iloc[0]
+                child2 = children.iloc[1]
+
+                # Get products for these children
+                child1_products = products_df[products_df["node_id"] == child1["node_id"]]["stockcode"].tolist()
+                child2_products = products_df[products_df["node_id"] == child2["node_id"]]["stockcode"].tolist()
+
+                p1 = ", ".join(child1_products[:2])
+                p2 = ", ".join(child2_products[:2])
+
+                opportunities.append(
+                    Opportunity(
+                        domain="cdt",
+                        entity=f"{p1} vs {p2}",
+                        title=f"Cross-sell opportunity: {p1} -> {p2}",
+                        action="Promote products from different CDT branches to increase basket size.",
+                        source="cdt_branches",
+                        rationale=(
+                            f"Products in branch '{child1['name']}' (size {child1.get('size', 0)}) "
+                            f"and branch '{child2['name']}' (size {child2.get('size', 0)}) "
+                            f"are in different branches of the CDT."
+                        ),
+                        value=abs(float(child1.get("size", 0)) - float(child2.get("size", 0))),
+                        confidence="low",
+                    )
+                )
 
     # Sort by value descending and trim to top_n
     opportunities = sorted(opportunities, key=lambda x: x.value, reverse=True)[:top_n]

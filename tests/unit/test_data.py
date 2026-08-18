@@ -119,6 +119,33 @@ def test_safe_divide() -> None:
     assert safe_divide(1, 0) == 0.0
 
 
+def test_build_dataset_capabilities_cv_edge_case() -> None:
+    """Verify has_price_variation is an aggregate (max CV across SKUs).
+
+    SKU A: prices [10, 10, 10] -> CV = 0
+    SKU B: prices [100, 200, 300] -> mean=200, std≈81.65, CV≈0.408
+    SKU C: prices [5, 5, 5] -> CV = 0
+
+    has_price_variation should be True because SKU B has CV >= 0.05,
+    even though 2/3 SKUs have zero variation.
+    """
+    import pandas as pd
+
+    df = pd.DataFrame(
+        {
+            "stockcode": ["A", "A", "A", "B", "B", "B", "C", "C", "C"],
+            "price": [10.0, 10.0, 10.0, 100.0, 200.0, 300.0, 5.0, 5.0, 5.0],
+            "date": pd.date_range("2024-01-01", periods=9),
+            "transaction_id": [f"T{i}" for i in range(9)],
+            "customer_id": ["C1"] * 9,
+            "quantity": [1] * 9,
+            "product": ["P"] * 9,
+        }
+    )
+    caps = build_dataset_capabilities(df)
+    assert caps["has_price_variation"] is True
+
+
 def test_load_transactions_detects_returns_and_excludes_from_aggregates() -> None:
     """Policy: DQ report only — returns (negative quantity/price) are detected,
     reported in the warning, and dropped. Downstream aggregates (RFM, baskets)

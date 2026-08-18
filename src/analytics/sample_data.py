@@ -13,6 +13,8 @@ Produces realistic retail transaction data with:
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
@@ -48,7 +50,7 @@ CATEGORY_PRICE_PARAMS = {
 }
 
 # Segment definitions with realistic parameters and category preferences
-SEGMENTS = {
+SEGMENTS: dict[str, dict[str, Any]] = {
     "champion": {
         "weight": 0.10,
         "purchase_rate": 0.35,  # purchases per day
@@ -326,7 +328,7 @@ def _pick_basket_products(
     basket_size: int,
     rng: np.random.Generator,
     affinity_boost: float = 3.0,
-    category_preferences: dict = None,
+    category_preferences: dict[str, float] | None = None,
 ) -> list[str]:
     """Pick remaining products for basket using category affinity and segment preferences."""
     weights = catalog["popularity"].to_numpy().copy()

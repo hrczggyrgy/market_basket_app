@@ -112,7 +112,7 @@ def generate_overview_insights(df: pd.DataFrame) -> pd.DataFrame:
         growth = float(curr["revenue"] / prev["revenue"] - 1) if prev["revenue"] > 0 else 0.0
         attribution = _growth_attribution(comps)
         if attribution:
-            driver = max(attribution, key=attribution.get)
+            driver = max(attribution, key=lambda k: attribution[k])
             share = attribution[driver]
             if abs(share) < 0.15:
                 driver = "mix of customer, basket and price factors"

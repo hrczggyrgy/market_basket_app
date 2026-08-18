@@ -18,7 +18,7 @@ from __future__ import annotations
 import functools
 import os
 import time
-from typing import Any, Callable
+from typing import Any, Callable, ContextManager
 
 try:
     import streamlit as st
@@ -41,7 +41,7 @@ def _log(msg: str) -> None:
         print(msg)
 
 
-def timed(name: str | None = None):
+def timed(name: str | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to time a function. Outputs to terminal and optionally Streamlit sidebar.
 
     Args:
@@ -57,7 +57,7 @@ def timed(name: str | None = None):
             return fn
 
         @functools.wraps(fn)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             start = time.perf_counter()
             try:
                 result = fn(*args, **kwargs)
@@ -71,7 +71,7 @@ def timed(name: str | None = None):
     return decorator
 
 
-def time_block(label: str):
+def time_block(label: str) -> ContextManager[Any]:
     """Context manager for timing a code block.
 
     Usage:
@@ -80,21 +80,21 @@ def time_block(label: str):
     """
 
     class Timer:
-        def __enter__(self):
+        def __enter__(self) -> Timer:
             self.start = time.perf_counter()
             return self
 
-        def __exit__(self, *args):
+        def __exit__(self, *args: Any) -> None:
             elapsed = time.perf_counter() - self.start
             _log(f"[PERF] {label}: {elapsed:.3f}s")
 
     if not ENGAGE_PROFILE:
 
         class NoOp:
-            def __enter__(self):
+            def __enter__(self) -> NoOp:
                 return self
 
-            def __exit__(self, *args):
+            def __exit__(self, *args: Any) -> None:
                 pass
 
         return NoOp()

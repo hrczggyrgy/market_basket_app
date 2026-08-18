@@ -81,7 +81,7 @@ def generate_pricing_opportunities(
             .head(top_n)
         )
         for _, row in grp.iterrows():
-            value: float | None = None
+            value: float = 0.0
             if decision == "price_lever" and pd.notna(row["abs_elasticity"]):
                 value = _illustrative_incremental_revenue(
                     float(row["total_revenue"]), float(row["abs_elasticity"])

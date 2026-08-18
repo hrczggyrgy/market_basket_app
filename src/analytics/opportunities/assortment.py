@@ -62,7 +62,7 @@ def generate_assortment_opportunities(
                 action="No cut required; focus on the long tail one SKU at a time.",
                 source="scenario_simulation",
                 rationale=f"Best scenario achieves {coverage:.0%} revenue coverage.",
-                value=None,
+                value=0.0,
                 confidence="medium",
             )
         )

@@ -29,7 +29,7 @@ from src.analytics.performance import (
     product_lifecycle_stage,
     xyz_analysis,
 )
-from src.ui.components import render_insight_cards, render_opportunity_cards
+from src.ui.components_utils import render_insight_cards, render_opportunity_cards
 from src.ui.features import get_product_metrics
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec

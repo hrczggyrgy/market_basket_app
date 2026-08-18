@@ -14,8 +14,20 @@ works without linearmodels.
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import numpy as np
 import pandas as pd
+
+from src.analytics.promo_core import _expand_promo_weeks
+from src.analytics.schemas import (
+    PROMO_CAUSAL_PANEL,
+    PROMO_CAUSAL_WATERFALL,
+    PROMO_CROSS_EFFECTS,
+    PROMO_EVENT_STUDY,
+    PROMO_TWFE_RESULT,
+    check,
+)
 
 # Lazy import to avoid NumPy 2.x compatibility warning at module load time
 _LINEARMODELS_AVAILABLE = None
@@ -24,7 +36,7 @@ _PanelOLS = None
 _PanelEffectsResults = None
 
 
-def _require_linearmodels():
+def _require_linearmodels() -> tuple[type, type]:
     """Import linearmodels and raise clear ImportError if not available."""
     global _LINEARMODELS_AVAILABLE, _LINEARMODELS_ERROR, _PanelOLS, _PanelEffectsResults
     if _LINEARMODELS_AVAILABLE is not None:
@@ -59,17 +71,6 @@ def _require_linearmodels():
         )
 
     return _PanelOLS, _PanelEffectsResults
-
-
-from src.analytics.promo_core import _expand_promo_weeks
-from src.analytics.schemas import (
-    PROMO_CAUSAL_PANEL,
-    PROMO_CAUSAL_WATERFALL,
-    PROMO_CROSS_EFFECTS,
-    PROMO_EVENT_STUDY,
-    PROMO_TWFE_RESULT,
-    check,
-)
 
 
 def build_promo_causal_panel(
@@ -313,13 +314,14 @@ def estimate_event_study(
 
 
 def _joint_f_test(
-    PanelEffectsResults, results, restrictions: list[str]
+    PanelEffectsResults: type, results: Any, restrictions: list[str]
 ) -> tuple[float, float]:
     """Joint F-test that specified coefficients are jointly zero."""
 
     if isinstance(results, PanelEffectsResults):
         try:
-            f_test = results.f_test(restrictions)
+            res = cast(Any, results)
+            f_test = res.f_test(restrictions)
             return float(f_test.statistic), float(f_test.pval)
         except Exception:
             pass

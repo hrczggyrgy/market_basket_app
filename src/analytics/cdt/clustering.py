@@ -48,7 +48,7 @@ def perform_hierarchical_clustering(
 
     products = similarity_matrix.index.tolist()
     if n_clusters is None or n_clusters < 1:
-        clusters = np.ones(len(products), dtype=int)
+        clusters: np.ndarray = np.ones(len(products), dtype=int)
     else:
         n_clusters = min(n_clusters, len(products))
         clusters = fcluster(linkage_matrix, t=n_clusters, criterion="maxclust")

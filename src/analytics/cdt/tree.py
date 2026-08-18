@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any, Iterable, cast
 
 import numpy as np
 import pandas as pd
@@ -226,23 +226,24 @@ def compute_attribute_split_quality(
         score = sim_gain
     elif criterion == "entropy":
         score = compute_entropy_gain(
-            cluster_assignments,
+            cast(dict[str, int], cluster_assignments),
             products,
             {p: attribute_values[p] for p in products if p in attribute_values},
         )
     elif criterion == "gini":
         score = compute_gini_gain(
-            cluster_assignments,
+            cast(dict[str, int], cluster_assignments),
             products,
             {p: attribute_values[p] for p in products if p in attribute_values},
         )
     elif criterion == "mutual_info":
         score = compute_mutual_information(
-            cluster_assignments, {p: attribute_values[p] for p in products if p in attribute_values}
+            cast(dict[str, int], cluster_assignments),
+            {p: attribute_values[p] for p in products if p in attribute_values},
         )
     else:  # mixed
         purity = compute_entropy_gain(
-            cluster_assignments,
+            cast(dict[str, int], cluster_assignments),
             products,
             {p: attribute_values[p] for p in products if p in attribute_values},
         )
@@ -260,7 +261,7 @@ def find_best_attribute_split(
     cluster_assignments: dict[str, int] | None = None,
     alpha: float = 0.5,
     multiplicity_correction: str = "bonferroni",
-) -> tuple[str | None, dict[str, list[str]], float]:
+) -> tuple[str | None, dict[str, list[str]], float, float]:
     """Find the attribute whose value groups best explain the cluster structure.
 
     Args:
@@ -273,6 +274,7 @@ def find_best_attribute_split(
     best_attr: str | None = None
     best_groups: dict[str, list[str]] = {}
     best_score = 0.0
+    best_idx: int | None = None
     scores = []
     attrs_tested = []
 
@@ -303,8 +305,9 @@ def find_best_attribute_split(
         corrected_scores = [s / n_tests for s in scores]  # Conservative approximation
         best_score = max(corrected_scores) if corrected_scores else 0.0
         # Find the attribute with the corrected best score
-        best_idx = np.argmax(corrected_scores)
+        best_idx = cast(int, np.argmax(corrected_scores))
         best_attr = attrs_tested[best_idx]
+
         # Recompute groups for best attribute
         if best_attr:
             attr_values = attributes_df.set_index("stockcode")[best_attr].dropna().to_dict()
@@ -321,7 +324,7 @@ def find_best_attribute_split(
     elif multiplicity_correction == "bh" and attrs_tested:
         # Benjamini-Hochberg FDR correction (disabled by default - scores are not p-values)
         # Use a simple threshold instead
-        best_idx = np.argmax(scores)
+        best_idx = cast(int, np.argmax(scores))
         best_score = scores[best_idx]
         # Only consider if score is above a reasonable threshold
         if best_score > 0.01:  # Minimum score threshold
@@ -339,8 +342,27 @@ def find_best_attribute_split(
             )
         else:
             best_attr, best_groups, best_score = None, {}, 0.0
+    else:
+        # Default case if no correction or unknown correction
+        best_idx = cast(int, np.argmax(scores)) if scores else -1
+        if best_idx != -1:
+            best_score = scores[best_idx]
+            best_attr = attrs_tested[best_idx]
+            attr_values = attributes_df.set_index("stockcode")[best_attr].dropna().to_dict()
+            values = {p: v for p, v in attr_values.items() if p in products}
+            _, best_groups = compute_attribute_split_quality(
+                products,
+                values,
+                similarity_matrix,
+                min_cluster_size=min_cluster_size,
+                criterion=criterion,
+                cluster_assignments=cluster_assignments,
+                alpha=alpha,
+            )
+        else:
+            best_attr, best_groups, best_score = None, {}, 0.0
 
-    return best_attr, best_groups, best_score, 0.0
+    return best_attr, best_groups, best_score, float(best_idx) if best_idx is not None else 0.0
 
 
 def compute_split_bootstrap_stability(
@@ -389,7 +411,7 @@ def compute_split_bootstrap_stability(
     if not attr_wins:
         return None, {}, 0.0, 0.0
 
-    best_attr = max(attr_wins, key=attr_wins.get)
+    best_attr = max(attr_wins.keys(), key=lambda k: cast(int, attr_wins[k]))
     stability = attr_wins[best_attr] / n_resamples
 
     # Get final split on full data
@@ -612,7 +634,7 @@ def score_tree(root: TreeNode, similarity_matrix: pd.DataFrame) -> pd.DataFrame:
         {"metric": "mean_leaf_similarity", "value": mean_leaf_sim},
         {"metric": "products_covered", "value": float(total_products)},
     ]
-    return check(pd.DataFrame(rows, columns=list(CDT_TREE_SCORE.columns)), CDT_TREE_SCORE)
+    return check(pd.DataFrame(rows, columns=cast(Any, list(CDT_TREE_SCORE.columns))), CDT_TREE_SCORE)
 
 
 def _iter_nodes(root: TreeNode) -> Iterable[TreeNode]:
@@ -647,8 +669,8 @@ def tree_to_dataframe(root: TreeNode) -> tuple[pd.DataFrame, pd.DataFrame]:
         )
         for product in node.products:
             product_rows.append({"node_id": node.node_id, "stockcode": product})
-    nodes = pd.DataFrame(node_rows, columns=list(CDT_TREE_NODES.columns))
-    products = pd.DataFrame(product_rows, columns=list(CDT_TREE_PRODUCTS.columns))
+    nodes = cast(pd.DataFrame, pd.DataFrame(node_rows, columns=cast(Any, list(CDT_TREE_NODES.columns))))
+    products = cast(pd.DataFrame, pd.DataFrame(product_rows, columns=cast(Any, list(CDT_TREE_PRODUCTS.columns))))
     return check(nodes, CDT_TREE_NODES), check(products, CDT_TREE_PRODUCTS, allow_empty=True)
 
 

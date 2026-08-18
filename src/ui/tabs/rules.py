@@ -73,7 +73,7 @@ def _render_strength_stability_scatter(rules: pd.DataFrame, table: pd.DataFrame)
     with_ci["ci_width"] = with_ci["lift_ci_upper"] - with_ci["lift_ci_lower"]
 
     # Add antecedent category for coloring
-    def get_first_antecedent(itemset) -> str | None:
+    def get_first_antecedent(itemset: frozenset[str]) -> str | None:
         if itemset:
             return sorted(itemset)[0]
         return None

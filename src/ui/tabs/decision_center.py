@@ -10,12 +10,16 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from src.analytics.decision_center import run_decision_center
-from src.ui.components import render_insight_cards, render_metric_row, render_opportunity_table
+from src.analytics.decision_center import DecisionCenterAnalysis, run_decision_center
+from src.ui.components_utils import (
+    render_insight_cards,
+    render_metric_row,
+    render_opportunity_table,
+)
 from src.ui.registry import ModeSpec
 
 
-def _render_scorecard(analysis: object) -> None:
+def _render_scorecard(analysis: DecisionCenterAnalysis) -> None:
     render_metric_row(
         [
             {

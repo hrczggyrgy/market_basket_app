@@ -149,7 +149,7 @@ def _render_category_coverage(kept: list[str], df: pd.DataFrame) -> None:
     kept_cats = {cat_of[p] for p in kept if p in cat_of}
     all_cats = set(cat_of.values())
 
-    kept_rev = {}
+    kept_rev: dict[str, float] = {}
     for p in kept:
         if p in cat_of:
             kept_rev[cat_of[p]] = (

@@ -7,7 +7,7 @@ Impact -> Action pattern.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 import streamlit as st
@@ -153,7 +153,7 @@ def render_insight_cards(insights_df: pd.DataFrame) -> None:
             st.markdown(evidence)
 
             # Evidence level badge
-            render_evidence_badge(evidence_level)
+            render_evidence_badge(cast(int | None, evidence_level))
 
             # Action section
             if action:
@@ -164,8 +164,8 @@ def render_insight_cards(insights_df: pd.DataFrame) -> None:
 
             with metric_cols[0]:
                 if impact_value is not None and pd.notna(impact_value):
-                    render_delta_badge(impact_value, is_percent=False, positive_good=True)
-                    st.caption(f"Impact: €{impact_value:,.0f}")
+                    render_delta_badge(float(impact_value), is_percent=False, positive_good=True)
+                    st.caption(f"Impact: €{float(impact_value):,.0f}")
                 else:
                     st.metric("Impact", "—")
 
@@ -177,7 +177,7 @@ def render_insight_cards(insights_df: pd.DataFrame) -> None:
 
             with metric_cols[2]:
                 if stability is not None and pd.notna(stability):
-                    st.metric("Stability", f"{stability:.0%}")
+                    st.metric("Stability", f"{float(stability):.0%}")
                 else:
                     st.metric("Stability", "—")
 
@@ -186,10 +186,11 @@ def render_insight_cards(insights_df: pd.DataFrame) -> None:
                 if n_transition_pairs is not None and n_unique_products is not None:
                     st.metric("Switching Pairs", f"{n_transition_pairs}")
                 elif confidence_gate is not None:
-                    gate_status = "������✓ Pass" if confidence_gate else "������✗ Fail"
+                    gate_status = "✅ Pass" if confidence_gate else "❌ Fail"
                     st.metric("Evidence Gate", gate_status)
                 else:
                     st.metric("Details", "—")
+
 
 
 def render_opportunity_table(opps_df: pd.DataFrame) -> None:

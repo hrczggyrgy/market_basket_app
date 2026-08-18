@@ -128,9 +128,9 @@ def compute_reliability(
         >>> reliability.level.value
         'high'
     """
-    dims = {}
-    flags = []
-    metadata = {}
+    dims: dict[ReliabilityDimension, float] = {}
+    flags: list[str] = []
+    metadata: dict[str, Any] = {}
 
     # 1. Sample size adequacy
     # Target: >= 1000 for high, >= 100 for medium
@@ -173,7 +173,7 @@ def compute_reliability(
 
     # 4. Stability
     if stability_score is not None:
-        stability_score = np.clip(stability_score, 0.0, 1.0)
+        stability_score = float(np.clip(stability_score, 0.0, 1.0))
     else:
         stability_score = 0.5  # Unknown
     dims[ReliabilityDimension.STABILITY] = stability_score
@@ -191,7 +191,7 @@ def compute_reliability(
 
     # 6. Data quality
     if data_quality_score is not None:
-        data_quality_score = np.clip(data_quality_score, 0.0, 1.0)
+        data_quality_score = float(np.clip(data_quality_score, 0.0, 1.0))
     else:
         data_quality_score = 0.5  # Unknown
     dims[ReliabilityDimension.DATA_QUALITY] = data_quality_score
@@ -267,7 +267,7 @@ def check_analysis_eligibility(
         blocking.append(f"Insufficient SKUs: {n_skus} < {min_skus}")
 
     # Analysis-specific requirements
-    analysis_requirements = {
+    analysis_requirements: dict[str, dict[str, float | int]] = {
         "clv": {"min_customers": 500, "min_baskets": 1000, "min_repeat_rate": 0.1},
         "assortment": {"min_skus": 20, "min_baskets": 500},
         "promo": {"min_baskets": 500, "min_promo_periods": 1},
@@ -278,7 +278,7 @@ def check_analysis_eligibility(
         "elasticity": {"min_baskets": 500, "min_price_variation": 0.05},
     }
 
-    req = analysis_requirements.get(analysis_type, {})
+    req: dict[str, float | int] = analysis_requirements.get(analysis_type, {})
 
     for key, threshold in req.items():
         if key == "min_baskets" and n_baskets < threshold:
@@ -308,7 +308,7 @@ def check_analysis_eligibility(
 
     # Forecast reliability
     reliability = compute_reliability(
-        n_obs=n_baskets,
+        n_obs=int(n_baskets),
         coverage=None,
         stability_score=0.5,
         data_quality_score=dq_score,

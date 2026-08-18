@@ -24,7 +24,11 @@ from src.analytics.promo import (
     promo_roi_analysis,
     promotion_timing_analysis,
 )
-from src.ui.components import render_insight_cards, render_metric_row, render_opportunity_table
+from src.ui.components_utils import (
+    render_insight_cards,
+    render_metric_row,
+    render_opportunity_table,
+)
 from src.ui.plots import PALETTE, empty_state, new_fig, render_bar_with_ci, show
 from src.ui.registry import ModeSpec
 

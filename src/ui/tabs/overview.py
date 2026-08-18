@@ -18,7 +18,7 @@ import streamlit as st
 from src.analytics.basket_metrics import spc_revenue_trend
 from src.analytics.data import get_data_summary
 from src.analytics.data_quality import generate_quality_summary
-from src.ui.components import render_insight_cards, render_metric_row
+from src.ui.components_utils import render_insight_cards, render_metric_row
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
 
@@ -106,7 +106,7 @@ def _render_revenue_decomposition(df: pd.DataFrame) -> None:
     show(fig)
 
     if attribution:
-        driver = max(attribution, key=attribution.get)
+        driver = max(attribution, key=lambda k: attribution[k])
         st.caption(
             f"**Main driver: {_DRIVER_LABELS[driver]}** ({attribution[driver]:+.0%} of the change). "
             + {
@@ -436,10 +436,13 @@ def _render_basket_distribution(df: pd.DataFrame) -> None:
 @st.cache_data(show_spinner="Computing SPC trend...", max_entries=5)
 def _cached_spc_trend(df: pd.DataFrame) -> pd.DataFrame:
     from src.analytics.basket_metrics import spc_revenue_trend
+
     work = df.copy()
     work["date"] = pd.to_datetime(work["date"])
     work["revenue"] = work["price"] * work["quantity"]
-    series = work["revenue"].groupby(work["date"].dt.to_period("W").dt.start_time).sum().sort_index()
+    series = (
+        work["revenue"].groupby(work["date"].dt.to_period("W").dt.start_time).sum().sort_index()
+    )
     series.index = pd.to_datetime(series.index)
     return spc_revenue_trend(series)
 
@@ -447,6 +450,7 @@ def _cached_spc_trend(df: pd.DataFrame) -> pd.DataFrame:
 @st.cache_data(show_spinner="Generating insights...", max_entries=5)
 def _cached_overview_insights(df: pd.DataFrame) -> pd.DataFrame:
     from src.analytics.insights import generate_overview_insights
+
     return generate_overview_insights(df)
 
 

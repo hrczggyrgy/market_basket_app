@@ -47,7 +47,7 @@ def generate_cross_sell_opportunities(
             anchor = str(row["anchor"])
             addon = str(row["addon"])
             lift = float(row["lift"])
-            value: float | None = None
+            value: float = 0.0
             if revenue_by_product is not None and anchor in revenue_by_product.index:
                 anchor_rev = float(revenue_by_product.loc[anchor])
                 # Illustrative: every 1% of anchor basket that attaches the addon.
@@ -78,7 +78,7 @@ def generate_cross_sell_opportunities(
         )
         for _, row in work.iterrows():
             a, b = str(row["product_a"]), str(row["product_b"])
-            value: float | None = None
+            value = 0.0
             if revenue_by_product is not None and b in revenue_by_product.index:
                 value = round(
                     float(revenue_by_product.loc[b])

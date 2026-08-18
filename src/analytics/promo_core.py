@@ -323,8 +323,8 @@ def compute_promo_baseline(
                 seasonal_revenue = stl_revenue.seasonal
 
                 # For promo weeks, forward-fill from last observed non-promo trend/seasonal
-                baseline_units = np.full(len(sku), np.nan, dtype=float)
-                baseline_revenue = np.full(len(sku), np.nan, dtype=float)
+                baseline_units: np.ndarray = np.full(len(sku), np.nan, dtype=float)
+                baseline_revenue: np.ndarray = np.full(len(sku), np.nan, dtype=float)
 
                 # Fill non-promo weeks with fitted values
                 non_promo_indices = np.where(non_promo_mask)[0]
@@ -571,7 +571,7 @@ def promo_roi_analysis(
         if len(t_baskets) >= 3 and len(c_baskets) >= 3:
             try:
                 # Bootstrap on total incremental revenue (not basket mean)
-                def _total_diff(t, c):
+                def _total_diff(t: np.ndarray, c: np.ndarray) -> float:
                     return float(np.sum(t) - np.sum(c))
 
                 res = bootstrap(
@@ -1156,7 +1156,7 @@ def _bootstrap_qini_ci(
     bin_size = max(1, n // n_bins)
     rng = np.random.default_rng(seed)
     runs = np.zeros((n_resamples, len(qini_x)))
-    edges = np.arange(1, n_bins + 1) * bin_size
+    edges: np.ndarray = np.arange(1, n_bins + 1) * bin_size
 
     def _qini_curve(perm_or_idxs: np.ndarray) -> np.ndarray:
         ts, ys = t_sorted[perm_or_idxs], y_sorted[perm_or_idxs]

@@ -138,7 +138,7 @@ def _seasonality_diagnostics(monthly_series: pd.Series, min_cycles: int = 2) -> 
     values = full.to_numpy(dtype=float)
     n = len(values)
     # --- Detrend via least-squares line (removes growth/decline) ---
-    x = np.arange(n, dtype=float)
+    x: np.ndarray = np.arange(n, dtype=float)
     slope, intercept = np.polyfit(x, values, 1)
     detrended = values - (slope * x + intercept)
     detrended = detrended - detrended.mean()  # center
@@ -242,7 +242,7 @@ def compute_category_roles(
         from src.analytics.sample_data import THEMES as SAMPLE_THEMES
 
         all_cats = set(df["category"].unique())
-        theme_cats = set()
+        theme_cats: set[str] = set()
         for theme in SAMPLE_THEMES:
             theme_cats.update(theme)
         if all_cats.issubset(theme_cats) and all_cats:

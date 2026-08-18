@@ -44,11 +44,11 @@ def get_mode(key: str) -> ModeSpec:
 
 def _check_capabilities(df: pd.DataFrame, requires: tuple[str, ...]) -> tuple[bool, list[str]]:
     """Check if dataframe meets required capabilities.
-    
+
     Returns (all_met, missing_list)
     """
     from src.analytics.data import build_dataset_capabilities
-    
+
     capabilities = build_dataset_capabilities(df)
     missing = [req for req in requires if not capabilities.get(req, False)]
     return len(missing) == 0, missing
@@ -57,7 +57,7 @@ def _check_capabilities(df: pd.DataFrame, requires: tuple[str, ...]) -> tuple[bo
 def render_sidebar(df: pd.DataFrame) -> str:
     """Render sidebar and return selected mode key."""
     modes = get_modes()
-    
+
     # Check capabilities for each mode
     mode_status: dict[str, dict[str, object]] = {}
     for key, spec in modes.items():
@@ -67,12 +67,12 @@ def render_sidebar(df: pd.DataFrame) -> str:
             "missing": missing,
             "label": f"{spec.icon} {spec.label}",
         }
-    
+
     # Build options - available modes first, then unavailable
     available_options = [k for k, v in mode_status.items() if bool(v["available"])]
     unavailable_options = [k for k, v in mode_status.items() if not bool(v["available"])]
     options = available_options + unavailable_options
-    
+
     labels: dict[str, str] = {}
     for key, status in mode_status.items():
         if status["available"]:
@@ -81,12 +81,12 @@ def render_sidebar(df: pd.DataFrame) -> str:
             missing_list = status["missing"]
             missing_str = ", ".join(missing_list) if isinstance(missing_list, list) else "unknown"
             labels[key] = f"{status['label']}  ⚠️ (missing: {missing_str})"
-    
+
     # Default to first available mode, or first mode if none available
     default_index = 0
     if available_options:
         default_index = options.index(available_options[0])
-    
+
     # First radio call to get selection (without disabled)
     selected = st.sidebar.radio(
         "Analysis Mode",
@@ -94,7 +94,7 @@ def render_sidebar(df: pd.DataFrame) -> str:
         format_func=lambda k: labels[k],
         index=default_index,
     )
-    
+
     # Show capability info for selected mode if unavailable
     if selected in mode_status and not mode_status[selected]["available"]:
         missing_obj = mode_status[selected]["missing"]
@@ -105,7 +105,7 @@ def render_sidebar(df: pd.DataFrame) -> str:
             f"Missing capabilities: {missing_str}\n\n"
             f"Please ensure your data includes the required columns and meets minimum volume thresholds."
         )
-    
+
     return selected
 
 

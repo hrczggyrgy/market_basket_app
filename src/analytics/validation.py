@@ -334,9 +334,13 @@ class ValidationHarness:
             "assortment", "optimize_assortment_heuristic", optimize_assortment_heuristic, self.df
         )
         if assort.success:
+            output = assort.diagnostics.get("output")
+            if output is None:
+                output = assort.output_shape and self.df
+
             kept_skus = (
-                assort.diagnostics.get("output", assort.output_shape and self.df)[0]
-                if isinstance(assort.diagnostics.get("output"), tuple)
+                output[0]
+                if isinstance(output, tuple)
                 else self.df["stockcode"].unique()[:10]
             )
             _run_and_store(

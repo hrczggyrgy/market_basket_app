@@ -194,6 +194,8 @@ def compute_segment_radar(
     """
     empty = pd.DataFrame(columns=list(SEGMENT_RADAR.columns))
     segmented = behavioral_segmentation(transactions_df, n_clusters=n_clusters, method=method)
+    if isinstance(segmented, tuple):
+        segmented = segmented[0]
     if segmented["segment"].nunique() < 2:
         return check(empty, SEGMENT_RADAR, allow_empty=True)
 

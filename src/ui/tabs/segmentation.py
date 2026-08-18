@@ -279,7 +279,7 @@ def render(df: pd.DataFrame) -> None:
                 hide_index=True,
             )
         with col2:
-            st.subsegment("Segment Summary")
+            st.subheader("Segment Summary")
             if not val.empty:
                 segment_summary = (
                     val.groupby("value_segment")

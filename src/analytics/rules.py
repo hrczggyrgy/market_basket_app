@@ -383,7 +383,7 @@ def aggregate_rules_to_categories(
             .astype(bool)
         )
 
-        def compute_cat_lift(row):
+        def compute_cat_lift(row: pd.Series) -> float:
             ante_cats = row["antecedent_category"].split(" + ")
             cons_cats = row["consequent_category"].split(" + ")
 

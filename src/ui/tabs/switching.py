@@ -26,7 +26,11 @@ from src.analytics.transference import (
     compute_substitutable_demand_percentage,
     delist_impact_analysis,
 )
-from src.ui.components import render_insight_cards, render_metric_row, render_opportunity_table
+from src.ui.components_utils import (
+    render_insight_cards,
+    render_metric_row,
+    render_opportunity_table,
+)
 from src.ui.features import get_detected_promotions, get_product_lookup
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec

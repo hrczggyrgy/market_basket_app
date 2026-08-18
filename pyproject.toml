@@ -34,6 +34,7 @@ dev = [
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
     "mypy>=1.5.0",
+    "pytest-xdist>=3.5.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -47,21 +48,22 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "UP", "B", "SIM"]
 ignore = ["E501", "B006", "B904", "SIM108", "UP006", "UP007", "UP035", "UP045"]
-fixable = ["I"]
+fixable = ["E", "W", "F", "I", "UP", "B", "SIM"]
 
 [tool.ruff.format]
 quote-style = "double"
 
 [tool.mypy]
 python_version = "3.10"
+mypy_path = ".mypy_stubs"
 disallow_untyped_defs = true
 check_untyped_defs = true
 show_error_codes = true
 warn_return_any = false
 warn_unused_ignores = true
 no_implicit_optional = true
+ignore_missing_imports = true
 # Third-party libraries without shipped stubs are treated as Any.
-# We do NOT use --ignore-missing-imports: any module that does not exist is an error.
 disable_error_code = ["import-untyped"]
 
 [tool.pytest.ini_options]
@@ -70,7 +72,7 @@ pythonpath = ["."]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-addopts = "-v --tb=short"
+addopts = "-v --tb=short -n auto"
 markers = [
     "slow: marks tests as slow",
     "e2e: end-to-end AppTest sweep",

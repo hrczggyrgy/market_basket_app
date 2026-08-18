@@ -230,13 +230,17 @@ def estimate_loglog_elasticity(
         return check(pd.DataFrame(columns=list(ELASTICITY.columns)), ELASTICITY, allow_empty=True)
 
     # VECTORIZED: Compute price CV per SKU
-    price_stats = weekly.groupby(product_col).agg(
-        price_mean=("avg_price", "mean"),
-        price_std=("avg_price", "std"),
-        price_nunique=("avg_price", "nunique"),
-        qty_zeros=("total_qty", lambda x: (x == 0).sum()),
-        price_zeros=("avg_price", lambda x: (x == 0).sum()),
-    ).reset_index()
+    price_stats = (
+        weekly.groupby(product_col)
+        .agg(
+            price_mean=("avg_price", "mean"),
+            price_std=("avg_price", "std"),
+            price_nunique=("avg_price", "nunique"),
+            qty_zeros=("total_qty", lambda x: (x == 0).sum()),
+            price_zeros=("avg_price", lambda x: (x == 0).sum()),
+        )
+        .reset_index()
+    )
 
     price_stats["price_cv"] = price_stats["price_std"] / price_stats["price_mean"]
 
@@ -285,11 +289,13 @@ def estimate_loglog_elasticity(
                     week_values = sku_weekly[date_col].dt.week
                 week_dummies = pd.get_dummies(week_values, prefix="week", drop_first=True)
                 week_dummies.index = sku_weekly.index
-                month_dummies = pd.get_dummies(sku_weekly[date_col].dt.month, prefix="month", drop_first=True)
+                month_dummies = pd.get_dummies(
+                    sku_weekly[date_col].dt.month, prefix="month", drop_first=True
+                )
                 month_dummies.index = sku_weekly.index
                 time_dummies = pd.concat([week_dummies, month_dummies], axis=1).astype(float)
                 time_dummies = time_dummies.loc[log_price.index]
-                
+
                 # Limit dummies to avoid overfitting (max 1/3 of observations)
                 max_dummies = max(1, len(log_price) // 3)
                 if time_dummies.shape[1] > max_dummies:
@@ -403,23 +409,29 @@ def compute_elasticity_status(
 
     if weekly.empty:
         all_skus = df[product_col].unique()
-        status_df = pd.DataFrame({
-            "stockcode": all_skus,
-            "elasticity_status": "unavailable",
-            "n_obs": 0,
-            "price_cv": np.nan,
-        })
+        status_df = pd.DataFrame(
+            {
+                "stockcode": all_skus,
+                "elasticity_status": "unavailable",
+                "n_obs": 0,
+                "price_cv": np.nan,
+            }
+        )
         return _finalize_status_df(status_df, elasticity_df)
 
     # VECTORIZED: Compute all stats per SKU using groupby
-    sku_stats = weekly.groupby(product_col).agg(
-        n_obs=("avg_price", "size"),
-        price_mean=("avg_price", "mean"),
-        price_std=("avg_price", "std"),
-        price_nunique=("avg_price", "nunique"),
-        qty_zeros=("total_qty", lambda x: (x == 0).sum()),
-        price_zeros=("avg_price", lambda x: (x == 0).sum()),
-    ).reset_index()
+    sku_stats = (
+        weekly.groupby(product_col)
+        .agg(
+            n_obs=("avg_price", "size"),
+            price_mean=("avg_price", "mean"),
+            price_std=("avg_price", "std"),
+            price_nunique=("avg_price", "nunique"),
+            qty_zeros=("total_qty", lambda x: (x == 0).sum()),
+            price_zeros=("avg_price", lambda x: (x == 0).sum()),
+        )
+        .reset_index()
+    )
 
     sku_stats["price_cv"] = sku_stats["price_std"] / sku_stats["price_mean"]
 
@@ -448,7 +460,7 @@ def compute_elasticity_status(
     status_rows = status_rows.merge(
         sku_stats[[product_col, "elasticity_status", "n_obs", "price_cv"]],
         on=product_col,
-        how="left"
+        how="left",
     )
     status_rows["elasticity_status"] = status_rows["elasticity_status"].fillna("unavailable")
     status_rows["n_obs"] = status_rows["n_obs"].fillna(0).astype(int)
@@ -475,13 +487,17 @@ def _finalize_status_df(
 
         conf = classify_elasticity_confidence(elasticity_df)[["stockcode", "confidence"]]
         status_df = status_df.merge(conf, on="stockcode", how="left", suffixes=("", "_conf"))
-        status_df["confidence"] = status_df["confidence"].combine_first(status_df["confidence_conf"])
+        status_df["confidence"] = status_df["confidence"].combine_first(
+            status_df["confidence_conf"]
+        )
         status_df = status_df.drop(columns=["confidence_conf"])
 
         has_estimate = status_df["elasticity"].notna()
         refine = status_df["elasticity_status"].eq("estimated")
         status_df.loc[refine & has_estimate, "elasticity_status"] = "estimated"
-        status_df.loc[refine & has_estimate & status_df["confidence"].eq("low"), "elasticity_status"] = "weak"
+        status_df.loc[
+            refine & has_estimate & status_df["confidence"].eq("low"), "elasticity_status"
+        ] = "weak"
         status_df.loc[refine & ~has_estimate, "elasticity_status"] = "unavailable"
         status_df.loc[~has_estimate, "confidence"] = np.nan
 

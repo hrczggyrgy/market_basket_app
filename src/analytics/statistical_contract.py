@@ -36,7 +36,7 @@ class StatisticalAssumption:
 
     name: str
     description: str
-    check_fn: Optional[Callable[[Any], bool]] = None
+    check_fn: Optional[Callable[[], bool]] = None
     severity: Literal["critical", "warning", "info"] = "warning"
     is_satisfied: Optional[bool] = None
     evidence: Optional[str] = None
@@ -56,7 +56,7 @@ class StatisticalContract:
 
     # Estimate specification
     estimate_name: str
-    estimate_type: Literal["point", "interval", "distribution"]
+    estimate_type: Literal["point", "interval", "distribution", "set"]
     estimate_unit: str  # e.g., "elasticity", "revenue", "probability"
 
     # Statistical properties (what the output MUST contain)
@@ -77,7 +77,7 @@ class StatisticalContract:
     # Reliability
     reliability_requirements: Dict[str, Any] = field(default_factory=dict)
 
-    def validate_output(self, output: pd.DataFrame) -> tuple[pd.DataFrame, List[str]]:
+    def validate_output(self, output: pd.DataFrame) -> tuple[pd.DataFrame, List[str], List[str]]:
         """Validate output against this contract.
 
         Returns:

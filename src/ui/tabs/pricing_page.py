@@ -16,7 +16,8 @@ import streamlit as st
 
 from src.analytics.cache import cached_enrich_categories, run_cached_pricing_analysis
 from src.analytics.pricing import diagnose_price_curves_1d
-from src.ui.components import (
+from src.analytics.pricing.pipeline import PricingAnalysis
+from src.ui.components_utils import (
     render_insight_cards,
     render_metric_row,
     render_opportunity_table,
@@ -54,7 +55,10 @@ DECISION_COLORS = {
 _DECISION_ORDER = ["invest", "protect", "price_lever", "review", "insufficient_evidence"]
 
 
-def _render_scorecard(analysis: object) -> None:
+def _render_scorecard(analysis: PricingAnalysis) -> None:
+    if not isinstance(analysis, PricingAnalysis):
+        st.error("Invalid analysis object")
+        return
     status = analysis.elasticity_status
     n_total = int(len(status))
     n_est = int((status["elasticity_status"] == "estimated").sum())
@@ -199,7 +203,10 @@ def _simulate_price_change(
     return new_qty, new_price, new_qty * new_price
 
 
-def _render_price_simulation(analysis: object) -> None:
+def _render_price_simulation(analysis: PricingAnalysis) -> None:
+    if not isinstance(analysis, PricingAnalysis):
+        st.error("Invalid analysis object")
+        return
     st.subheader(":material/calculate: Business Impact — Price Scenario Simulation")
     elast = analysis.elasticity
     if elast is None or elast.empty:
@@ -548,7 +555,7 @@ def render(df: pd.DataFrame) -> None:
                         "Select SKU", skus_with_decisions, key="decision_card_sku"
                     )
                     render_pricing_decision_card(
-                        stockcode=selected_sku,
+                        stockcode=str(selected_sku),
                         kvi_data=analysis.kvi,
                         decision_data=analysis.decision_matrix,
                         elasticity_data=analysis.elasticity,

@@ -75,6 +75,7 @@ def load_transactions(
     source: str | Path | io.BytesIO,
     column_mapping: dict[str, str] | None = None,
     assess_quality: bool = True,
+    require_customer_id: bool = True,
 ) -> tuple[pd.DataFrame, str, int, Optional[DataQualityReport]]:
     """Load and normalize a transaction CSV.
 
@@ -82,6 +83,14 @@ def load_transactions(
     TRANSACTIONS contract. Missing optional columns are simply absent.
 
     Enhanced with consistent data quality validation and error handling.
+
+    Args:
+        source: Path, URL, or BytesIO object containing CSV data.
+        column_mapping: Optional mapping of canonical column names to source columns.
+        assess_quality: Whether to run data quality assessment (default: True).
+        require_customer_id: If True (default), filter out rows with missing/invalid customer_id.
+            If False, keep all rows regardless of customer_id validity. This is useful for
+            general transaction analyses that don't require customer-level data.
     """
     from src.analytics.config import get_config
     from src.analytics.data_quality import DataQualityError
@@ -129,13 +138,16 @@ def load_transactions(
         & df["stockcode"].notna()
         & df["stockcode"].ne("")
     )
-    # Customer-level validity (required for customer analytics)
+    # Customer-level validity (required for customer analytics when require_customer_id=True)
     customer_valid = df["customer_id"].notna() & df["customer_id"].ne("")
 
-    # For general transaction analyses, only transaction_valid is required
-    # Customer analytics will use the intersection
-    customer_analytics_valid = transaction_valid & customer_valid
-    df = df.loc[transaction_valid].copy()
+    # Apply filters based on require_customer_id parameter
+    if require_customer_id:
+        valid_mask = transaction_valid & customer_valid
+    else:
+        valid_mask = transaction_valid
+
+    df = df.loc[valid_mask].copy()
     # Preserve fractional quantities (e.g., weighted goods)
     df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce")
     dropped = int(before - len(df))
@@ -185,24 +197,29 @@ def load_transactions(
 
 
 def build_dataset_capabilities(df: pd.DataFrame) -> dict[str, bool]:
-    """Detect which optional analyses are possible given available columns and data quality."""
-    # Price variation check
+    """Detect which optional analyses are possible given available columns and data quality.
+
+    Note on has_price_variation: This is an aggregate measure computed as the maximum
+    coefficient of variation (CV) across all SKUs. It returns True if ANY SKU has
+    price variation >= 5% CV, even if most SKUs have zero variation.
+    """
+    # Price variation check (aggregate: max CV across all SKUs)
     price_cv = 0.0
     if "price" in df.columns and "stockcode" in df.columns:
         price_stats = df.groupby("stockcode")["price"].agg(["mean", "std"]).reset_index()
         price_stats["cv"] = price_stats["std"] / price_stats["mean"].replace(0, pd.NA)
         price_cv = price_stats["cv"].max() if not price_stats["cv"].isna().all() else 0.0
-    
+
     # Distinct price points per SKU
     min_distinct_prices = 0
     if "price" in df.columns and "stockcode" in df.columns:
         distinct_prices = df.groupby("stockcode")["price"].nunique()
         min_distinct_prices = int(distinct_prices.min()) if len(distinct_prices) > 0 else 0
-    
+
     n_customers = df["customer_id"].nunique() if "customer_id" in df.columns else 0
     n_skus = df["stockcode"].nunique() if "stockcode" in df.columns else 0
     n_baskets = df["transaction_id"].nunique() if "transaction_id" in df.columns else 0
-    
+
     return {
         # Column-based capabilities
         "has_category": "category" in df.columns,
@@ -213,7 +230,6 @@ def build_dataset_capabilities(df: pd.DataFrame) -> dict[str, bool]:
         "has_cost": "cost" in df.columns,
         "has_is_online": "is_online" in df.columns,
         "has_channel": "channel" in df.columns,
-        
         # Data quality / volume capabilities
         "has_price_variation": price_cv >= 0.05,  # 5% min CV
         "min_distinct_prices_3": min_distinct_prices >= 3,
@@ -342,6 +358,7 @@ def add_segment_columns(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame with added segment columns if available
     """
+    import inspect
     import logging
 
     logger = logging.getLogger(__name__)
@@ -366,7 +383,15 @@ def add_segment_columns(df: pd.DataFrame) -> pd.DataFrame:
     try:
         from src.analytics.segmentation import behavioral_segmentation
 
-        beh_seg = behavioral_segmentation(df, return_metrics=False)
+        # Runtime safety check: verify behavioral_segmentation supports return_metrics parameter
+        sig = inspect.signature(behavioral_segmentation)
+        supports_return_metrics = "return_metrics" in sig.parameters
+
+        if supports_return_metrics:
+            beh_seg = behavioral_segmentation(df, return_metrics=False)
+        else:
+            beh_seg = behavioral_segmentation(df)
+
         if isinstance(beh_seg, tuple):
             beh_seg = beh_seg[0]
         if "segment" in beh_seg.columns:
@@ -380,3 +405,76 @@ def add_segment_columns(df: pd.DataFrame) -> pd.DataFrame:
         logger.info("No segment columns could be added")
 
     return df
+
+
+def test_behavioral_segmentation_return_metrics() -> None:
+    """Test that behavioral_segmentation supports return_metrics parameter and returns correct type."""
+    import inspect
+    from src.analytics.segmentation import behavioral_segmentation
+    import pandas as pd
+    import numpy as np
+
+    # Verify signature has return_metrics parameter
+    sig = inspect.signature(behavioral_segmentation)
+    assert "return_metrics" in sig.parameters, "behavioral_segmentation missing return_metrics parameter"
+
+    # Create minimal test data
+    test_df = pd.DataFrame({
+        "customer_id": ["C1", "C1", "C2", "C2", "C3", "C3"],
+        "transaction_id": ["T1", "T2", "T3", "T4", "T5", "T6"],
+        "date": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-01", "2024-01-03", "2024-01-01", "2024-01-04"]),
+        "stockcode": ["S1", "S2", "S1", "S3", "S2", "S1"],
+        "product": ["P1", "P2", "P1", "P3", "P2", "P1"],
+        "price": [10.0, 20.0, 10.0, 30.0, 20.0, 10.0],
+        "quantity": [1, 2, 1, 1, 3, 1],
+    })
+
+    # Test with return_metrics=False (should return DataFrame)
+    result = behavioral_segmentation(test_df, return_metrics=False)
+    assert isinstance(result, pd.DataFrame), f"Expected DataFrame, got {type(result)}"
+    assert "segment" in result.columns, "Result missing 'segment' column"
+    assert "customer_id" in result.columns, "Result missing 'customer_id' column"
+
+    # Test with return_metrics=True (should return tuple of DataFrame, dict)
+    result_with_metrics = behavioral_segmentation(test_df, return_metrics=True)
+    assert isinstance(result_with_metrics, tuple), f"Expected tuple, got {type(result_with_metrics)}"
+    assert len(result_with_metrics) == 2, f"Expected tuple of length 2, got {len(result_with_metrics)}"
+    assert isinstance(result_with_metrics[0], pd.DataFrame), "First element should be DataFrame"
+    assert isinstance(result_with_metrics[1], dict), "Second element should be dict"
+
+    print("test_behavioral_segmentation_return_metrics passed")
+
+
+def test_load_transactions_customer_id_control() -> None:
+    """Test that require_customer_id parameter controls customer_id filtering."""
+    import tempfile
+    import pandas as pd
+
+    csv_data = """date,transaction_id,stockcode,product,customer_id,price,quantity
+2024-01-01,TXN001,SKU001,Product A,CUST001,10.0,1
+2024-01-01,TXN002,SKU002,Product B,,15.0,2
+2024-01-01,TXN003,SKU003,Product C,CUST003,20.0,1
+2024-01-01,TXN004,SKU004,Product D,,25.0,3
+2024-01-01,TXN005,SKU005,Product E,CUST005,30.0,1
+"""
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write(csv_data)
+        temp_path = f.name
+
+    try:
+        df_with_cust, _, dropped_with, _ = load_transactions(temp_path, require_customer_id=True)
+        assert len(df_with_cust) == 3, f"Expected 3 rows with customer_id, got {len(df_with_cust)}"
+        assert dropped_with == 2, f"Expected 2 dropped rows, got {dropped_with}"
+        assert df_with_cust["customer_id"].notna().all()
+
+        df_without_cust, _, dropped_without, _ = load_transactions(temp_path, require_customer_id=False)
+        assert len(df_without_cust) == 5, f"Expected 5 rows without customer_id filter, got {len(df_without_cust)}"
+        assert dropped_without == 0, f"Expected 0 dropped rows, got {dropped_without}"
+        assert df_without_cust["customer_id"].isna().sum() == 2
+
+    finally:
+        import os
+        os.unlink(temp_path)
+
+    print("test_load_transactions_customer_id_control passed")

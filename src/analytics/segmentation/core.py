@@ -596,7 +596,7 @@ def calculate_segment_basket_metrics(
     )
 
     # Calculate basket concentration (Gini coefficient of basket values)
-    def _gini(array):
+    def _gini(array: np.ndarray) -> float:
         """Calculate Gini coefficient of array of values."""
         if len(array) == 0:
             return 0
@@ -611,7 +611,7 @@ def calculate_segment_basket_metrics(
     basket_gini.columns = ["segment", "basket_concentration_gini"]
 
     # Calculate basket diversity (entropy of SKU/category distribution)
-    def _entropy(array):
+    def _entropy(array: np.ndarray) -> float:
         """Calculate Shannon entropy of array."""
         if len(array) == 0:
             return 0
@@ -727,13 +727,13 @@ def calculate_segment_price_behavior_metrics(
     price_75th = df["price"].quantile(0.75)
     price_25th = df["price"].quantile(0.25)
 
-    def _calculate_premium_share(group):
+    def _calculate_premium_share(group: pd.Series) -> float:
         if len(group) == 0:
             return 0
         premium_count = (group >= price_75th).sum()
         return (premium_count / len(group)) * 100
 
-    def _calculate_value_share(group):
+    def _calculate_value_share(group: pd.Series) -> float:
         if len(group) == 0:
             return 0
         value_count = (group <= price_25th).sum()
@@ -831,7 +831,7 @@ def calculate_segment_growth_metrics(
         )
 
     # Calculate metrics for each period
-    def _calculate_period_metrics(period_df, period_segments_df):
+    def _calculate_period_metrics(period_df: pd.DataFrame, period_segments_df: pd.DataFrame) -> pd.DataFrame:
         if period_df.empty:
             return pd.DataFrame()
 
@@ -951,7 +951,7 @@ def calculate_segment_concentration_metrics(
     df = df.merge(segments_df[["customer_id", "segment"]], on="customer_id", how="left")
 
     # Calculate revenue concentration per segment (Gini coefficient)
-    def _gini(array):
+    def _gini(array: np.ndarray) -> float:
         """Calculate Gini coefficient of array of values."""
         if len(array) == 0:
             return 0
@@ -966,7 +966,7 @@ def calculate_segment_concentration_metrics(
     revenue_gini.columns = ["segment", "revenue_concentration_gini"]
 
     # Calculate top customer concentration
-    def _top_pct_share(group, pct):
+    def _top_pct_share(group: pd.DataFrame, pct: float) -> float:
         if len(group) == 0:
             return 0
         sorted_revenue = np.sort(group["revenue"])[::-1]  # Descending order

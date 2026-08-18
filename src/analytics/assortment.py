@@ -198,7 +198,7 @@ def optimize_assortment_milp(
         c[n + k] = -recovery_margin * edge_recovery[k]
 
     # Integrality: x_i are binary, z_ij are binary
-    integrality = np.ones(total_vars, dtype=bool)
+    integrality: np.ndarray = np.ones(total_vars, dtype=bool)
 
     constraints: list[LinearConstraint] = []
     # Max SKUs: sum x_i <= max_skus
