@@ -99,7 +99,7 @@ def warn_if_memory_exceeds(threshold_mb: float, message: str = "") -> bool:
 
 def memory_guardrail(threshold_mb: float = 900, analysis_name: str = "analysis"):
     """Decorator that checks memory before and after analysis execution.
-    
+
     Warns if memory exceeds threshold and logs peak memory usage.
     """
     def decorator(func):
@@ -153,7 +153,7 @@ def check_memory_before_analysis(
     analysis_name: str = "analysis",
 ) -> tuple[bool, str]:
     """Check if there's enough memory for analysis.
-    
+
     Returns (can_proceed, message).
     """
     import warnings
@@ -174,7 +174,7 @@ def check_memory_before_analysis(
 
 class ColdStartHandler:
     """Handler for Streamlit Cloud cold-start scenarios.
-    
+
     Since Streamlit Cloud has ephemeral filesystem, cached data must be
     re-uploaded on each session. This handler manages the cold-start flow.
     """
@@ -185,15 +185,13 @@ class ColdStartHandler:
 
     def check_cold_start(self) -> bool:
         """Check if this is a cold start (no cached data in session).
-        
+
         Returns True if cold start (requires re-upload).
         """
         # Check if we have a valid dataset_id in session state
         if "dataset_id" not in self.session_state:
             return True
-        if self.session_state["dataset_id"] != self.dataset_id:
-            return True
-        return False
+        return self.session_state["dataset_id"] != self.dataset_id
 
     def handle_cold_start(self) -> None:
         """Handle cold start by clearing cached results and prompting re-upload."""
