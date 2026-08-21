@@ -10,6 +10,8 @@ Layers:
 
 from __future__ import annotations
 
+from typing import Any
+
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -444,7 +446,7 @@ def _compute_manager_table(
         inc_revenue = max(0.0, revenue - baseline)
 
         # Recommendation based on profile + quadrant logic
-        profile_quad = profile.get("abc", "C")
+        profile.get("abc", "C")
         growth_pct = profile.get("growth", 0.0)
         elasticity = profile.get("elasticity", 0.0)
 
@@ -575,11 +577,10 @@ def render(df: pd.DataFrame) -> None:
 
     # Ensure profile service is initialized with current data
     if profile_service is not None:
-        try:
+        import contextlib
+        with contextlib.suppress(Exception):
             # Force recompute by clearing cache miss trigger
             profile_service.refresh()
-        except Exception:
-            pass
 
     # Layer 1: Basket Network
     st.divider()

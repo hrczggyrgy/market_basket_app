@@ -104,7 +104,7 @@ def _render_opportunity_risk_matrix(analysis: DecisionCenterAnalysis) -> None:
     matrix_df = pd.DataFrame(matrix_rows)
 
     # Configure and render bubble matrix
-    config = MatrixConfig(
+    MatrixConfig(
         x_axis="risk_level",
         y_axis="opp_value",
         size="revenue",
@@ -197,7 +197,7 @@ def _render_decision_portfolio_funnel(analysis: DecisionCenterAnalysis) -> None:
         high_evidence_count = int(total_skus * 0.4)
 
     evidence_pct = evidence_sufficient / max(1, total_skus) * 100 if total_skus > 0 else 0
-    high_ev_pct = high_evidence_count / max(1, total_skus) * 100 if total_skus > 0 else 0
+    high_evidence_count / max(1, total_skus) * 100 if total_skus > 0 else 0
 
     # Stage 3: Opportunity identified (opportunities generated)
     opps_count = len(analysis.opportunities) if not analysis.opportunities.empty else 0
@@ -210,7 +210,7 @@ def _render_decision_portfolio_funnel(analysis: DecisionCenterAnalysis) -> None:
             action = str(row.get("action", "")).lower()
             if action and action != "—":
                 action_count += 1
-    action_pct = action_count / max(1, total_skus) * 100 if total_skus > 0 else 0
+    action_count / max(1, total_skus) * 100 if total_skus > 0 else 0
 
     # Stage 5: High-priority actions (top quartile by value)
     high_priority_count = 0
@@ -262,7 +262,7 @@ def _render_decision_portfolio_funnel(analysis: DecisionCenterAnalysis) -> None:
 # Manager action queue renderer
 # ---------------------------------------------------------------------------
 
-def _render_manager_action_queue(analysis: DecisionCenterAnalysis, profile: ProfileService | None) -> None:
+def _render_manager_action_queue(analysis: DecisionCenterAnalysis, profile: ProfileService | None, df: pd.DataFrame | None = None) -> None:
     """Render manager action queue with priority/SKU/category/decision/value/evidence/next action."""
     st.subheader(":material/task_alt: Manager Action Queue")
 
@@ -299,7 +299,7 @@ def _render_manager_action_queue(analysis: DecisionCenterAnalysis, profile: Prof
                 prof = profile.get_profile(sku) if st.session_state.get("profile_initialized") else {}
                 if not prof:
                     from src.analytics.profile_service import init_profile_service
-                    profile_service = init_profile_service(df)  # type: ignore
+                    init_profile_service(df)  # type: ignore
                     st.session_state["profile_initialized"] = True
                     prof = profile.get_profile(sku)
             except Exception:
@@ -308,7 +308,7 @@ def _render_manager_action_queue(analysis: DecisionCenterAnalysis, profile: Prof
             # Derive next action from profile
             if prof:
                 price_action = prof.get("price_action", "review")
-                assortment_action = prof.get("assortment_action", "review")
+                prof.get("assortment_action", "review")
                 # Map profile actions to next actions
                 action_map = {
                     "invest": "Implement recommended price change",
@@ -400,7 +400,6 @@ def _identify_five_priorities(analysis: DecisionCenterAnalysis, profile: Profile
     """Identify this period's 5 dynamic priorities from all signals."""
     opps = analysis.opportunities
     insights = analysis.insights
-    domains = analysis.domains_covered
 
     # Score each opportunity / insight using multi-factor scoring
 
@@ -562,8 +561,8 @@ def _render_readiness_panel(dataset_id: str, df: pd.DataFrame) -> dict[str, dict
 
     Returns a dict of domain -> status metadata for use by the caller.
     """
-    store = ResultStore()
-    hp = param_hash({}, schema_version=get_schema_version())
+    ResultStore()
+    param_hash({}, schema_version=get_schema_version())
 
     tier_a_keys = [
         "overview",
@@ -578,7 +577,7 @@ def _render_readiness_panel(dataset_id: str, df: pd.DataFrame) -> dict[str, dict
 
     for key in tier_a_keys:
         try:
-            spec = get(key)
+            get(key)
         except KeyError:
             continue
 
@@ -677,7 +676,7 @@ def render(df: pd.DataFrame) -> None:
         for i, (key, status_info) in enumerate(statuses.items()):
             with cols[i]:
                 status = status_info["status"]
-                metadata = status_info["metadata"]
+                status_info["metadata"]
                 if status == READY:
                     st.success(f":material/check: {key.upper()} READY")
                 elif status == CACHED:
@@ -709,7 +708,7 @@ def render(df: pd.DataFrame) -> None:
     st.divider()
 
     # Section 3: Manager Action Queue
-    _render_manager_action_queue(analysis, profile)
+    _render_manager_action_queue(analysis, profile, df)
     st.divider()
 
     # Section 4: This Period's 5 Priorities (dynamic identification)

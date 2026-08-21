@@ -40,8 +40,8 @@ def _render_kpi_row(df: pd.DataFrame, capabilities: dict) -> None:
     work["revenue"] = work["price"] * work["quantity"]
     total_revenue = work["revenue"].sum()
     n_customers = work["customer_id"].nunique()
-    n_transactions = len(work)
-    n_skus = work["stockcode"].nunique()
+    len(work)
+    work["stockcode"].nunique()
 
     # Category Revenue
     category_revenue = 0.0
@@ -71,18 +71,18 @@ def _render_kpi_row(df: pd.DataFrame, capabilities: dict) -> None:
 
     # Revenue at Risk — estimate from low-confidence drivers
     revenue_at_risk = 0.0
-    if capabilities.get("sufficient_customers_500") and capabilities.get("sufficient_skus_50"):
+    if (capabilities.get("sufficient_customers_500") and capabilities.get("sufficient_skus_50")
+            and "category" in work.columns):
         # Simple heuristic: revenue from products with low evidence confidence
         # Placeholder: use concentration risk as proxy
-        if "category" in work.columns:
-            cat_rev = (
-                (work["price"] * work["quantity"])
-                .groupby(work["category"])
-                .sum()
-                .sort_values(ascending=False)
-            )
-            top5_share = cat_rev.head(5).sum() / cat_rev.sum() if len(cat_rev) > 0 else 0
-            revenue_at_risk = total_revenue * min(top5_share * 0.3, 0.2)
+        cat_rev = (
+            (work["price"] * work["quantity"])
+            .groupby(work["category"])
+            .sum()
+            .sort_values(ascending=False)
+        )
+        top5_share = cat_rev.head(5).sum() / cat_rev.sum() if len(cat_rev) > 0 else 0
+        revenue_at_risk = total_revenue * min(top5_share * 0.3, 0.2)
 
     # Opportunity Value — residual growth potential
     opportunity_value = 0.0
@@ -138,6 +138,7 @@ def _render_primary_matrix(df: pd.DataFrame, capabilities: dict) -> None:
 
     work = df.copy()
     work["revenue"] = work["price"] * work["quantity"]
+    n_customers = work["customer_id"].nunique()
 
     # Build per-category metrics
     if "category" in work.columns:
@@ -324,7 +325,7 @@ def _render_primary_matrix(df: pd.DataFrame, capabilities: dict) -> None:
     show(fig)
 
     # Summary insight
-    n_cats = len(cat_metrics)
+    len(cat_metrics)
     grow_count = int((cat_metrics["quadrant"] == "Grow").sum()) if "quadrant" in cat_metrics.columns else 0
     defend_count = int((cat_metrics["quadrant"] == "Defend").sum()) if "quadrant" in cat_metrics.columns else 0
     build_count = int((cat_metrics["quadrant"] == "Build").sum()) if "quadrant" in cat_metrics.columns else 0
@@ -379,33 +380,33 @@ def _render_revenue_waterfall_6drivers(df: pd.DataFrame) -> None:
     # Driver 1: Customer growth
     curr_cust = curr["customers"]
     prev_cust = prev["customers"]
-    customer_growth = (curr_cust - prev_cust) / max(prev_cust, 1)
+    (curr_cust - prev_cust) / max(prev_cust, 1)
 
     # Driver 2: Existing customer frequency change
     # frequency = transactions / customers
     curr_freq = curr["transactions"] / max(curr_cust, 1)
     prev_freq = prev["transactions"] / max(prev_cust, 1)
-    frequency_change = (curr_freq - prev_freq) / max(prev_freq, 1)
+    (curr_freq - prev_freq) / max(prev_freq, 1)
 
     # Driver 3: Basket size change
     curr_basket = curr["units"] / max(curr["transactions"], 1)
     prev_basket = prev["units"] / max(prev["transactions"], 1)
-    basket_size_change = (curr_basket - prev_basket) / max(prev_basket, 1)
+    (curr_basket - prev_basket) / max(prev_basket, 1)
 
     # Driver 4: Product mix effect
     # Estimate: ratio of current to prior unit revenue
     curr_price_per_unit = curr["revenue"] / max(curr["units"], 1)
     prev_price_per_unit = prev["revenue"] / max(prev["units"], 1)
-    product_mix_effect = (curr_price_per_unit - prev_price_per_unit) / max(prev_price_per_unit, 1)
+    (curr_price_per_unit - prev_price_per_unit) / max(prev_price_per_unit, 1)
 
     # Driver 5: Price effect
     # Simplified: price change within same basket
-    price_effect = (curr_price_per_unit - prev_price_per_unit) / max(prev_price_per_unit, 1)
+    (curr_price_per_unit - prev_price_per_unit) / max(prev_price_per_unit, 1)
 
     # Driver 6: Lost customers (churn)
     # Estimate from transaction count drop vs customer count drop
-    curr_txn = curr["transactions"]
-    prev_txn = prev["transactions"]
+    curr["transactions"]
+    prev["transactions"]
     lost_customers_estimate = max(0, prev_cust - curr_cust) if prev_cust > curr_cust else 0
 
     # Calculate total revenue change attribution (log-ratio multiplicative)
@@ -454,7 +455,7 @@ def _render_revenue_waterfall_6drivers(df: pd.DataFrame) -> None:
     waterfall_labels = []
     waterfall_measures = []
 
-    for i, label in enumerate(driver_labels[:5]):  # first 5 from log-ratio
+    for _i, label in enumerate(driver_labels[:5]):  # first 5 from log-ratio
         if label in logs:
             val = logs[label]
         else:
@@ -632,7 +633,7 @@ def _render_growth_driver_matrix(df: pd.DataFrame) -> None:
         "Draggers": "#F28E2B",
     }
 
-    size_ref = max(metrics["size_norm"].max(), 1) if not metrics.empty else 1
+    max(metrics["size_norm"].max(), 1) if not metrics.empty else 1
 
     for quad in ["Growth Engines", "Emerging Opportunities", "Critical Risks", "Draggers"]:
         quad_df = metrics[metrics["quadrant"] == quad]
@@ -823,7 +824,6 @@ def _render_decision_table(df: pd.DataFrame, capabilities: dict) -> None:
     display_df["customers_fmt"] = display_df["customers"].map(lambda v: f"{int(v):,}")
 
     if "category" in display_df.columns:
-        display_cols = ["rank", "category", "revenue_fmt", "customers_fmt", "n_products" if "n_products" in display_df.columns else "", "decision_type"]
         display_df = display_df[["rank", "category", "revenue_fmt", "customers_fmt"] + [c for c in ["n_products"] if c in display_df.columns]]
         st.dataframe(
             display_df[["rank", "category", "revenue_fmt", "customers_fmt"]],
@@ -831,7 +831,6 @@ def _render_decision_table(df: pd.DataFrame, capabilities: dict) -> None:
             hide_index=True,
         )
     else:
-        display_cols = ["rank", "sku", "revenue_fmt", "customers_fmt", "decision_type"]
         st.dataframe(
             display_df[["rank", "sku", "revenue_fmt", "customers_fmt", "decision_type"]],
             use_container_width=True,
