@@ -21,6 +21,7 @@ dependencies = [
     "psutil>=7.2.2",
     "xxhash==3.5.0",
     "networkx==3.6.1",
+    "mlxtend==0.25.0",
 ]
 
 [project.optional-dependencies]
@@ -38,7 +39,6 @@ dev = [
 ]
 advanced = [
     "statsmodels==0.14.6",
-    "mlxtend==0.25.0",
     "lifelines==0.30.3",
     "lifetimes==0.11.3",
     "linearmodels==5.3",

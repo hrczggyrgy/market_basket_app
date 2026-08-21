@@ -1203,6 +1203,7 @@ version = "2.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "duckdb" },
+    { name = "mlxtend" },
     { name = "networkx" },
     { name = "numpy" },
     { name = "pandas" },
@@ -1220,7 +1221,6 @@ advanced = [
     { name = "lifelines" },
     { name = "lifetimes" },
     { name = "linearmodels" },
-    { name = "mlxtend" },
     { name = "statsmodels" },
 ]
 dev = [
@@ -1249,7 +1249,7 @@ requires-dist = [
     { name = "lifelines", marker = "extra == 'advanced'", specifier = "==0.30.3" },
     { name = "lifetimes", marker = "extra == 'advanced'", specifier = "==0.11.3" },
     { name = "linearmodels", marker = "extra == 'advanced'", specifier = "==5.3" },
-    { name = "mlxtend", marker = "extra == 'advanced'", specifier = "==0.25.0" },
+    { name = "mlxtend", specifier = "==0.25.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.5.0" },
     { name = "networkx", specifier = "==3.6.1" },
     { name = "numpy", specifier = "==2.4.6" },
