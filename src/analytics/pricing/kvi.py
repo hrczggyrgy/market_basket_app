@@ -118,7 +118,7 @@ def _create_kvi_features_from_weekly(
     elasticity_status_df: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Assemble KVI feature table per SKU from pre-computed weekly panel.
-    
+
     This function uses the weekly panel from FeatureStore instead of raw transactions,
     avoiding the expensive groupby operations.
     """
@@ -214,7 +214,7 @@ def compute_kvi_score(
     Can accept either:
     - transactions_df: Raw transaction data (will compute features internally)
     - weekly_panel: Pre-computed weekly product panel from FeatureStore (preferred for performance)
-    
+
     ``elasticity_status_df`` (optional output of ``compute_elasticity_status``)
     carries the per-SKU estimability state so that SKUs without a usable
     elasticity are labelled explicitly (e.g. ``insufficient_variation``) rather

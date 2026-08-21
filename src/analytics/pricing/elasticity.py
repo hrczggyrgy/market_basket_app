@@ -347,10 +347,10 @@ def estimate_loglog_elasticity_from_weekly(
     add_time_fe: bool = True,
 ) -> pd.DataFrame:
     """Per-SKU log-log OLS elasticity from pre-computed weekly panel.
-    
+
     This function accepts a pre-computed weekly product panel (e.g., from FeatureStore)
     instead of raw transactions, avoiding the expensive groupby operations.
-    
+
     Expected weekly_panel columns:
     - stockcode: Product identifier
     - iso_week: ISO week (year * 100 + week)
@@ -361,13 +361,13 @@ def estimate_loglog_elasticity_from_weekly(
     - n_customers: Number of customers
     - price_cv: Coefficient of variation of price (optional, will be computed if missing)
     - median_price: Median price (optional)
-    
+
     WARNING: This estimates OBSERVED price response, NOT causal elasticity.
     - Endogeneity: price and quantity are simultaneously determined
     - No instrument for price; OLS is biased if demand/supply shocks correlate
     - Results are descriptive: "how quantity co-varies with price historically"
     - For causal inference, use IV, RDD, or experimental methods (with valid instruments)
-    
+
     Returns DataFrame with one row per SKU meeting minimum data requirements.
     """
     import warnings
@@ -378,6 +378,8 @@ def estimate_loglog_elasticity_from_weekly(
         UserWarning,
         stacklevel=2,
     )
+
+    df = weekly_panel.copy()
 
     if "price_cv" not in df.columns:
         price_stats = (
