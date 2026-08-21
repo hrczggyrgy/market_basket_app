@@ -1203,6 +1203,9 @@ version = "2.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "duckdb" },
+    { name = "lifelines" },
+    { name = "lifetimes" },
+    { name = "linearmodels" },
     { name = "mlxtend" },
     { name = "networkx" },
     { name = "numpy" },
@@ -1212,17 +1215,12 @@ dependencies = [
     { name = "pyarrow" },
     { name = "scikit-learn" },
     { name = "scipy" },
+    { name = "statsmodels" },
     { name = "streamlit" },
     { name = "xxhash" },
 ]
 
 [package.optional-dependencies]
-advanced = [
-    { name = "lifelines" },
-    { name = "lifetimes" },
-    { name = "linearmodels" },
-    { name = "statsmodels" },
-]
 dev = [
     { name = "hypothesis" },
     { name = "kaleido" },
@@ -1246,9 +1244,9 @@ requires-dist = [
     { name = "duckdb" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.90.0" },
     { name = "kaleido", marker = "extra == 'dev'", specifier = ">=0.2.1" },
-    { name = "lifelines", marker = "extra == 'advanced'", specifier = "==0.30.3" },
-    { name = "lifetimes", marker = "extra == 'advanced'", specifier = "==0.11.3" },
-    { name = "linearmodels", marker = "extra == 'advanced'", specifier = "==5.3" },
+    { name = "lifelines", specifier = "==0.30.3" },
+    { name = "lifetimes", specifier = "==0.11.3" },
+    { name = "linearmodels", specifier = "==5.3" },
     { name = "mlxtend", specifier = "==0.25.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.5.0" },
     { name = "networkx", specifier = "==3.6.1" },
@@ -1266,7 +1264,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "scikit-learn", specifier = "==1.9.0" },
     { name = "scipy", specifier = "==1.18.0" },
-    { name = "statsmodels", marker = "extra == 'advanced'", specifier = "==0.14.6" },
+    { name = "statsmodels", specifier = "==0.14.6" },
     { name = "streamlit", specifier = "==1.59.1" },
     { name = "xxhash", specifier = "==3.5.0" },
 ]

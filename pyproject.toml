@@ -22,6 +22,10 @@ dependencies = [
     "xxhash==3.5.0",
     "networkx==3.6.1",
     "mlxtend==0.25.0",
+    "lifelines==0.30.3",
+    "lifetimes==0.11.3",
+    "statsmodels==0.14.6",
+    "linearmodels==5.3",
 ]
 
 [project.optional-dependencies]
@@ -37,12 +41,7 @@ dev = [
     "pixelmatch>=0.4.0",
     "hypothesis>=6.90.0",
 ]
-advanced = [
-    "statsmodels==0.14.6",
-    "lifelines==0.30.3",
-    "lifetimes==0.11.3",
-    "linearmodels==5.3",
-]
+advanced = []
 
 [tool.setuptools.packages.find]
 where = ["src"]
