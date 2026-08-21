@@ -33,12 +33,12 @@ def weekly_agg(
     if agg_func not in valid_funcs:
         raise ValueError(f"agg_func must be one of {valid_funcs}, got '{agg_func}'")
     if additional_aggs:
-        for new_col, (src_col, func) in additional_aggs.items():
+        for _new_col, (_src_col, func) in additional_aggs.items():
             if func not in valid_funcs:
-                raise ValueError(f"agg_func for '{new_col}' must be one of {valid_funcs}")
+                raise ValueError(f"agg_func for '{_new_col}' must be one of {valid_funcs}")
     agg_spec: dict[str, str] = {value_col: agg_func}
     if additional_aggs:
-        for new_col, (src_col, func) in additional_aggs.items():
+        for _new_col, (src_col, func) in additional_aggs.items():
             agg_spec[src_col] = func
     result = (
         d.groupby(groupby_cols + ["iso_week"], as_index=False)

@@ -45,9 +45,7 @@ class FeatureRegistry:
             return False
         columns_set = set(df.columns)
         schema_set = set(metadata.schema)
-        if not schema_set.issubset(columns_set):
-            return False
-        return True
+        return schema_set.issubset(columns_set)
 
     def __contains__(self, name: str) -> bool:
         """Check if a feature table is registered."""

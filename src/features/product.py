@@ -28,7 +28,6 @@ def build_dim_product(df: pd.DataFrame) -> pd.DataFrame:
     }
 
     # Add optional columns if present
-    optional_agg = {}
     if "category" in d.columns:
         agg_dict["category"] = ("category", "first")
     if "brand" in d.columns:

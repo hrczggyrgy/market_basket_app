@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from . import basket, customer, product, registry, switching, weekly
+from . import basket, customer, product, registry, switching
 
 # Key exports for convenience
 FeatureRegistry = registry.FeatureRegistry
