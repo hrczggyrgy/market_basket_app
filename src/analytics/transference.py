@@ -14,7 +14,6 @@ from typing import Sequence
 
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
 
 from src.analytics.data import revenue_column
 from src.analytics.schemas import (
@@ -28,6 +27,38 @@ from src.analytics.schemas import (
     check,
 )
 from src.analytics.switching import compute_switching_matrix
+
+# Lazy import for statsmodels (only needed for cross-price elasticity)
+_statsmodels_available = None
+_sm = None
+
+
+def _get_sm():
+    """Lazy import statsmodels.api."""
+    global _statsmodels_available, _sm
+    if _sm is not None:
+        return _sm
+    try:
+        import statsmodels.api as sm
+        _sm = sm
+        _statsmodels_available = True
+    except ImportError:
+        _statsmodels_available = False
+        raise ImportError("statsmodels is required for cross-price elasticity. Install with: pip install statsmodels")
+    return _sm
+
+
+def _is_statsmodels_available() -> bool:
+    """Check if statsmodels is available without importing."""
+    global _statsmodels_available
+    if _statsmodels_available is not None:
+        return _statsmodels_available
+    try:
+        import statsmodels.api  # noqa: F401
+        _statsmodels_available = True
+    except ImportError:
+        _statsmodels_available = False
+    return _statsmodels_available
 
 # Scalar metric keys returned by simulate_assortment_change / delist impact.
 TRANSFERENCE_METRICS = ("lost_revenue", "recovered_revenue", "net_impact", "recovery_rate")
@@ -52,6 +83,7 @@ def _scalar_value(series: pd.Series, key: object, default: float) -> float:
 def compute_demand_transference_matrix(
     transactions_df: pd.DataFrame,
     switching_df: pd.DataFrame | None = None,
+    switching_edges: pd.DataFrame | None = None,
     product_col: str = "stockcode",
     top_n: int | None = None,
 ) -> pd.DataFrame:
@@ -66,6 +98,13 @@ def compute_demand_transference_matrix(
 
     WARNING: This is an OBSERVED correlation, NOT a causal counterfactual estimate.
     It assumes switching behavior is invariant to delisting (no strategic response).
+
+    Args:
+        transactions_df: Transaction data
+        switching_df: Precomputed switching matrix (deprecated, use switching_edges)
+        switching_edges: Sparse edge table from SwitchingEngine.get_switching_edges()
+        product_col: Product column name
+        top_n: Limit to top N products by revenue
     """
     df = transactions_df.copy()
     df["revenue"] = revenue_column(df)
@@ -73,12 +112,28 @@ def compute_demand_transference_matrix(
     total_revenue = float(product_revenue.sum())
     revenue_share = (product_revenue / total_revenue).rename("revenue_share")
 
-    if switching_df is None:
+    # Use switching_edges if provided (preferred), otherwise fall back to switching_df
+    if switching_edges is not None:
+        if switching_edges.empty:
+            return pd.DataFrame(columns=list(DEMAND_TRANSFERENCE.columns))
+        # Ensure switching_edges has the required columns
+        if "pct" not in switching_edges.columns:
+            # Normalize if needed
+            total = switching_edges.groupby("from_product")["count"].transform("sum")
+            switching_edges = switching_edges.copy()
+            switching_edges["pct"] = np.where(total > 0, switching_edges["count"] / total, 0.0)
+        result = switching_edges.rename(columns={"pct": "switch_rate"})
+    elif switching_df is not None:
+        if switching_df.empty:
+            return pd.DataFrame(columns=list(DEMAND_TRANSFERENCE.columns))
+        result = _switch_rates(switching_df)
+    else:
+        # Compute from scratch if neither provided
         switching_df = compute_switching_matrix(df)
-    if switching_df.empty:
-        return pd.DataFrame(columns=list(DEMAND_TRANSFERENCE.columns))
+        if switching_df.empty:
+            return pd.DataFrame(columns=list(DEMAND_TRANSFERENCE.columns))
+        result = _switch_rates(switching_df)
 
-    result = _switch_rates(switching_df)
     if top_n is not None:
         top_products = product_revenue.nlargest(top_n).index
         result = result[
@@ -462,13 +517,13 @@ def compute_cross_price_elasticity(
         if valid.sum() < min_periods:
             continue
 
-        X = sm.add_constant(log_price_a[valid])
+        X = _get_sm().add_constant(log_price_a[valid])
         X["price_b"] = log_price_b[valid]
         y = log_qty_a[valid]
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=UserWarning)
-            model = sm.OLS(y, X).fit(cov_type="HC3")
+            model = _get_sm().OLS(y, X).fit(cov_type="HC3")
 
         results.append(
             {

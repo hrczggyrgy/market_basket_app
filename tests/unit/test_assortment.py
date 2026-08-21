@@ -66,6 +66,7 @@ def test_milp_margin_objective(assortment_inputs: dict[str, object]) -> None:
     assert len(selected) > 0
 
 
+@pytest.mark.slow
 def test_heuristic_reaches_max_skus(assortment_inputs: dict[str, object]) -> None:
     df = assortment_inputs["df"]  # type: ignore[assignment]
     revenue = assortment_inputs["revenue"]  # type: ignore[assignment]

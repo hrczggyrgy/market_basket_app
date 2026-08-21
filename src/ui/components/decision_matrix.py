@@ -279,9 +279,10 @@ def render_decision_matrix(
     fig.update_layout(
         height=config.height,
         margin={"l": 100, "r": 50, "t": 50, "b": 100},
-        xaxis={"side": "top", "tickangle": -45},
+        xaxis={"side": "top"},
         yaxis={"autorange": "reversed"},
     )
+    fig.update_xaxes(tickangle=-45)
 
     show(fig)
 

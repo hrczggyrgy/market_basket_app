@@ -13,6 +13,11 @@ from src.ui.components.download import (
     create_metadata,
     render_download_buttons,
 )
+from src.ui.components.evidence_badge import (
+    map_evidence_to_reliability,
+    map_reliability_to_evidence,
+    render_evidence_badge,
+)
 from src.ui.components.filter_bar import (
     FilterBarConfig,
     FilterConfig,
@@ -35,11 +40,6 @@ from src.ui.components.reliability_badge import (
     render_reliability_badge,
     render_reliability_inline,
     render_reliability_legend,
-)
-from src.ui.components.evidence_badge import (
-    render_evidence_badge,
-    map_evidence_to_reliability,
-    map_reliability_to_evidence,
 )
 from src.ui.components.strategic_table import (
     ColumnConfig,

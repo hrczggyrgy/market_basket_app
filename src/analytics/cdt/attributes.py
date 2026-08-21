@@ -159,7 +159,10 @@ def derive_substitution_tier(
     if sdp.nunique() <= 1:
         return pd.Series([labels[0]] * len(sdp), index=sdp.index, name="substitution_tier")
     effective_q = min(n_tiers, sdp.nunique())
-    tier = pd.qcut(sdp, q=effective_q, labels=labels[:effective_q], duplicates="drop")
+    # qcut with duplicates="drop" may produce fewer bins; get actual bin count from result
+    tier = pd.qcut(sdp, q=effective_q, duplicates="drop")
+    n_bins = tier.nunique()
+    tier = pd.qcut(sdp, q=effective_q, labels=labels[:n_bins], duplicates="drop")
     return tier.rename("substitution_tier")
 
 

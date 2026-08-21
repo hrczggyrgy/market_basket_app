@@ -76,6 +76,8 @@ def load_transactions(
     column_mapping: dict[str, str] | None = None,
     assess_quality: bool = True,
     require_customer_id: bool = True,
+    use_categorical: bool = True,
+    use_float32: bool = True,
 ) -> tuple[pd.DataFrame, str, int, Optional[DataQualityReport]]:
     """Load and normalize a transaction CSV.
 
@@ -91,6 +93,8 @@ def load_transactions(
         require_customer_id: If True (default), filter out rows with missing/invalid customer_id.
             If False, keep all rows regardless of customer_id validity. This is useful for
             general transaction analyses that don't require customer-level data.
+        use_categorical: If True (default), encode ID columns as categorical dtype for memory efficiency.
+        use_float32: If True (default), use float32 for price/revenue columns to reduce memory.
     """
     from src.analytics.config import get_config
     from src.analytics.data_quality import DataQualityError
@@ -109,13 +113,25 @@ def load_transactions(
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
 
+    # Use efficient dtype for numeric columns
+    price_dtype = np.float32 if use_float32 else np.float64
+    qty_dtype = np.float32 if use_float32 else np.float64
+
     df = pd.DataFrame({c: raw[mapping[c]] for c in REQUIRED_COLUMNS})
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
-    df["price"] = pd.to_numeric(df["price"], errors="coerce")
-    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce")
+    df["price"] = pd.to_numeric(df["price"], errors="coerce").astype(price_dtype)
+    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").astype(qty_dtype)
+
+    # Clean ID columns
     df["customer_id"] = df["customer_id"].apply(_clean_id)
     df["stockcode"] = df["stockcode"].apply(_clean_id)
     df["transaction_id"] = df["transaction_id"].apply(_clean_id)
+
+    # Encode categorical columns for memory efficiency
+    if use_categorical:
+        for cat_col in ("stockcode", "customer_id", "transaction_id", "product"):
+            if cat_col in df.columns:
+                df[cat_col] = df[cat_col].astype("category")
 
     return_mask = (df["price"] < 0) | (df["quantity"] < 0)
     return_count = int(return_mask.sum())
@@ -149,7 +165,7 @@ def load_transactions(
 
     df = df.loc[valid_mask].copy()
     # Preserve fractional quantities (e.g., weighted goods)
-    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce")
+    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").astype(qty_dtype)
     dropped = int(before - len(df))
 
     # Optional columns: auto-detect via same canonical mapping (case-insensitive)
@@ -231,15 +247,15 @@ def build_dataset_capabilities(df: pd.DataFrame) -> dict[str, bool]:
         "has_is_online": "is_online" in df.columns,
         "has_channel": "channel" in df.columns,
         # Data quality / volume capabilities
-        "has_price_variation": price_cv >= 0.05,  # 5% min CV
-        "min_distinct_prices_3": min_distinct_prices >= 3,
-        "sufficient_customers_100": n_customers >= 100,
-        "sufficient_customers_500": n_customers >= 500,
-        "sufficient_skus_20": n_skus >= 20,
-        "sufficient_skus_50": n_skus >= 50,
-        "sufficient_baskets_200": n_baskets >= 200,
-        "sufficient_baskets_500": n_baskets >= 500,
-        "sufficient_baskets_1000": n_baskets >= 1000,
+        "has_price_variation": bool(price_cv >= 0.05),  # 5% min CV
+        "min_distinct_prices_3": bool(min_distinct_prices >= 3),
+        "sufficient_customers_100": bool(n_customers >= 100),
+        "sufficient_customers_500": bool(n_customers >= 500),
+        "sufficient_skus_20": bool(n_skus >= 20),
+        "sufficient_skus_50": bool(n_skus >= 50),
+        "sufficient_baskets_200": bool(n_baskets >= 200),
+        "sufficient_baskets_500": bool(n_baskets >= 500),
+        "sufficient_baskets_1000": bool(n_baskets >= 1000),
     }
 
 
@@ -267,10 +283,10 @@ def derive_product_lookup(df: pd.DataFrame) -> pd.DataFrame:
         if c in df.columns
     ]
     lookup = df[cols].drop_duplicates(subset="stockcode")
-    lookup["product"] = lookup["product"].fillna(lookup["stockcode"])
+    lookup["product"] = lookup["product"].astype(object).fillna(lookup["stockcode"].astype(str))
     for col in ("category", "brand", "size", "flavor"):
         if col in lookup.columns:
-            lookup[col] = lookup[col].fillna("Unknown")
+            lookup[col] = lookup[col].astype(object).fillna("Unknown")
     return lookup.reset_index(drop=True)
 
 
@@ -410,9 +426,10 @@ def add_segment_columns(df: pd.DataFrame) -> pd.DataFrame:
 def test_behavioral_segmentation_return_metrics() -> None:
     """Test that behavioral_segmentation supports return_metrics parameter and returns correct type."""
     import inspect
-    from src.analytics.segmentation import behavioral_segmentation
+
     import pandas as pd
-    import numpy as np
+
+    from src.analytics.segmentation import behavioral_segmentation
 
     # Verify signature has return_metrics parameter
     sig = inspect.signature(behavioral_segmentation)
@@ -448,7 +465,7 @@ def test_behavioral_segmentation_return_metrics() -> None:
 def test_load_transactions_customer_id_control() -> None:
     """Test that require_customer_id parameter controls customer_id filtering."""
     import tempfile
-    import pandas as pd
+
 
     csv_data = """date,transaction_id,stockcode,product,customer_id,price,quantity
 2024-01-01,TXN001,SKU001,Product A,CUST001,10.0,1

@@ -20,26 +20,22 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.analytics.profile_service import init_profile_service, get_profile_service
+from src.analytics.profile_service import get_profile_service, init_profile_service
 from src.analytics.switching import (
-    compute_switching_matrix,
     compute_substitution_strength,
-    compute_high_value_switching,
     compute_switch_in_out_rates,
-    _customer_sequences,
+    compute_switching_matrix,
 )
 from src.analytics.transference import (
     compute_demand_transference_matrix,
     compute_substitutable_demand_percentage,
     delist_impact_analysis,
 )
-from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.components_utils import (
     render_insight_cards,
-    render_metric_row,
     render_opportunity_table,
 )
-from src.ui.features import get_detected_promotions, get_product_lookup
+from src.ui.plots import PALETTE, empty_state, show
 from src.ui.registry import ModeSpec
 
 
@@ -427,7 +423,9 @@ def _render_sankey_revenue_flows(
             values.append(net_lost if net_lost > 0 else -net_lost)  # positive = lost
 
     # Ensure we have enough colors
-    node_colors = PALETTE[: len(unique_nodes) % len(PALETTE) or len(PALETTE)]
+    n_palette = len(PALETTE)
+    n_nodes = len(unique_nodes)
+    node_colors = PALETTE[: (n_nodes - 1) % n_palette + 1]
 
     fig = go.Figure(
         data=[
@@ -548,10 +546,12 @@ def _render_customer_switching_matrix(
     )
 
     fig.update_layout(
-        xaxis={"tickangle": -45, "title": "Destination Product"},
-        yaxis={"tickangle": 0, "title": "Source Product"},
+        xaxis={"title": "Destination Product"},
+        yaxis={"title": "Source Product"},
         height=max(400, 20 * len(top_products)),
     )
+    fig.update_xaxes(tickangle=-45)
+    fig.update_yaxes(tickangle=0)
 
     show(fig)
     st.caption(

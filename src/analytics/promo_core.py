@@ -73,6 +73,7 @@ def mark_promo_transactions(
     conds = (merged["date"] >= merged[start_col]) & (merged["date"] <= merged[end_col])
     in_promo = conds.groupby(level=0).any()
     df.loc[in_promo, "is_promo"] = True
+    df["is_promo"] = df["is_promo"].fillna(False).astype(bool)
     return df
 
 
@@ -105,8 +106,11 @@ def detect_promotions(
     df["revenue"] = df["price"] * df["quantity"]
     baseline_prices = df.groupby("stockcode")["price"].quantile(0.9)
     df["baseline_price"] = df["stockcode"].map(baseline_prices)
+    # Handle NaN baseline prices (stockcodes with no price data)
+    df["baseline_price"] = df["baseline_price"].fillna(df["price"])
     df["price_drop_pct"] = (df["baseline_price"] - df["price"]) / df["baseline_price"]
     df["is_promo"] = df["price_drop_pct"] >= price_change_threshold
+    df["is_promo"] = df["is_promo"].fillna(False).astype(bool)
     if not df["is_promo"].any():
         return check(
             pd.DataFrame(columns=list(PROMO_PERIODS.columns)), PROMO_PERIODS, allow_empty=True
@@ -913,7 +917,7 @@ def build_uplift_dataset(
     df: pd.DataFrame,
     promo_periods: pd.DataFrame,
     prediction_window_days: int = 7,
-) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
+) -> tuple[pd.DataFrame, pd.Series, pd.Series, pd.Series]:
     """Customer-product-week uplift dataset: features, treatment, next-week qty."""
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
@@ -934,6 +938,7 @@ def build_uplift_dataset(
     weekly = weekly.sort_values(["customer_id", "stockcode", "week"])
     weekly["next_week_qty"] = weekly.groupby(["customer_id", "stockcode"])["total_qty"].shift(-1)
     weekly = weekly.dropna(subset=["next_week_qty"])
+    weekly["is_promo"] = weekly["is_promo"].fillna(False).astype(bool)
     weekly["treatment"] = weekly["is_promo"].astype(int)
     weekly["week_of_year"] = weekly["week"].dt.weekofyear
     weekly["month"] = weekly["week"].dt.month
@@ -964,8 +969,9 @@ def build_uplift_dataset(
         .reset_index()
     )
     weekly = weekly.merge(prod, on="stockcode", how="left")
+    weekly["is_promo"] = weekly["is_promo"].fillna(False).astype(bool)
+    weekly["treatment"] = weekly["is_promo"].astype(int)
     feature_cols = [
-        "total_qty",
         "total_rev",
         "avg_price",
         "n_txns",
@@ -982,7 +988,8 @@ def build_uplift_dataset(
         "prod_price_cv",
     ]
     X = weekly[feature_cols].fillna(0.0)
-    return X, weekly["treatment"].astype(int), weekly["next_week_qty"].astype(float)
+    customer_ids = weekly["customer_id"]
+    return X, weekly["treatment"].astype(int), weekly["next_week_qty"].astype(float), customer_ids
 
 
 def estimate_propensity_score(X: pd.DataFrame, treatment: pd.Series) -> pd.Series:

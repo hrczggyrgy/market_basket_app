@@ -17,19 +17,17 @@ import streamlit as st
 
 from src.analytics.cache import cached_enrich_categories, run_cached_pricing_analysis
 from src.analytics.pricing import diagnose_price_curves_1d
-from src.analytics.pricing.pipeline import PricingAnalysis, run_pricing_analysis
-from src.analytics.profile_service import ProfileService, init_profile_service, get_profile
-from src.analytics.pricing.elasticity import classify_elasticity_confidence
+from src.analytics.pricing.pipeline import PricingAnalysis
+from src.analytics.profile_service import ProfileService, init_profile_service
+from src.ui.components.decision_matrix import (
+    MatrixConfig,
+    _render_with_confidence,
+)
 from src.ui.components_utils import (
     render_insight_cards,
     render_metric_row,
     render_opportunity_table,
     render_pricing_decision_card,
-)
-from src.ui.components.decision_matrix import (
-    _render_with_confidence,
-    MatrixConfig,
-    render_bubble_matrix,
 )
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
@@ -237,8 +235,10 @@ def _simulate_price_change(
     base_price: float, base_qty: float, elasticity: float, pct: float
 ) -> tuple[float, float, float]:
     """Log-log response: new qty/price/revenue for a price change of `pct`."""
-    new_qty = base_qty * (1 + elasticity * pct)
+    # Log-log model: log(qty) = intercept + elasticity * log(price)
+    # So qty_ratio = (new_price / base_price) ** elasticity
     new_price = base_price * (1 + pct)
+    new_qty = base_qty * (new_price / base_price) ** elasticity
     return new_qty, new_price, new_qty * new_price
 
 
@@ -682,8 +682,9 @@ def _render_price_response_curve(analysis: PricingAnalysis) -> None:
 
     # 95% CI on the quantity prediction
     # CI on log-qty: ± 1.96 * std_err of the regression
-    # We'll use a simple approximation: CI width proportional to 1/sqrt(n_obs)
-    se_approx = abs(elasticity) / np.sqrt(max(n_obs, 1)) * 1.96
+    # Use the actual standard error from the regression
+    std_err = float(row.get("std_err", 0.0))
+    se_approx = std_err * 1.96 if std_err > 0 else abs(elasticity) / np.sqrt(max(n_obs, 1)) * 1.96
     ci_lower_log = np.log(fitted_qty) - se_approx
     ci_upper_log = np.exp(np.log(fitted_qty) + se_approx)
     ci_lower_qty = np.exp(ci_lower_log)
@@ -694,7 +695,7 @@ def _render_price_response_curve(analysis: PricingAnalysis) -> None:
     sim_points = []
     for pct, label in scenarios:
         sim_price = base_price * (1 + pct)
-        sim_qty = base_qty * (1 + elasticity * pct)
+        sim_qty = base_qty * (sim_price / base_price) ** elasticity
         sim_rev = sim_price * sim_qty
         sim_points.append({"Scenario": label, "Price": sim_price, "Quantity": sim_qty, "Revenue": sim_rev})
 
@@ -814,7 +815,7 @@ def _render_price_ladder(analysis: PricingAnalysis) -> None:
     # Add elasticity and confidence info
     if elast is not None and not elast.empty:
         elast_dict = dict(zip(elast["stockcode"], elast["elasticity"]))
-        work["elasticity"] = work["stockcode"].map(elat_dict).fillna(np.nan)
+        work["elasticity"] = work["stockcode"].map(elast_dict).fillna(np.nan)
     else:
         work["elasticity"] = np.nan
 

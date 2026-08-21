@@ -10,31 +10,23 @@ Layers:
 
 from __future__ import annotations
 
+import networkx as nx
 import numpy as np
 import pandas as pd
-
-import networkx as nx
 import plotly.graph_objects as go
 import streamlit as st
 
 from src.analytics.copurchase import (
-    compute_cooccurrence_matrix,
-    compute_pair_centrality,
-    compute_pair_trend,
     compute_affinity_matrix,
     get_top_affinity_pairs,
-    get_product_affinity_profile,
 )
 from src.analytics.profile_service import (
     ProfileService,
-    init_profile_service,
     get_profile_service,
+    init_profile_service,
 )
-from src.analytics.data import build_dataset_capabilities
-from src.ui.features import get_segment_maps
-from src.ui.plots import PALETTE, empty_state, new_fig, show
+from src.ui.plots import PALETTE, new_fig, show
 from src.ui.registry import ModeSpec
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -178,7 +170,7 @@ def _render_basket_network(
                 "size": node_sizes,
                 "color": [node_revenue.get(n, 0.0) for n in graph.nodes()],
                 "colorscale": "Viridis",
-                "colorbar": {"title": "Revenue", "titleside": "right"},
+                "colorbar": {"title": "Revenue"},
                 "line": {"color": "white", "width": 0.5},
             },
             hoverinfo="text",
@@ -229,14 +221,18 @@ def _render_affinity_revenue_matrix(
     rev_vals = np.array([revenue_by_sku.get(p, 0.0) for p in products], dtype=float)
     aff_vals = affinity.loc[products, products].to_numpy()
 
-    # Compute medians for quadrant splits
+    # Mask diagonal (self-similarity = 1.0) for all computations
+    n = len(products)
+    mask = ~np.eye(n, dtype=bool)
+    aff_vals_offdiag = aff_vals[mask]
+
+    # Compute medians for quadrant splits (excluding diagonal)
     rev_median = np.median(rev_vals) if len(rev_vals) > 0 else 0
-    aff_median = np.median(aff_vals[~np.isnan(aff_vals)]) if np.any(~np.isnan(aff_vals)) else 0
+    aff_median = np.median(aff_vals_offdiag[~np.isnan(aff_vals_offdiag)]) if np.any(~np.isnan(aff_vals_offdiag)) else 0
 
     # Classify each product into a quadrant
     quadrant_map: dict[str, str] = {}
     for i, p in enumerate(products):
-        aff = aff_vals[i, i] if not np.isnan(aff_vals[i, i]) else 0.0
         # Use max affinity with any other product as the "connected affinity"
         max_aff = 0.0
         for j in range(len(products)):
@@ -265,7 +261,6 @@ def _render_affinity_revenue_matrix(
         quad_products = [p for p in products if quadrant_map.get(p) == quad]
         if not quad_products:
             continue
-        x = [aff_vals[products.index(p), products.index(p)] if not np.isnan(aff_vals[products.index(p), products.index(p)]) else 0 for p in quad_products]
         # Use max off-diagonal affinity for x position
         x_pos = []
         y_pos = []
@@ -285,8 +280,8 @@ def _render_affinity_revenue_matrix(
                 y=y_pos,
                 mode="markers",
                 marker={"color": color, "size": 12, "line": {"color": "white", "width": 0.5}},
-                name=quadant_labels[quad],
-                hovertemplate=f"{quadant_labels[quad]}: %{{x:.3f}} affinity, %{{y:.0f}} revenue<extra></extra>",
+                name=quadrant_labels[quad],
+                hovertemplate=f"{quadrant_labels[quad]}: %{{x:.3f}} affinity, %{{y:.0f}} revenue<extra></extra>",
             )
         )
 

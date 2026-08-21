@@ -523,3 +523,156 @@ def evaluate_selected_scenarios(
 
     table = pd.DataFrame(rows, columns=list(ASSORTMENT_EVALUATION.columns))
     return check(table, ASSORTMENT_EVALUATION)
+
+
+class AssortmentEngine:
+    """Assortment Engine - isolated behind explicit Tier C trigger.
+    
+    Only runs on explicit user action ("Run Assortment Scenario" button).
+    Gracefully handles missing optional dependencies (scipy.optimize.milp).
+    """
+
+    def __init__(self, df: pd.DataFrame) -> None:
+        self.df = df.copy()
+        self.df["date"] = pd.to_datetime(self.df["date"])
+        self._deps_available = self._check_dependencies()
+        self._missing_deps = self._get_missing_deps()
+
+    def _check_dependencies(self) -> dict[str, bool]:
+        """Check which optional dependencies are available."""
+        deps = {}
+        try:
+            from scipy.optimize import Bounds, LinearConstraint, milp  # noqa: F401
+            deps["scipy_optimize"] = True
+        except ImportError:
+            deps["scipy_optimize"] = False
+        return deps
+
+    def _get_missing_deps(self) -> list[str]:
+        """Get list of missing dependencies."""
+        return [dep for dep, available in self._deps_available.items() if not available]
+
+    def _friendly_error(self) -> dict[str, Any]:
+        """Return a friendly error dict instead of raising ImportError."""
+        missing = self._get_missing_deps()
+        import warnings
+        warnings.warn(
+            f"Assortment optimization requires missing dependencies: {', '.join(missing)}. "
+            f"Install with: pip install {' '.join(missing)}",
+            UserWarning,
+            stacklevel=2,
+        )
+        return {
+            "error": f"Missing dependencies: {', '.join(missing)}. Install with: pip install {' '.join(missing)}",
+            "missing_deps": missing,
+        }
+
+    def optimize_heuristic(
+        self,
+        max_skus: int = 100,
+        min_coverage: float = 0.8,
+        recovery_margin: float = 0.3,
+    ) -> pd.DataFrame:
+        """Run heuristic assortment optimization with graceful degradation.
+        
+        Returns ASSORTMENT_SOLUTION DataFrame.
+        If dependencies missing, returns friendly error DataFrame.
+        """
+        if not self._deps_available.get("scipy_optimize", False):
+            return self._friendly_error()
+
+        try:
+            return optimize_assortment_heuristic(
+                self.df,
+                max_skus=max_skus,
+                min_coverage=min_coverage,
+                recovery_margin=recovery_margin,
+            )
+        except Exception as e:
+            import warnings
+            warnings.warn(f"Heuristic assortment failed: {e}", UserWarning, stacklevel=2)
+            return {"error": f"Heuristic assortment failed: {e}"}
+
+    def optimize_milp(
+        self,
+        max_skus: int = 50,
+        min_coverage: float = 0.8,
+        min_category_coverage: float = 0.5,
+        time_limit_seconds: int = 30,
+    ) -> tuple[list[str], dict[str, Any]]:
+        """Run MILP assortment optimization with graceful degradation.
+        
+        Returns (selected_skus, solve_info).
+        If dependencies missing, returns friendly error.
+        """
+        if not self._deps_available.get("scipy_optimize", False):
+            return self._friendly_error()
+
+        try:
+            from src.analytics.assortment import optimize_assortment_milp
+            revenue = _revenue_series(self.df)
+            if hasattr(self, "_demand_transference") and self._demand_transference is not None:
+                dt_df = self._demand_transference
+            else:
+                from src.analytics.transference import compute_demand_transference_matrix
+                dt_df = compute_demand_transference_matrix(self.df)
+
+            return optimize_assortment_milp(
+                self.df,
+                revenue_per_product=revenue,
+                demand_transference_df=dt_df,
+                max_skus=max_skus,
+                min_coverage=min_coverage,
+                min_category_coverage=min_category_coverage,
+                time_limit_seconds=time_limit_seconds,
+            )
+        except Exception as e:
+            import warnings
+            warnings.warn(f"MILP assortment failed: {e}", UserWarning, stacklevel=2)
+            return {"error": f"MILP assortment failed: {e}"}
+
+    def compare_scenarios(
+        self,
+        base_assortment: list[str],
+        demand_transference_df: pd.DataFrame | None = None,
+        n_scenarios: int = 6,
+        max_skus_range: tuple[int, int] = (30, 90),
+        random_seed: int | None = None,
+    ) -> pd.DataFrame:
+        """Compare assortment scenarios with graceful degradation."""
+        if not self._deps_available.get("scipy_optimize", False):
+            return self._friendly_error()
+
+        try:
+            return compare_assortment_scenarios(
+                self.df,
+                base_assortment,
+                demand_transference_df,
+                n_scenarios=n_scenarios,
+                max_skus_range=max_skus_range,
+                random_seed=random_seed,
+            )
+        except Exception as e:
+            import warnings
+            warnings.warn(f"Scenario comparison failed: {e}", UserWarning, stacklevel=2)
+            return {"error": f"Scenario comparison failed: {e}"}
+
+    def is_available(self) -> bool:
+        """Check if Assortment engine is available (all dependencies installed)."""
+        return self._deps_available.get("scipy_optimize", False)
+
+    def get_status(self) -> dict[str, Any]:
+        """Get engine status for UI display."""
+        return {
+            "available": self.is_available(),
+            "engine": "AssortmentEngine",
+            "tier": "C",
+            "description": "Assortment optimization (heuristic + MILP)",
+            "dependencies": ["scipy.optimize"],
+            "missing_deps": self._get_missing_deps(),
+        }
+
+
+def get_assortment_engine(df: pd.DataFrame) -> AssortmentEngine:
+    """Factory function to create AssortmentEngine for a dataset."""
+    return AssortmentEngine(df)

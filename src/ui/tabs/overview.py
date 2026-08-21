@@ -15,16 +15,13 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.analytics.basket_metrics import spc_revenue_trend
-from src.analytics.data import get_data_summary, build_dataset_capabilities
+from src.analytics.data import build_dataset_capabilities, get_data_summary
 from src.analytics.data_quality import generate_quality_summary
 from src.ui.components_utils import (
     render_metric_row,
-    render_evidence_badge,
-    render_delta_badge,
 )
 from src.ui.plots import PALETTE, empty_state, new_fig, show
-from src.ui.registry import ModeSpec, register_mode
+from src.ui.registry import ModeSpec
 
 _DRIVER_LABELS = {
     "customers": "Customer count",
@@ -233,27 +230,32 @@ def _render_primary_matrix(df: pd.DataFrame, capabilities: dict) -> None:
     # Render bubble matrix with 4 quadrants
     fig = new_fig(height=500)
 
+    # Calculate actual data ranges for quadrant backgrounds
+    x_min = cat_metrics["revenue_per_customer"].min() if not cat_metrics.empty else 0
+    x_max = cat_metrics["revenue_per_customer"].max() if not cat_metrics.empty else 1
+    y_min = cat_metrics["customer_reach_pct"].min() if not cat_metrics.empty else 0
+    y_max = cat_metrics["customer_reach_pct"].max() if not cat_metrics.empty else 1
+
+    x_mid = (x_min + x_max) / 2
+    y_mid = (y_min + y_max) / 2
+
     if not cat_metrics.empty:
-        # Add quadrant background rectangles
-        fig.add_hrect(
-            y0=0.5, y1=1.0, x0=0.5, x1=1.0,
-            fillcolor="rgba(78, 121, 167, 0.1)",  # Grow quadrant
-            layer="below"
+        # Add quadrant background rectangles using shapes
+        fig.add_shape(
+            type="rect", x0=x_mid, x1=x_max, y0=y_mid, y1=y_max,
+            fillcolor="rgba(78, 121, 167, 0.1)", line_width=0, layer="below"
         )
-        fig.add_hrect(
-            y0=0.0, y1=0.5, x0=0.5, x1=1.0,
-            fillcolor="rgba(225, 87, 89, 0.1)",  # Defend quadrant
-            layer="below"
+        fig.add_shape(
+            type="rect", x0=x_mid, x1=x_max, y0=y_min, y1=y_mid,
+            fillcolor="rgba(225, 87, 89, 0.1)", line_width=0, layer="below"
         )
-        fig.add_hrect(
-            y0=0.0, y1=0.5, x0=0.0, x1=0.5,
-            fillcolor="rgba(78, 121, 167, 0.1)",  # Build quadrant
-            layer="below"
+        fig.add_shape(
+            type="rect", x0=x_min, x1=x_mid, y0=y_min, y1=y_mid,
+            fillcolor="rgba(89, 161, 79, 0.1)", line_width=0, layer="below"
         )
-        fig.add_hrect(
-            y0=0.5, y1=1.0, x0=0.0, x1=0.5,
-            fillcolor="rgba(230, 143, 101, 0.1)",  # Review quadrant
-            layer="below"
+        fig.add_shape(
+            type="rect", x0=x_min, x1=x_mid, y0=y_mid, y1=y_max,
+            fillcolor="rgba(242, 142, 43, 0.1)", line_width=0, layer="below"
         )
 
         # Size bubbles by customer reach, color by quadrant
@@ -290,24 +292,24 @@ def _render_primary_matrix(df: pd.DataFrame, capabilities: dict) -> None:
                     )
                 )
 
-    # Add quadrant labels
+    # Add quadrant labels using actual data coordinates
     fig.add_annotation(
-        x=0.75, y=0.75, xref="paper", yref="paper",
+        x=(x_mid + x_max) / 2, y=(y_mid + y_max) / 2,
         text="GROW", showarrow=False,
         font={"size": 16, "color": "#4E79A7", "weight": "bold"}
     )
     fig.add_annotation(
-        x=0.25, y=0.75, xref="paper", yref="paper",
+        x=(x_mid + x_max) / 2, y=(y_min + y_mid) / 2,
         text="DEFEND", showarrow=False,
         font={"size": 16, "color": "#E15759", "weight": "bold"}
     )
     fig.add_annotation(
-        x=0.25, y=0.25, xref="paper", yref="paper",
+        x=(x_min + x_mid) / 2, y=(y_min + y_mid) / 2,
         text="BUILD", showarrow=False,
         font={"size": 16, "color": "#59A14F", "weight": "bold"}
     )
     fig.add_annotation(
-        x=0.75, y=0.25, xref="paper", yref="paper",
+        x=(x_min + x_mid) / 2, y=(y_mid + y_max) / 2,
         text="REVIEW", showarrow=False,
         font={"size": 16, "color": "#F28E2B", "weight": "bold"}
     )
@@ -489,10 +491,11 @@ def _render_revenue_waterfall_6drivers(df: pd.DataFrame) -> None:
 
     fig.update_layout(
         yaxis={"title": "Revenue Change Share", "tickformat": ".1%"},
-        xaxis={"title": "Driver", "tickangle": -15},
+        xaxis={"title": "Driver"},
         height=400,
         margin={"l": 40, "r": 20, "t": 50, "b": 80},
     )
+    fig.update_xaxes(tickangle=-15)
 
     show(fig)
 
@@ -595,11 +598,32 @@ def _render_growth_driver_matrix(df: pd.DataFrame) -> None:
     # Render 4-quadrant bubble matrix
     fig = new_fig(height=500)
 
-    # Draw quadrant background
-    fig.add_hrect(y0=0.5, y1=1.0, x0=0.5, x1=1.0, fillcolor="rgba(78, 121, 167, 0.1)", layer="below")  # Growth
-    fig.add_hrect(y0=0.0, y1=0.5, x0=0.5, x1=1.0, fillcolor="rgba(230, 143, 101, 0.1)", layer="below")  # Emerging
-    fig.add_hrect(y0=0.0, y1=0.5, x0=0.0, x1=0.5, fillcolor="rgba(225, 87, 89, 0.1)", layer="below")  # Critical Risks
-    fig.add_hrect(y0=0.5, y1=1.0, x0=0.0, x1=0.5, fillcolor="rgba(255, 158, 0, 0.1)", layer="below")  # Draggers
+    # Calculate actual data ranges for quadrant backgrounds
+    x_min = metrics["growth_norm"].min()
+    x_max = metrics["growth_norm"].max()
+    y_min = metrics["reach_norm"].min()
+    y_max = metrics["reach_norm"].max()
+
+    x_mid = (x_min + x_max) / 2
+    y_mid = (y_min + y_max) / 2
+
+    # Draw quadrant background using actual data coordinates
+    fig.add_shape(
+        type="rect", x0=x_mid, x1=x_max, y0=y_mid, y1=y_max,
+        fillcolor="rgba(78, 121, 167, 0.1)", line_width=0, layer="below"
+    )  # Growth
+    fig.add_shape(
+        type="rect", x0=x_mid, x1=x_max, y0=y_min, y1=y_mid,
+        fillcolor="rgba(89, 161, 79, 0.1)", line_width=0, layer="below"
+    )  # Emerging
+    fig.add_shape(
+        type="rect", x0=x_min, x1=x_mid, y0=y_min, y1=y_mid,
+        fillcolor="rgba(225, 87, 89, 0.1)", line_width=0, layer="below"
+    )  # Critical Risks
+    fig.add_shape(
+        type="rect", x0=x_min, x1=x_mid, y0=y_mid, y1=y_max,
+        fillcolor="rgba(242, 142, 43, 0.1)", line_width=0, layer="below"
+    )  # Draggers
 
     color_map = {
         "Growth Engines": "#4E79A7",
@@ -637,19 +661,31 @@ def _render_growth_driver_matrix(df: pd.DataFrame) -> None:
                 )
             )
 
-    # Add quadrant labels
-    fig.add_annotation(x=0.75, y=0.75, xref="paper", yref="paper", text="Growth Engines",
-                       showarrow=False, font={"size": 16, "color": "#4E79A7", "weight": "bold"})
-    fig.add_annotation(x=0.25, y=0.75, xref="paper", yref="paper", text="Emerging Opportunities",
-                       showarrow=False, font={"size": 16, "color": "#59A14F", "weight": "bold"})
-    fig.add_annotation(x=0.25, y=0.25, xref="paper", yref="paper", text="Critical Risks",
-                       showarrow=False, font={"size": 16, "color": "#E15759", "weight": "bold"})
-    fig.add_annotation(x=0.75, y=0.25, xref="paper", yref="paper", text="Draggers",
-                       showarrow=False, font={"size": 16, "color": "#F28E2B", "weight": "bold"})
+    # Add quadrant labels using actual data coordinates
+    fig.add_annotation(
+        x=(x_mid + x_max) / 2, y=(y_mid + y_max) / 2,
+        text="Growth Engines", showarrow=False,
+        font={"size": 16, "color": "#4E79A7", "weight": "bold"}
+    )
+    fig.add_annotation(
+        x=(x_mid + x_max) / 2, y=(y_min + y_mid) / 2,
+        text="Emerging Opportunities", showarrow=False,
+        font={"size": 16, "color": "#59A14F", "weight": "bold"}
+    )
+    fig.add_annotation(
+        x=(x_min + x_mid) / 2, y=(y_min + y_mid) / 2,
+        text="Critical Risks", showarrow=False,
+        font={"size": 16, "color": "#E15759", "weight": "bold"}
+    )
+    fig.add_annotation(
+        x=(x_min + x_mid) / 2, y=(y_mid + y_max) / 2,
+        text="Draggers", showarrow=False,
+        font={"size": 16, "color": "#F28E2B", "weight": "bold"}
+    )
 
     fig.update_layout(
-        xaxis={"title": "Growth Rate (normalized)", "tickformat": ".1%", "range": [-0.1, 1.1]},
-        yaxis={"title": "Customer Reach (normalized)", "tickformat": ".1f", "range": [-0.1, 1.1]},
+        xaxis={"title": "Growth Rate (normalized)", "tickformat": ".1%"},
+        yaxis={"title": "Customer Reach (normalized)", "tickformat": ".1f"},
         margin={"l": 80, "r": 30, "t": 80, "b": 60},
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "left", "x": 0},
     )

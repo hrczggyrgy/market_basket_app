@@ -11,10 +11,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from src.ui.registry import ModeSpec
-
 from src.analytics.delist_simulator import simulate_delist_impact
-
+from src.ui.registry import ModeSpec
 
 # ---------------------------------------------------------------------------
 # Render function

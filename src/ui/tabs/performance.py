@@ -46,6 +46,17 @@ _ACTION_MATRIX: dict[tuple[str, str], str] = {
     ("C", "Z"): "Delist candidate",
 }
 
+_ACTION_NUMERIC: dict[str, float] = {
+    "Protect & grow": 1.0,
+    "Manage demand": 0.75,
+    "Hedge volatility": 0.5,
+    "Grow": 0.75,
+    "Manage": 0.5,
+    "Review": 0.25,
+    "Selective grow": 0.5,
+    "Delist candidate": 0.0,
+}
+
 
 def _matrix_cell_action(abc_class: str, xyz_class: str) -> str:
     return _ACTION_MATRIX.get((abc_class, xyz_class), "Review")
@@ -88,9 +99,14 @@ def _render_product_decision_matrix(full: pd.DataFrame, rational: pd.DataFrame) 
         for a in ("A", "B", "C")
     ]
 
+    z_numeric = [
+        [_ACTION_NUMERIC[_matrix_cell_action(a, z)] for z in ("X", "Y", "Z")]
+        for a in ("A", "B", "C")
+    ]
+
     fig = go.Figure(
         data=go.Heatmap(
-            z=[[_matrix_cell_action(a, z) for z in ("X", "Y", "Z")] for a in ("A", "B", "C")],
+            z=z_numeric,
             x=["X — stable", "Y — moderate", "Z — erratic"],
             y=["A — top 70%", "B — 70-90%", "C — long tail"],
             text=cell_text,
@@ -172,9 +188,10 @@ def _render_abc_pareto(perf: pd.DataFrame) -> None:
     fig.update_layout(
         yaxis={"title": "Revenue ($)"},
         yaxis2={"title": "Cumulative %", "overlaying": "y", "side": "right", "range": [0, 105]},
-        xaxis={"tickangle": -45},
+        xaxis={},
         hovermode="x unified",
     )
+    fig.update_xaxes(tickangle=-45)
     show(fig)
     st.caption(
         "Pareto chart: A-class (green) = top 70% revenue, B (blue) = 70-90%, C (gray) = rest."

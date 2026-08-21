@@ -48,10 +48,12 @@ def _render_similarity_heatmap(sim: pd.DataFrame, top_n: int = 25) -> None:
         )
     )
     fig.update_layout(
-        xaxis={"tickangle": -45, "side": "top"},
-        yaxis={"tickangle": 0, "autorange": "reversed"},
+        xaxis={"side": "top"},
+        yaxis={"autorange": "reversed"},
         height=max(400, 18 * top_n),
     )
+    fig.update_xaxes(tickangle=-45)
+    fig.update_yaxes(tickangle=0)
     show(fig)
     st.caption(
         f"Top {top_n} products by dendrogram order. Red = high similarity, Blue = dissimilar."

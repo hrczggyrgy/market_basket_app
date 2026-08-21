@@ -1084,10 +1084,10 @@ SECOND_PURCHASE = DataContract(
             "n_second_purchasers", lambda s: s >= 0, "n_second_purchasers must be non-negative"
         ),
         ValueValidator(
-            "median_days_to_second", lambda s: s >= 0, "median_days_to_second must be non-negative"
+            "median_days_to_second", lambda s: s.isna() | (s >= 0), "median_days_to_second must be non-negative or NaN"
         ),
         ValueValidator(
-            "mean_days_to_second", lambda s: s >= 0, "mean_days_to_second must be non-negative"
+            "mean_days_to_second", lambda s: s.isna() | (s >= 0), "mean_days_to_second must be non-negative or NaN"
         ),
     ),
 )

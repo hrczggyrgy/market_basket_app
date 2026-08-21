@@ -1,0 +1,85 @@
+{
+  "dataset_size": "100k",
+  "n_rows": 66900,
+  "n_customers": 531,
+  "n_skus": 200,
+  "modules": [
+    {
+      "name": "basket_penetration",
+      "duration_ms": 981.41,
+      "input_rows": 66900,
+      "output_rows": 200,
+      "cache_hit": false
+    },
+    {
+      "name": "basket_penetration_over_time",
+      "duration_ms": 90.57,
+      "input_rows": 66900,
+      "output_rows": 53,
+      "cache_hit": false
+    },
+    {
+      "name": "basket_composition",
+      "duration_ms": 54.67,
+      "input_rows": 66900,
+      "output_rows": 12,
+      "cache_hit": false
+    },
+    {
+      "name": "customer_entropy",
+      "duration_ms": 548.13,
+      "input_rows": 66900,
+      "output_rows": 531,
+      "cache_hit": false
+    },
+    {
+      "name": "cohort_sizes",
+      "duration_ms": 156.47,
+      "input_rows": 66900,
+      "output_rows": 12,
+      "cache_hit": false
+    },
+    {
+      "name": "cohort_retention",
+      "duration_ms": 521.27,
+      "input_rows": 66900,
+      "output_rows": 78,
+      "cache_hit": false
+    },
+    {
+      "name": "assortment",
+      "duration_ms": 1915.6,
+      "input_rows": 66900,
+      "output_rows": 1,
+      "cache_hit": false
+    },
+    {
+      "name": "rules_fpgrowth",
+      "duration_ms": 374.0,
+      "input_rows": 66900,
+      "output_rows": 35,
+      "cache_hit": false
+    },
+    {
+      "name": "clv_bg_nbd",
+      "duration_ms": 16066.33,
+      "input_rows": 66900,
+      "output_rows": 1,
+      "cache_hit": false
+    },
+    {
+      "name": "clv_gamma_gamma",
+      "duration_ms": 15752.85,
+      "input_rows": 66900,
+      "output_rows": 1,
+      "cache_hit": false
+    },
+    {
+      "name": "performance_abc",
+      "duration_ms": 32.99,
+      "input_rows": 66900,
+      "output_rows": 1,
+      "cache_hit": false
+    }
+  ]
+}

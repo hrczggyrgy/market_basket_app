@@ -20,37 +20,21 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.ui.registry import ModeSpec
-
+from src.analytics.assortment import (
+    optimize_assortment_heuristic,
+    optimize_assortment_milp,
+)
+from src.analytics.pricing.kvi import compute_kvi_score
 from src.analytics.profile_service import (
     ProfileService,
-    init_profile_service,
     get_profile_service,
-    get_profile,
+    init_profile_service,
 )
-from src.analytics.assortment import (
-    build_solution_table,
-    evaluate_assortment,
-    optimize_assortment_milp,
-    optimize_assortment_heuristic,
-)
-from src.analytics.performance import (
-    abc_analysis,
-    compute_product_metrics,
-    compute_repeat_rate,
-    compute_sku_rationalization_df,
-    compute_velocity,
-    xyz_analysis,
-    product_lifecycle_stage,
-)
-from src.analytics.pricing.elasticity import estimate_loglog_elasticity
-from src.analytics.pricing.kvi import compute_kvi_score
-from src.analytics.switching import compute_switching_status
 from src.analytics.transference import (
     compute_demand_transference_matrix,
-    compute_substitutable_demand_percentage,
 )
 from src.ui.plots import PALETTE, empty_state, show
+from src.ui.registry import ModeSpec
 
 # ---------------------------------------------------------------------------
 # Helper: compute per-SKU reach (penetration) from profile
@@ -326,10 +310,10 @@ def _render_coverage_curve(
 
     # Minimum coverage threshold
     fig.add_hline(
-        y=min_coverage,
+        y=float(min_coverage),
         line_dash="dash",
         line_color="red",
-        annotation_text=f"Min coverage: {min_coverage:.0%}",
+        annotation_text=f"Min coverage: {float(min_coverage):.0%}",
         annotation_position="top left",
     )
 
@@ -397,11 +381,11 @@ def _render_coverage_curve(
     c1, c2, c3 = st.columns(3)
     c1.metric("Current Coverage", f"{current_coverage:.1%}")
     c2.metric("Optimized Coverage", f"{optimized_coverage:.1%}")
-    c3.metric("Minimum Threshold", f"{min_coverage:.0%}")
+    c3.metric("Minimum Threshold", f"{float(min_coverage):.0%}")
 
     st.caption(
         f"Current: {len(kept_set)} SKUs → {current_coverage:.1%} coverage. "
-        f"Optimized: {len(selected_milp)} SKUs → {optimized_coverage:.1%} coverage at ≥{min_coverage:.0%} threshold."
+        f"Optimized: {len(selected_milp)} SKUs → {optimized_coverage:.1%} coverage at ≥{float(min_coverage):.0%} threshold."
     )
 
 
@@ -575,6 +559,8 @@ def _render_coverage_risk_matrix(
 ) -> None:
     """Render coverage × revenue-at-risk matrix."""
 
+    from src.analytics.data import revenue_column
+
     revenue_per_product = revenue_column(df).groupby(df["stockcode"]).sum().sort_values(ascending=False)
     total_rev = float(revenue_per_product.sum())
     kept_set = set(kept) if kept else set()
@@ -605,7 +591,7 @@ def _render_coverage_risk_matrix(
         # But we want current overall coverage
         from src.analytics.assortment import _evaluate_solution
         current_metrics = _evaluate_solution(kept_set, revenue_per_product, transfers)
-        current_cov = current_metrics.get("coverage", 0.0)
+        current_cov = current_metrics.coverage
 
         rows.append(
             {
@@ -639,22 +625,22 @@ def _render_coverage_risk_matrix(
             },
             name="SKUs",
             hovertemplate=
-            f"<b>%{{customdata}}</b>"
-            f"<br>Revenue at risk: $%{{x:,.0f}}"
-            f"<br>Current coverage: %{{y:.1%}}"
-            f"<br>Recovery potential: %{{marker.color:.2f}}"
-            f"<br>Revenue: $%{{customdata[0]:,.0f}}"
-            f"<extra></extra>",
+            "<b>%{customdata}</b>"
+            "<br>Revenue at risk: $%{x:,.0f}"
+            "<br>Current coverage: %{y:.1%}"
+            "<br>Recovery potential: %{marker.color:.2f}"
+            "<br>Revenue: $%{customdata[0]:,.0f}"
+            "<extra></extra>",
             customdata=rdf[["revenue", "stockcode"]].values.tolist(),
         )
     )
 
     # Add min coverage threshold line
     fig.add_hline(
-        y=min_coverage,
+        y=float(min_coverage),
         line_dash="dash",
         line_color="red",
-        annotation_text=f"Min coverage: {min_coverage:.0%}",
+        annotation_text=f"Min coverage: {float(min_coverage):.0%}",
         annotation_position="top right",
     )
 

@@ -190,6 +190,7 @@ def get_top_affinity_pairs(
     min_cooccurrence: int = 5,
     min_affinity: float = 0.0,
     top_n_products: int | None = 200,
+    max_pairs: int | None = 1000,
     segment_col: str | None = None,
     segment_val: str | None = None,
     mission_col: str | None = None,
@@ -198,15 +199,18 @@ def get_top_affinity_pairs(
     """Highest-affinity product pairs with co-occurrence rates.
 
     `top_n_products` limits the candidate pool to the most-purchased products,
-    which keeps pair enumeration tractable on large catalogs.
+    `max_pairs` limits the number of pairs to evaluate (for performance on large catalogs).
     """
     affinity, cooccur, support = _affinity_and_cooccurrence(
         df, min_cooccurrence, top_n_products, segment_col, segment_val, mission_col, mission_val
     )
     products = affinity.columns.tolist()
     rows = []
+    pair_count = 0
     for i in range(len(products)):
         for j in range(i + 1, len(products)):
+            if max_pairs is not None and pair_count >= max_pairs:
+                break
             value = affinity.iloc[i, j]
             if np.isnan(value):
                 continue
@@ -220,6 +224,9 @@ def get_top_affinity_pairs(
                     "support_b": float(support[j]),
                 }
             )
+            pair_count += 1
+        if max_pairs is not None and pair_count >= max_pairs:
+            break
     pairs = pd.DataFrame(rows)
     if pairs.empty:
         return check(

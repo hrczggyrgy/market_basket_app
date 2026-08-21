@@ -34,7 +34,7 @@ def new_fig(height: int = 380) -> go.Figure:
 
 def show(fig: go.Figure) -> None:
     """Render a plotly figure full-width."""
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def empty_state(title: str, detail: str | None = None) -> go.Figure:
@@ -151,10 +151,11 @@ def render_bar_with_ci(
 
     fig.update_layout(
         title=title,
-        xaxis={"title": x_title, "tickangle": -45},
+        xaxis={"title": x_title},
         yaxis={"title": y_title},
         hovermode="x unified",
     )
+    fig.update_xaxes(tickangle=-45)
     return fig
 
 

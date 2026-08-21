@@ -308,8 +308,10 @@ def rules_to_table(rules: pd.DataFrame, product_lookup: pd.DataFrame | None = No
     def name(ids: frozenset) -> str:
         items = sorted(ids)
         if product_lookup is not None:
+            # Convert stockcode keys to strings to handle categorical dtype
             lookup = product_lookup.set_index("stockcode")["product"].to_dict()
-            return " + ".join(str(lookup.get(i, i)) for i in items)
+            str_lookup = {str(k): v for k, v in lookup.items()}
+            return " + ".join(str(str_lookup.get(str(i), i)) for i in items)
         return " + ".join(str(i) for i in items)
 
     table = pd.DataFrame(

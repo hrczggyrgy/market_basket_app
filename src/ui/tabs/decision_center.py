@@ -6,29 +6,26 @@ Redesigned as central hub with:
 3. Manager action queue (priority/SKU/category/decision/value/evidence/next action)
 4. Dynamic "This period's 5 priorities" identification from all signals
 5. Cross-signal aggregation via Product Decision Profile
-
-Aggregates the ranked decisions, insights and opportunities produced by every
-module that adopts the Retail Decision Intelligence pattern: Overview, Pricing,
-Product, Switching, Promotion, Cross-sell and (opt-in) CLV + Assortment.
+6. Readiness status panel and Advanced Intelligence explicit-run buttons
 """
 
 from __future__ import annotations
 
 import pandas as pd
-
 import streamlit as st
 
 from src.analytics.decision_center import DecisionCenterAnalysis, run_decision_center
-from src.analytics.profile_service import init_profile_service, get_profile, ProfileService
+from src.analytics.profile_service import ProfileService, init_profile_service
+from src.orchestration.analysis_registry import get
+from src.orchestration.readiness import ADVANCED, CACHED, NOT_AVAILABLE, READY, ReadinessEngine
+from src.orchestration.result_store import ResultStore, get_schema_version, param_hash
+from src.ui.components.decision_matrix import MatrixConfig, render_bubble_matrix
 from src.ui.components_utils import (
-    render_evidence_badge,
-    render_metric_row,
     render_insight_cards,
+    render_metric_row,
     render_opportunity_table,
 )
-from src.ui.components.decision_matrix import render_bubble_matrix, MatrixConfig
 from src.ui.registry import ModeSpec
-
 
 # ---------------------------------------------------------------------------
 # Decision domain colour mapping (matches the pattern from pricing_page.py)
@@ -41,6 +38,7 @@ DECISION_DOMAIN_COLOURS = {
     "switching": "#F28E2B",   # Orange - switching decisions
     "customer": "#EDC948",    # Yellow - customer decisions
     "product": "#6BCB77",     # Teal - product decisions
+    "cross_sell": "#9B59B6",  # Purple - cross-sell decisions
 }
 
 DECISION_DOMAIN_LABELS = {
@@ -50,6 +48,7 @@ DECISION_DOMAIN_LABELS = {
     "switching": "Switching",
     "customer": "Customer",
     "product": "Product",
+    "cross_sell": "Cross-sell",
 }
 
 
@@ -58,18 +57,7 @@ DECISION_DOMAIN_LABELS = {
 # ---------------------------------------------------------------------------
 
 def _render_opportunity_risk_matrix(analysis: DecisionCenterAnalysis) -> None:
-    """Render Opportunity × Risk matrix with 4 quadrants.
-
-    Bubble position = (risk_level, opportunity_value)
-    Bubble size = revenue impact
-    Bubble color = decision domain (pricing/promotion/assortment/switching/customer/product)
-
-    4 quadrants:
-    - Top-left: Low risk, high opportunity → Invest
-    - Top-right: High risk, high opportunity → Strategic promo
-    - Bottom-left: Low risk, low opportunity → Protect
-    - Bottom-right: High risk, low opportunity → Review
-    """
+    """Render Opportunity × Risk matrix with 4 quadrants."""
     st.subheader(":material/trending_up: Opportunity × Risk Matrix")
 
     opps = analysis.opportunities
@@ -78,7 +66,6 @@ def _render_opportunity_risk_matrix(analysis: DecisionCenterAnalysis) -> None:
         return
 
     # Build matrix data from opportunities
-    # Derive risk level and opportunity value per SKU/domain
     matrix_rows = []
 
     for _, row in opps.iterrows():
@@ -87,7 +74,6 @@ def _render_opportunity_risk_matrix(analysis: DecisionCenterAnalysis) -> None:
         domain = row.get("domain", "product")
 
         # Derive risk from confidence or evidence level
-        # Opportunities with high confidence = lower risk
         confidence = str(row.get("confidence", "medium")).lower()
         if confidence == "high":
             risk_level = 0.2  # low risk
@@ -97,17 +83,14 @@ def _render_opportunity_risk_matrix(analysis: DecisionCenterAnalysis) -> None:
             risk_level = 1.0  # high risk
 
         # Normalize risk to 0-1 scale for matrix
-        # Also factor in evidence_level if available
         evidence_level = row.get("evidence_level")
         if evidence_level is not None:
-            # Lower evidence level = higher effective risk
             risk_level = risk_level * (1.0 + (5 - int(evidence_level)) * 0.15)
 
         # Cap at 1.0
         risk_level = min(risk_level, 1.0)
 
-        # Opportunity value normalized (use value relative to top opportunities)
-        # For matrix positioning, we'll use a simple scale
+        # Opportunity value normalized
         opp_value = min(value / max(1.0, float(opps["value"].max())), 1.0) if not opps["value"].empty else 0.5
 
         matrix_rows.append({
@@ -127,7 +110,7 @@ def _render_opportunity_risk_matrix(analysis: DecisionCenterAnalysis) -> None:
         size="revenue",
         color="domain",
         text="entity",
-        hover_cols=["domain", "entity", "revenue", "confidence"] if not opps.empty else [],
+        hover_cols=["domain", "entity", "revenue"] if not opps.empty else [],
         color_map=DECISION_DOMAIN_COLOURS,
         x_labels={
             "0.0": "Low",
@@ -163,7 +146,6 @@ def _render_opportunity_risk_matrix(analysis: DecisionCenterAnalysis) -> None:
     )
 
     # Add quadrant annotations
-    fig = config  # placeholder - render_bubble_matrix handles its own layout
     st.caption(
         "Quadrants: Top-left=Invest (low risk/high opp), Top-right=Strategic promo "
         "(high risk/high opp), Bottom-left=Protect (low risk/low opp), "
@@ -176,11 +158,7 @@ def _render_opportunity_risk_matrix(analysis: DecisionCenterAnalysis) -> None:
 # ---------------------------------------------------------------------------
 
 def _render_decision_portfolio_funnel(analysis: DecisionCenterAnalysis) -> None:
-    """Render decision portfolio funnel showing evidence coverage %.
-
-    Funnel stages:
-    - All SKUs → Analyzed → Evidence sufficient → Opportunity identified → Action recommended → High-priority actions
-    """
+    """Render decision portfolio funnel showing evidence coverage %."""
     st.subheader(":material/funnel: Decision Portfolio Funnel")
 
     # Gather SKU count data from opportunities and insights
@@ -249,7 +227,7 @@ def _render_decision_portfolio_funnel(analysis: DecisionCenterAnalysis) -> None:
     with col1:
         st.markdown(f"**All SKUs**\n{total_skus}")
         st.progress(1.0 if total_skus > 0 else 0)
-        st.caption(f"100%")
+        st.caption("100%")
 
     with col2:
         st.markdown(f"**Analyzed**\n{analyzed_skus}")
@@ -276,7 +254,7 @@ def _render_decision_portfolio_funnel(analysis: DecisionCenterAnalysis) -> None:
         f"Evidence coverage: {evidence_pct:.0f}% of SKUs have sufficient evidence "
         f"(high confidence or evidence level ≥ 3). "
         f"Opportunity identification rate: {opps_pct:.0f}% "
-        f"( {opps_count} opportunities from {total_skus} SKUs )."
+        f"({opps_count} opportunities from {total_skus} SKUs)."
     )
 
 
@@ -351,7 +329,6 @@ def _render_manager_action_queue(analysis: DecisionCenterAnalysis, profile: Prof
             priority = "Low"
 
         # Determine category from SKU or domain
-        # Try to infer category - for now use domain
         category = DECISION_DOMAIN_LABELS.get(domain, domain.title())
 
         rows.append({
@@ -421,18 +398,12 @@ def _render_manager_action_queue(analysis: DecisionCenterAnalysis, profile: Prof
 # ---------------------------------------------------------------------------
 
 def _identify_five_priorities(analysis: DecisionCenterAnalysis, profile: ProfileService | None) -> list[dict]:
-    """Identify this period's 5 dynamic priorities from all signals.
-
-    Cross-signal aggregation: combines opportunities, insights, and profile data
-    to identify the top 5 priorities considering revenue impact, confidence,
-    evidence quality, and domain diversity.
-    """
+    """Identify this period's 5 dynamic priorities from all signals."""
     opps = analysis.opportunities
     insights = analysis.insights
     domains = analysis.domains_covered
 
     # Score each opportunity / insight using multi-factor scoring
-    # Factors: value, confidence, evidence_level, domain rarity, revenue impact
 
     scored_items: list[dict] = []
 
@@ -516,7 +487,7 @@ def _identify_five_priorities(analysis: DecisionCenterAnalysis, profile: Profile
     # If we have fewer than 5, pad with domain-diverse fillers
     if len(top5) < 5:
         represented_domains = {item["domain"] for item in top5}
-        for domain in DECISION_DOMAIN_COLOURS.keys():
+        for domain in DECISION_DOMAIN_COLOURS:
             if len(top5) >= 5:
                 break
             if domain not in represented_domains:
@@ -584,6 +555,93 @@ def _identify_five_priorities(analysis: DecisionCenterAnalysis, profile: Profile
 
 
 # ---------------------------------------------------------------------------
+# Readiness status panel
+# ---------------------------------------------------------------------------
+
+def _render_readiness_panel(dataset_id: str, df: pd.DataFrame) -> dict[str, dict]:
+    """Render evidence panel showing which domains are READY/CACHED/ADVANCED.
+
+    Returns a dict of domain -> status metadata for use by the caller.
+    """
+    store = ResultStore()
+    hp = param_hash({}, schema_version=get_schema_version())
+
+    tier_a_keys = [
+        "overview",
+        "pricing",
+        "product",
+        "switching",
+        "promotion",
+        "cross_sell",
+    ]
+
+    statuses: dict[str, dict] = {}
+
+    for key in tier_a_keys:
+        try:
+            spec = get(key)
+        except KeyError:
+            continue
+
+        # Compute readiness status
+        status, metadata = ReadinessEngine.compute_status(key, df, dataset_id=dataset_id)
+        statuses[key] = {
+            "status": status,
+            "metadata": metadata,
+        }
+
+    return statuses
+
+
+# ---------------------------------------------------------------------------
+# Advanced Intelligence section (Tier C explicit run buttons)
+# ---------------------------------------------------------------------------
+
+def _render_advanced_intelligence(
+    dataset_id: str,
+    df: pd.DataFrame,
+    on_run_clv,
+    on_run_assortment,
+    on_run_network,
+) -> None:
+    """Render Advanced Intelligence section with CLV/Assortment/Network Run buttons.
+
+    These are Tier C analyses that require explicit user trigger.
+    """
+    st.subheader(":material/intelligence: Advanced Intelligence")
+
+    st.caption(
+        "Tier C analyses require explicit trigger and have longer computation times."
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.button(
+            ":material/sentiment_very_dissatisfied: CLV",
+            on_click=on_run_clv,
+            help="Run BG/NBD CLV analysis (slow)",
+            use_container_width=True,
+        )
+
+    with col2:
+        st.button(
+            ":material/palette: Assortment",
+            on_click=on_run_assortment,
+            help="Run assortment scenario simulator (slow)",
+            use_container_width=True,
+        )
+
+    with col3:
+        st.button(
+            ":material/network_network: Network",
+            on_click=on_run_network,
+            help="Run network analysis (slow)",
+            use_container_width=True,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Main render function — redesigned Decision Center tab
 # ---------------------------------------------------------------------------
 
@@ -596,29 +654,45 @@ def render(df: pd.DataFrame) -> None:
     3. Manager action queue (priority/SKU/category/decision/value/evidence/next action)
     4. Dynamic "This period's 5 priorities" identification from all signals
     5. Cross-signal aggregation via Product Decision Profile
+    6. Readiness status panel
+    7. Advanced Intelligence explicit-run buttons (Tier C)
     """
+
     st.subheader(":material/dashboard: Decision Center")
     st.caption(
         "Today's signals across the business — cross-module hub with "
         "opportunity-risk matrix, decision portfolio funnel, and manager action queue."
     )
 
-    with st.expander("Engines", expanded=False):
-        include_clv = st.checkbox(
-            "Include customer CLV engine (slow)",
-            value=False,
-            help="Runs the BG/NBD model fit; adds retention opportunities.",
-        )
-        include_assortment = st.checkbox(
-            "Include assortment scenario engine (slow)",
-            value=False,
-            help="Runs the assortment scenario simulator.",
-        )
+    # Derive dataset_id from df for ResultStore lookups
+    # Use a simple hash-based dataset_id; in production this would come from session/app state
+    dataset_id = st.session_state.get("dataset_id", "default")
 
-    with st.spinner("Running decision engines..."):
-        analysis = run_decision_center(
-            df, include_clv=include_clv, include_assortment=include_assortment
-        )
+    # Readiness status panel — shows READY/CACHED/ADVANCED states per domain
+    with st.expander("Evidence", expanded=False):
+        statuses = _render_readiness_panel(dataset_id, df)
+        st.caption("Domain readiness status:")
+
+        # Show status badges for each tier A domain
+        cols = st.columns(len(statuses))
+        for i, (key, status_info) in enumerate(statuses.items()):
+            with cols[i]:
+                status = status_info["status"]
+                metadata = status_info["metadata"]
+                if status == READY:
+                    st.success(f":material/check: {key.upper()} READY")
+                elif status == CACHED:
+                    st.info(f":material/cache: {key.upper()} CACHED")
+                elif status == ADVANCED:
+                    st.warning(f":material/slow: {key.upper()} ADVANCED")
+                elif status == NOT_AVAILABLE:
+                    st.error(f":material/block: {key.upper()} NOT_AVAILABLE")
+                else:
+                    st.text(f":material/error: {key.upper()} {status}")
+
+    # Run decision engines — read from ResultStore only
+    with st.spinner("Reading from ResultStore..."):
+        analysis = run_decision_center(df, dataset_id=dataset_id)
 
     # Initialize Profile Service for cross-signal aggregation
     profile_service = init_profile_service(df)
@@ -656,6 +730,7 @@ def render(df: pd.DataFrame) -> None:
             f"Priority {p['rank']}: {p['category']} — {p['decision']}</span>",
             unsafe_allow_html=True,
         )
+
         st.caption(
             f"SKU: {p['sku']} | Value: €{p['value']:,.0f} | "
             f"{p['evidence']} | Next: {p['next_action']}"
@@ -703,6 +778,7 @@ def render(df: pd.DataFrame) -> None:
 
 def _render_scorecard(analysis: DecisionCenterAnalysis) -> None:
     """Render the decision center scorecard KPIs."""
+
     render_metric_row(
         [
             {

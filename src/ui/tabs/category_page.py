@@ -8,20 +8,14 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.analytics.category import (
-    compute_assortment_efficiency,
-    compute_category_growth_matrix,
     compute_category_manager_scorecard,
+    compute_category_roles,
     compute_category_strategy_scorecard,
     compute_category_trend,
-    compute_category_roles,
-    compute_category_kpis,
     enrich_with_categories,
 )
-from src.analytics.profile_service import init_profile_service, get_profile, PROFILE_FIELDS
 from src.analytics.pricing import compute_kvi_score
-from src.analytics.promo import compute_category_cannibalization, compute_category_promo_timeline
-from src.analytics.scenarios import compute_scenario_grid
-from src.ui.features import get_detected_promotions
+from src.analytics.profile_service import get_profile, init_profile_service
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
 
@@ -468,7 +462,6 @@ def _trajectory(scorecard: pd.DataFrame, df: pd.DataFrame) -> None:
     # Build decomposition series (placeholder computations based on available data)
     # Trend: simple moving average / linear trend
     import numpy as np
-    from scipy.stats import variation
 
     n = len(weekly)
     if n > 1:
@@ -506,55 +499,59 @@ def _trajectory(scorecard: pd.DataFrame, df: pd.DataFrame) -> None:
             new_cust_vals = np.full(n, 0.0)
 
     else:
-        trend_vals = weekly.values if n else np.array([0.0])
-        seasonality_vals = np.array([weekly.mean()]) if n else np.array([0.0])
-        promo_effect_vals = np.array([0.0])
-        cannibalization_vals = np.array([0.0])
-        new_cust_vals = np.array([0.0])
+        trend_vals = weekly.values if n > 0 else np.array([])
+        seasonality_vals = np.array([weekly.mean()]) if n > 0 else np.array([])
+        promo_effect_vals = np.array([])
+        cannibalization_vals = np.array([])
+        new_cust_vals = np.array([])
 
     # Plot actual + decomposition components
     fig = new_fig(height=350)
 
     # Actual line
-    fig.add_trace(
-        go.Scatter(
-            x=cat_trend["period"][:n] if n <= len(cat_trend) else cat_trend["period"][:n],
-            y=weekly.values[:n] if n <= len(weekly) else weekly.values[:n],
-            name="Actual",
-            mode="lines+markers",
-            line={"color": PALETTE[0], "width": 2},
+    if n > 0:
+        fig.add_trace(
+            go.Scatter(
+                x=cat_trend["period"][:n],
+                y=weekly.values[:n],
+                name="Actual",
+                mode="lines+markers",
+                line={"color": PALETTE[0], "width": 2},
+            )
         )
-    )
 
     # Decomposition components added based on selection
     component_colors = [PALETTE[1], PALETTE[2], PALETTE[3], PALETTE[4], PALETTE[0]]
     comp_data = [trend_vals, seasonality_vals, promo_effect_vals, cannibalization_vals, new_cust_vals]
 
     # Align x-axis with actual data
-    x_actual = cat_trend["period"][:n] if n <= len(cat_trend) else cat_trend["period"][:n]
+    x_actual = cat_trend["period"][:n] if n > 0 else []
 
     # Pad all components to same length as actual
     def _pad(series, target_len):
+        if target_len == 0:
+            return np.array([])
         if len(series) >= target_len:
             return series[:target_len]
         return np.pad(series, (0, target_len - len(series)), mode="constant", constant_values=np.nan)
 
-    for i, comp_name in enumerate(["Trend", "Seasonality", "Promo Effect", "Cannibalization", "New Customer Growth"]):
-        if comp_name in decomp_components:
-            padded = _pad(comp_data[i], len(x_actual))
-            fig.add_trace(
-                go.Scatter(
-                    x=x_actual,
-                    y=padded,
-                    name=comp_name,
-                    mode="lines",
-                    line={"width": 1, "dash": "dot"},
-                    opacity=0.7,
+    if n > 0:
+        for i, comp_name in enumerate(["Trend", "Seasonality", "Promo Effect", "Cannibalization", "New Customer Growth"]):
+            if comp_name in decomp_components:
+                padded = _pad(comp_data[i], len(x_actual))
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_actual,
+                        y=padded,
+                        name=comp_name,
+                        mode="lines",
+                        line={"width": 1, "dash": "dot"},
+                        opacity=0.7,
+                    )
                 )
-            )
 
     # Total of decomposition components as secondary view
-    if decomp_components:
+    if decomp_components and n > 0:
         comp_sum = np.nansum(
             [comp_data[i] for i in range(len(decomp_components))], axis=0
         )
@@ -627,7 +624,6 @@ def _growth_bridge(scorecard: pd.DataFrame, roles_df: pd.DataFrame) -> None:
         # Seasonality: based on seasonality diagnostics
         comp_data = None
         try:
-            from src.analytics.category import _seasonality_diagnostics
             # We need monthly data - use available proxies
             component_data[cat]["seasonality"] = growth_pct * 0.25  # 25% seasonality
         except Exception:
@@ -819,8 +815,9 @@ def _strategic_table(scorecard: pd.DataFrame, profile_svc) -> None:
     )
 
     # Compute seasonality per category
-    from src.analytics.category import _seasonality_diagnostics
     import numpy as np
+
+    from src.analytics.category import _seasonality_diagnostics
 
     all_categories = merged["category"].unique()
     seasonality_data = {}

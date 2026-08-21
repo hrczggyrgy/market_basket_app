@@ -80,13 +80,7 @@ def insights_to_dataframe(insights: list[Insight]) -> pd.DataFrame:
                 "n_transition_pairs",
                 "n_unique_products",
                 "confidence_gate",
-            ],
-            dtype={
-                "evidence_level": "Int64",
-                "n_transition_pairs": "Int64",
-                "n_unique_products": "Int64",
-                "confidence_gate": "boolean",
-            }
+            ]
         )
 
     data = [

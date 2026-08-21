@@ -12,33 +12,20 @@ Page pattern: value-x-growth → economics-waterfall → migration → heatmap �
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+from src.analytics.profile_service import init_profile_service
 from src.analytics.segmentation import (
     behavioral_segmentation,
-    calculate_segment_basket_metrics,
-    calculate_segment_concentration_metrics,
-    calculate_segment_distinctiveness,
-    calculate_segment_engagement_metrics,
-    calculate_segment_growth_metrics,
-    calculate_segment_price_behavior_metrics,
-    calculate_segment_retention_metrics,
-    calculate_segment_stability_score,
-    calculate_segment_value_metrics,
     compute_rfm_features,
     compute_segment_migration,
-    compute_segment_radar,
     rfm_segmentation,
     value_based_segmentation,
 )
-from src.analytics.profile_service import init_profile_service, get_profile, PROFILE_FIELDS
 from src.ui.plots import PALETTE, empty_state, show
 from src.ui.registry import ModeSpec
-
 
 # ---------------------------------------------------------------------------
 # Layer 1: Segment Value × Growth Matrix (BCG-style 4 quadrants)
@@ -208,12 +195,13 @@ def _segment_economics_waterfall(seg: pd.DataFrame, transactions_df: pd.DataFram
 
     fig.update_layout(
         barmode="group",
-        xaxis={"title": "Segment", "tickangle": -45},
+        xaxis={"title": "Segment"},
         yaxis={"title": "Value"},
         height=380,
         template="plotly_white",
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "left", "x": 0},
     )
+    fig.update_xaxes(tickangle=-45)
 
     show(fig)
     st.caption(
@@ -561,7 +549,8 @@ def _segment_category_heatmap(seg: pd.DataFrame, transactions_df: pd.DataFrame) 
 
         # Show top 3 SKUs per segment
         fig = go.Figure()
-        for seg_name in top_seg["segment"].unique()[:4]:  # limit to 4 segments
+        unique_segments = top_skus["segment"].unique()[:4]  # limit to 4 segments
+        for seg_name in unique_segments:
             sdf = top_skus[top_skus["segment"] == seg_name].head(3)
             if not sdf.empty:
                 fig.add_trace(
@@ -578,9 +567,10 @@ def _segment_category_heatmap(seg: pd.DataFrame, transactions_df: pd.DataFrame) 
             height=380,
             template="plotly_white",
             barmode="group",
-            xaxis={"title": "SKU", "tickangle": -45},
+            xaxis={"title": "SKU"},
             yaxis={"title": "Revenue"},
         )
+        fig.update_xaxes(tickangle=-45)
         show(fig)
         st.caption(
             "Segment/category heatmap: No category column available. Showing top SKUs "

@@ -112,8 +112,97 @@ def _create_kvi_features(
     return kvi_features
 
 
+def _create_kvi_features_from_weekly(
+    weekly_panel: pd.DataFrame,
+    elasticity_df: Optional[pd.DataFrame] = None,
+    elasticity_status_df: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
+    """Assemble KVI feature table per SKU from pre-computed weekly panel.
+    
+    This function uses the weekly panel from FeatureStore instead of raw transactions,
+    avoiding the expensive groupby operations.
+    """
+    # Product metrics from weekly panel
+    product_metrics = weekly_panel.groupby("stockcode").agg(
+        units=("units", "sum"),
+        revenue=("revenue", "sum"),
+        n_transactions=("n_transactions", "sum"),
+        n_customers=("n_customers", "sum"),
+        avg_price=("avg_price", "mean"),
+        price_cv=("price_cv", "mean") if "price_cv" in weekly_panel.columns else ("avg_price", lambda x: 0),
+    ).reset_index()
+
+    if product_metrics.empty:
+        return pd.DataFrame()
+
+    product_metrics = product_metrics.rename(columns={"revenue": "total_revenue", "units": "units_sold"})
+
+    # For basket penetration, we need transaction-level data which we don't have in weekly panel
+    # We'll use a proxy: n_transactions / n_customers as repeat rate proxy
+    product_metrics["basket_count"] = product_metrics["n_transactions"]
+    product_metrics["basket_penetration"] = product_metrics["n_transactions"] / product_metrics["n_transactions"].sum()
+    product_metrics["revenue_share"] = product_metrics["total_revenue"] / product_metrics["total_revenue"].sum()
+
+    kvi_features = product_metrics.copy()
+
+    # Trip incidence
+    total_baskets = product_metrics["n_transactions"].sum()
+    kvi_features["trip_incidence"] = product_metrics["n_transactions"] / total_baskets if total_baskets > 0 else 0.0
+
+    # Elasticity features
+    if elasticity_df is not None and not elasticity_df.empty:
+        elast_cols = ["stockcode"]
+        if "elasticity" in elasticity_df.columns:
+            elast_cols.append("elasticity")
+        if "r_squared" in elasticity_df.columns:
+            elast_cols.append("r_squared")
+        if "price_cv" in elasticity_df.columns:
+            elast_cols.append("price_cv")
+        kvi_features = kvi_features.merge(elasticity_df[elast_cols], on="stockcode", how="left")
+
+    # |elasticity|: leave NaN when not estimable
+    if "abs_elasticity" not in kvi_features.columns and "elasticity" in kvi_features.columns:
+        kvi_features["abs_elasticity"] = kvi_features["elasticity"].abs()
+    if "abs_elasticity" not in kvi_features.columns:
+        kvi_features["abs_elasticity"] = np.nan
+
+    # Explicit estimability status
+    if elasticity_status_df is not None and not elasticity_status_df.empty:
+        lookup = elasticity_status_df[["stockcode", "elasticity_status"]]
+        kvi_features = kvi_features.merge(lookup, on="stockcode", how="left")
+        kvi_features["elasticity_status"] = kvi_features["elasticity_status"].fillna("unavailable")
+    elif "elasticity" in kvi_features.columns:
+        kvi_features["elasticity_status"] = "estimated"
+    else:
+        kvi_features["elasticity_status"] = "unavailable"
+
+    # Category revenue share
+    if "category" not in kvi_features.columns:
+        kvi_features["category"] = "UNKNOWN"
+    cat_rev = kvi_features.groupby("category")["total_revenue"].sum()
+    total_rev = kvi_features["total_revenue"].sum()
+    kvi_features["category_revenue_share"] = kvi_features["category"].map(cat_rev / total_rev)
+
+    # Repeat rate proxy: transactions / customers
+    if "n_customers" in kvi_features.columns and "n_transactions" in kvi_features.columns:
+        kvi_features["repeat_rate"] = kvi_features["n_transactions"] / kvi_features["n_customers"].replace(0, np.nan)
+    else:
+        kvi_features["repeat_rate"] = 0.0
+
+    # Fill numeric gaps EXCEPT abs_elasticity
+    fill_cols = [
+        c
+        for c in kvi_features.columns
+        if c not in ("abs_elasticity", "stockcode", "category", "elasticity_status")
+        and pd.api.types.is_numeric_dtype(kvi_features[c])
+    ]
+    kvi_features[fill_cols] = kvi_features[fill_cols].fillna(0).replace([np.inf, -np.inf], 0)
+    return kvi_features
+
+
 def compute_kvi_score(
-    transactions_df: pd.DataFrame,
+    transactions_df: pd.DataFrame | None = None,
+    weekly_panel: pd.DataFrame | None = None,
     elasticity_df: Optional[pd.DataFrame] = None,
     cost_col: Optional[str] = None,
     margin_pct: Optional[float] = None,
@@ -122,12 +211,22 @@ def compute_kvi_score(
 ) -> pd.DataFrame:
     """KVI scoring: XGBoost + SHAP (method='xgb') or heuristic (method='heuristic').
 
+    Can accept either:
+    - transactions_df: Raw transaction data (will compute features internally)
+    - weekly_panel: Pre-computed weekly product panel from FeatureStore (preferred for performance)
+    
     ``elasticity_status_df`` (optional output of ``compute_elasticity_status``)
     carries the per-SKU estimability state so that SKUs without a usable
     elasticity are labelled explicitly (e.g. ``insufficient_variation``) rather
     than silently treated as perfectly inelastic.
     """
-    features = _create_kvi_features(transactions_df, elasticity_df, elasticity_status_df)
+    if weekly_panel is not None:
+        features = _create_kvi_features_from_weekly(weekly_panel, elasticity_df, elasticity_status_df)
+    elif transactions_df is not None:
+        features = _create_kvi_features(transactions_df, elasticity_df, elasticity_status_df)
+    else:
+        raise ValueError("Either transactions_df or weekly_panel must be provided")
+
     if features.empty:
         return check(pd.DataFrame(columns=list(KVI_SCORES.columns)), KVI_SCORES, allow_empty=True)
 

@@ -50,6 +50,14 @@ def generate_switching_insights(
     Returns:
         DataFrame validated against PRICING_INSIGHTS with ``domain`` = "switching".
     """
+    if demand_transference_df is None or demand_transference_df.empty:
+        empty_cols = [
+            "domain", "entity", "kind", "title", "evidence", "impact_value",
+            "confidence", "sample_size", "stability", "action", "evidence_level",
+            "n_transition_pairs", "n_unique_products", "confidence_gate"
+        ]
+        return check(pd.DataFrame(columns=empty_cols), PRICING_INSIGHTS, allow_empty=True)
+
     insights: list[Insight] = []
 
     # Compute evidence metrics from demand_transference_df

@@ -3,10 +3,10 @@
 from .assortment_page import MODE_SPEC as ASSORTMENT_MODE_SPEC
 from .category_page import MODE_SPEC as CATEGORY_MODE_SPEC
 from .cdt_page import MODE_SPEC as CDT_MODE_SPEC
-from .delist_simulator import MODE_SPEC as DELIST_SIMULATOR_MODE_SPEC
 from .clv_page import MODE_SPEC as CLV_MODE_SPEC
 from .cohorts import MODE_SPEC as COHORTS_MODE_SPEC
 from .copurchase import MODE_SPEC as COPURCHASE_MODE_SPEC
+from .delist_simulator import MODE_SPEC as DELIST_SIMULATOR_MODE_SPEC
 from .overview import MODE_SPEC as OVERVIEW_MODE_SPEC
 from .performance import MODE_SPEC as PERFORMANCE_MODE_SPEC
 from .pricing_page import MODE_SPEC as PRICING_MODE_SPEC

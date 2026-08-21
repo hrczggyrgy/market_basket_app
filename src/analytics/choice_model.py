@@ -78,18 +78,20 @@ def build_customer_features(
         .rename("purchase_count")
     )
     # Select target product as the one with the most distinct basket purchases
-    target_rank = purchase_counts.groupby("customer_id").idxmax().rename("target_product")
+    # idxmax on MultiIndex returns tuple (customer_id, stockcode); extract stockcode
+    target_rank = purchase_counts.groupby("customer_id").idxmax()
+    target_rank = target_rank.map(lambda x: x[1] if isinstance(x, tuple) else x).rename("target_product")
 
     agg = {
-        "recency_days": ("date", lambda s: (history["date"].max() - s.max()).days),
-        "frequency": ("revenue", "count"),
+        "recency_days": ("date", lambda s: max(0, (history["date"].max() - s.max()).days)),
+        "frequency": ("revenue", "size"),
         "monetary": ("revenue", "sum"),
         "n_baskets": ("transaction_id", "nunique"),
         "n_distinct_products": ("stockcode", "nunique"),
     }
     if "category" in history.columns:
         agg["favorite_category"] = ("category", lambda s: _mode_or_unknown(s))
-    features = history.groupby("customer_id").agg(**agg)
+    features = history.groupby("customer_id", observed=True).agg(**agg)
     if "favorite_category" not in features.columns:
         features["favorite_category"] = "unknown"
     features["avg_basket_size"] = features["frequency"] / features["n_baskets"].replace(0, np.nan)

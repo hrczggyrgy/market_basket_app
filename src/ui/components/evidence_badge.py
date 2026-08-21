@@ -23,10 +23,7 @@ Reliability tiers (4-level):
 
 from __future__ import annotations
 
-from typing import Any
-
 import streamlit as st
-
 
 # 1-5 exploratory-to-causal evidence scale
 EVIDENCE_LEVELS = {

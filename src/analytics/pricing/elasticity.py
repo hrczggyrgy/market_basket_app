@@ -334,6 +334,175 @@ def estimate_loglog_elasticity(
     return check(table, ELASTICITY)
 
 
+def estimate_loglog_elasticity_from_weekly(
+    weekly_panel: pd.DataFrame,
+    product_col: str = "stockcode",
+    price_col: str = "avg_price",
+    qty_col: str = "units",
+    date_col: str = "iso_week",
+    freq: str = "W",
+    min_periods: int = 10,
+    min_price_variation: float = 0.05,
+    use_robust_se: bool = True,
+    add_time_fe: bool = True,
+) -> pd.DataFrame:
+    """Per-SKU log-log OLS elasticity from pre-computed weekly panel.
+    
+    This function accepts a pre-computed weekly product panel (e.g., from FeatureStore)
+    instead of raw transactions, avoiding the expensive groupby operations.
+    
+    Expected weekly_panel columns:
+    - stockcode: Product identifier
+    - iso_week: ISO week (year * 100 + week)
+    - units: Weekly quantity sold
+    - revenue: Weekly revenue
+    - avg_price: Average price
+    - n_transactions: Number of transactions
+    - n_customers: Number of customers
+    - price_cv: Coefficient of variation of price (optional, will be computed if missing)
+    - median_price: Median price (optional)
+    
+    WARNING: This estimates OBSERVED price response, NOT causal elasticity.
+    - Endogeneity: price and quantity are simultaneously determined
+    - No instrument for price; OLS is biased if demand/supply shocks correlate
+    - Results are descriptive: "how quantity co-varies with price historically"
+    - For causal inference, use IV, RDD, or experimental methods (with valid instruments)
+    
+    Returns DataFrame with one row per SKU meeting minimum data requirements.
+    """
+    import warnings
+
+    warnings.warn(
+        "estimate_loglog_elasticity_from_weekly estimates OBSERVED price response, NOT causal elasticity. "
+        "Price endogeneity is not addressed. Results are descriptive only.",
+        UserWarning,
+        stacklevel=2,
+    )
+
+    if "price_cv" not in df.columns:
+        price_stats = (
+            df.groupby(product_col)
+            .agg(
+                price_mean=("avg_price", "mean"),
+                price_std=("avg_price", "std"),
+                price_nunique=("avg_price", "nunique"),
+                qty_zeros=("units", lambda x: (x == 0).sum()),
+                price_zeros=("avg_price", lambda x: (x == 0).sum()),
+            )
+            .reset_index()
+        )
+        price_stats["price_cv"] = price_stats["price_std"] / price_stats["price_mean"]
+        df = df.merge(price_stats[[product_col, "price_cv", "price_nunique", "qty_zeros", "price_zeros"]], on=product_col, how="left")
+
+    if df.empty:
+        return check(pd.DataFrame(columns=list(ELASTICITY.columns)), ELASTICITY, allow_empty=True)
+
+    sku_counts = df.groupby(product_col).size().rename("n_obs")
+    df = df.merge(sku_counts, on=product_col)
+
+    # Filter by minimum periods
+    df = df[df["n_obs"] >= min_periods].copy()
+    if df.empty:
+        return check(pd.DataFrame(columns=list(ELASTICITY.columns)), ELASTICITY, allow_empty=True)
+
+    # Filter by price variation and distinct price points
+    valid_skus = df.drop_duplicates(subset=[product_col])[[product_col, "price_cv", "price_nunique", "qty_zeros", "price_zeros"]].copy()
+    if "price_nunique" not in valid_skus.columns:
+        # Compute price_nunique if not present
+        price_nunique = df.groupby(product_col)["avg_price"].nunique().reset_index(name="price_nunique")
+        valid_skus = valid_skus.merge(price_nunique, on=product_col, how="left")
+    if "qty_zeros" not in valid_skus.columns:
+        qty_zeros = df.groupby(product_col)["units"].apply(lambda x: (x == 0).sum()).reset_index(name="qty_zeros")
+        valid_skus = valid_skus.merge(qty_zeros, on=product_col, how="left")
+    if "price_zeros" not in valid_skus.columns:
+        price_zeros = df.groupby(product_col)["avg_price"].apply(lambda x: (x == 0).sum()).reset_index(name="price_zeros")
+        valid_skus = valid_skus.merge(price_zeros, on=product_col, how="left")
+
+    valid_skus = valid_skus[
+        (valid_skus["price_cv"] >= min_price_variation)
+        & (valid_skus["price_nunique"] >= _MIN_DISTINCT_PRICES)
+        & (valid_skus["qty_zeros"] == 0)
+        & (valid_skus["price_zeros"] == 0)
+    ][product_col].tolist()
+
+    if not valid_skus:
+        return check(pd.DataFrame(columns=list(ELASTICITY.columns)), ELASTICITY, allow_empty=True)
+
+    df = df[df[product_col].isin(valid_skus)].copy()
+
+    df["log_price"] = np.log(df["avg_price"])
+    df["log_qty"] = np.log(df["units"])
+
+    # Now process each valid SKU (OLS still needs per-SKU but data prep is vectorized)
+    results: list[dict[str, float | int | str]] = []
+
+    for product_id in valid_skus:
+        sku_weekly = df[df[product_col] == product_id].sort_values("iso_week")
+
+        log_price = sku_weekly["log_price"]
+        log_qty = sku_weekly["log_qty"]
+
+        # Align indices
+        common_idx = log_price.index.intersection(log_qty.index)
+        log_price = log_price.loc[common_idx]
+        log_qty = log_qty.loc[common_idx]
+
+        if len(log_price) < min_periods:
+            continue
+
+        # Create time fixed effects if requested
+        time_dummies = None
+        try:
+            if add_time_fe and len(sku_weekly) > 3:  # Need enough obs for dummies
+                # Create week-of-year and month dummies
+                week_values = sku_weekly["iso_week"] % 100  # Extract week from iso_week
+                week_dummies = pd.get_dummies(week_values, prefix="week", drop_first=True)
+                week_dummies.index = sku_weekly.index
+                month_dummies = pd.get_dummies(
+                    (sku_weekly["iso_week"] // 100) % 12 + 1, prefix="month", drop_first=True
+                )
+                month_dummies.index = sku_weekly.index
+                time_dummies = pd.concat([week_dummies, month_dummies], axis=1).astype(float)
+                time_dummies = time_dummies.loc[log_price.index]
+
+                # Limit dummies to avoid overfitting (max 1/3 of observations)
+                max_dummies = max(1, len(log_price) // 3)
+                if time_dummies.shape[1] > max_dummies:
+                    time_dummies = time_dummies.iloc[:, :max_dummies]
+
+            elast, se, pval, r2, ci_low, ci_high, n_obs = _ols_loglog(
+                log_price, log_qty, use_robust_se, time_dummies=time_dummies
+            )
+        except (ValueError, np.linalg.LinAlgError, RuntimeError):
+            continue
+
+        avg_price = float(sku_weekly["avg_price"].mean())
+        avg_weekly_qty = float(sku_weekly["units"].mean())
+        price_cv = float(sku_weekly["price_cv"].iloc[0]) if "price_cv" in sku_weekly.columns else 0.0
+
+        results.append(
+            {
+                "stockcode": product_id,
+                "elasticity": elast,
+                "r_squared": r2,
+                "p_value": pval,
+                "std_err": se,
+                "ci_lower": ci_low,
+                "ci_upper": ci_high,
+                "n_obs": n_obs,
+                "avg_price": avg_price,
+                "avg_weekly_qty": avg_weekly_qty,
+                "price_cv": price_cv,
+            }
+        )
+
+    if not results:
+        return check(pd.DataFrame(columns=list(ELASTICITY.columns)), ELASTICITY, allow_empty=True)
+
+    table = pd.DataFrame(results, columns=list(ELASTICITY.columns))
+    return check(table, ELASTICITY)
+
+
 def compute_elasticity_status(
     transactions_df: pd.DataFrame,
     elasticity_df: Optional[pd.DataFrame] = None,

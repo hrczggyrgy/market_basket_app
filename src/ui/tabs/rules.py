@@ -9,12 +9,11 @@ Product Decision Profile integration for rule-level data
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.analytics.profile_service import init_profile_service, get_profile, ProfileService
+from src.analytics.profile_service import ProfileService, init_profile_service
 from src.analytics.rules import (
     aggregate_rules_to_categories,
     bootstrap_lift_ci,
@@ -24,11 +23,8 @@ from src.analytics.rules import (
     rules_to_table,
     run_fpgrowth,
 )
-from src.analytics.intelligence import Opportunity, insights_to_dataframe, opportunities_to_dataframe
-from src.analytics.opportunities.cross_sell import generate_cross_sell_opportunities
-from src.analytics.schemas import check
 from src.ui.features import get_basket_matrix, get_product_lookup
-from src.ui.plots import PALETTE, empty_state, new_fig, show
+from src.ui.plots import show
 from src.ui.registry import ModeSpec
 
 
@@ -640,10 +636,11 @@ def render(df: pd.DataFrame) -> None:
                     )
                 )
                 fig.update_layout(
-                    xaxis={"title": "Consequent Category", "tickangle": -45},
+                    xaxis={"title": "Consequent Category"},
                     yaxis={"title": "Antecedent Category"},
                     height=max(300, len(pivot) * 30 + 100),
                 )
+                fig.update_xaxes(tickangle=-45)
                 show(fig)
 
             csv_cat = cat_rules.to_csv(index=False)

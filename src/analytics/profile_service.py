@@ -11,22 +11,19 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-import numpy as np
 import pandas as pd
 
-from src.analytics.data import derive_product_lookup
+from src.analytics import promo
 from src.analytics.performance import (
     abc_analysis,
     compute_repeat_rate,
     compute_sku_rationalization_df,
     compute_velocity,
-    xyz_analysis,
     product_lifecycle_stage,
+    xyz_analysis,
 )
 from src.analytics.pricing.elasticity import estimate_loglog_elasticity
 from src.analytics.switching import compute_switching_status
-from src.analytics.promo_core import promo_roi_analysis
-from src.analytics import promo
 
 logger = logging.getLogger(__name__)
 
@@ -268,8 +265,8 @@ class ProfileService:
         # --- Substitutability (SDP) ---
         try:
             from src.analytics.transference import (
-                compute_substitutable_demand_percentage,
                 compute_demand_transference_matrix,
+                compute_substitutable_demand_percentage,
             )
             transference_matrix = compute_demand_transference_matrix(self.df)
             sdp_df = compute_substitutable_demand_percentage(transference_matrix, self.df)

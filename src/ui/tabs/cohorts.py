@@ -40,10 +40,12 @@ def _render_retention_heatmap(cohort_table: pd.DataFrame) -> None:
         )
     )
     fig.update_layout(
-        xaxis={"title": "Period index", "tickangle": 0},
-        yaxis={"title": "Cohort", "tickangle": 0},
+        xaxis={"title": "Period index"},
+        yaxis={"title": "Cohort"},
         height=max(350, 25 * len(pivot)),
     )
+    fig.update_xaxes(tickangle=0)
+    fig.update_yaxes(tickangle=0)
     show(fig)
     st.caption(
         "Rows = acquisition cohort (first period), columns = periods since first purchase. Green = high retention."
@@ -73,10 +75,12 @@ def _render_revenue_heatmap(df: pd.DataFrame, cohort_period: str) -> None:
         ),
     )
     fig.update_layout(
-        xaxis={"title": "Period index", "tickangle": 0},
-        yaxis={"title": "Cohort", "tickangle": 0},
+        xaxis={"title": "Period index"},
+        yaxis={"title": "Cohort"},
         height=max(350, 25 * len(pivot)),
     )
+    fig.update_xaxes(tickangle=0)
+    fig.update_yaxes(tickangle=0)
     show(fig)
     st.caption("Cumulative revenue per acquired customer. Darker = higher lifetime value to date.")
 

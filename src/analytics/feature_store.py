@@ -174,7 +174,7 @@ def build_feature_store(df: pd.DataFrame) -> FeatureStore:
     basket_features = basket.reset_index()
 
     # weekly product panel (product x week)
-    weekly = d.groupby(["stockcode", "iso_week"], as_index=False).agg(
+    weekly = d.groupby(["stockcode", "iso_week"], as_index=False, observed=True).agg(
         units=("quantity", "sum"),
         revenue=("price_times_qty", "sum"),
         avg_price=("price", "mean"),

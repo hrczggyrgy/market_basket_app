@@ -689,6 +689,176 @@ def prune_tree(
     """
     if root.is_leaf:
         return root
+
+
+class CDTEngine:
+    """CDT Engine - isolated behind explicit Tier C trigger.
+    
+    Only runs on explicit user action ("Run CDT" button).
+    Gracefully handles missing optional dependencies (networkx, scipy, sklearn).
+    """
+
+    def __init__(self, df: pd.DataFrame) -> None:
+        self.df = df.copy()
+        self.df["date"] = pd.to_datetime(self.df["date"])
+        self._deps_available = self._check_dependencies()
+        self._missing_deps = self._get_missing_deps()
+
+    def _check_dependencies(self) -> dict[str, bool]:
+        """Check which optional dependencies are available."""
+        deps = {}
+        try:
+            import networkx  # noqa: F401
+            deps["networkx"] = True
+        except ImportError:
+            deps["networkx"] = False
+
+        try:
+            import scipy.cluster.hierarchy  # noqa: F401
+            deps["scipy"] = True
+        except ImportError:
+            deps["scipy"] = False
+
+        try:
+            import sklearn.cluster  # noqa: F401
+            import sklearn.metrics  # noqa: F401
+            deps["sklearn"] = True
+        except ImportError:
+            deps["sklearn"] = False
+
+        return deps
+
+    def _get_missing_deps(self) -> list[str]:
+        """Get list of missing dependencies."""
+        return [dep for dep, available in self._deps_available.items() if not available]
+
+    def _friendly_error(self) -> dict[str, Any]:
+        """Return a friendly error dict instead of raising ImportError."""
+        missing = self._get_missing_deps()
+        import warnings
+        warnings.warn(
+            f"CDT analysis requires missing dependencies: {', '.join(missing)}. "
+            f"Install with: pip install {' '.join(missing)}",
+            UserWarning,
+            stacklevel=2,
+        )
+        return {
+            "error": f"Missing dependencies: {', '.join(missing)}. Install with: pip install {' '.join(missing)}",
+            "missing_deps": missing,
+        }
+
+    def build_cdt(
+        self,
+        min_cooccurrence: int = 5,
+        similarity_method: str = "phi",
+        linkage_method: str = "ward",
+        min_clusters: int = 2,
+        max_clusters: int = 15,
+        min_cluster_size: int = 3,
+        quality_threshold: float = 0.6,
+        split_criterion: str = "mutual_info",
+        resolution: float = 1.0,
+        community_method: str = "none",
+    ) -> dict[str, Any]:
+        """Build CDT with graceful degradation.
+        
+        Returns dict with 'tree', 'dataframe', 'similarity_matrix', 'dendrogram', 'clusters'.
+        If dependencies missing, returns friendly error dict.
+        """
+        if not all(self._deps_available.values()):
+            return self._friendly_error()
+
+        try:
+            from src.analytics.cdt import (
+                build_cdt,
+                build_transaction_derived_attributes,
+                tree_to_dataframe,
+            )
+            from src.analytics.cdt.clustering import (
+                find_optimal_clusters_sklearn,
+                get_dendrogram_data,
+            )
+            from src.analytics.cdt.similarity import build_similarity_matrix_ensemble
+
+            # Build attributes
+            attributes_df = build_transaction_derived_attributes(self.df)
+
+            # Build similarity matrix
+            similarity_matrix = build_similarity_matrix_ensemble(
+                self.df,
+                methods=[similarity_method] if similarity_method != "ensemble" else None,
+            )
+
+            # Build CDT
+            tree = build_cdt(
+                attributes_df,
+                similarity_matrix,
+                min_cluster_size=min_cluster_size,
+                quality_threshold=quality_threshold,
+                split_criterion=split_criterion,
+            )
+
+            # Convert to dataframe
+            df_tree = tree_to_dataframe(tree)
+
+            # Get dendrogram data
+            dendrogram = get_dendrogram_data(similarity_matrix, linkage_method)
+
+            # Get clusters
+            clusters = find_optimal_clusters_sklearn(
+                similarity_matrix,
+                min_clusters=min_clusters,
+                max_clusters=max_clusters,
+                method=linkage_method,
+            )
+
+            return {
+                "tree": tree,
+                "dataframe": df_tree,
+                "similarity_matrix": similarity_matrix,
+                "dendrogram": dendrogram,
+                "clusters": clusters,
+            }
+        except Exception as e:
+            import warnings
+            warnings.warn(f"CDT build failed: {e}", UserWarning, stacklevel=2)
+            return {"error": f"CDT build failed: {e}"}
+
+    def get_similarity_matrix(
+        self,
+        method: str = "phi",
+    ) -> pd.DataFrame:
+        """Build similarity matrix with graceful degradation."""
+        if not self._deps_available.get("scipy", False):
+            return self._friendly_error()
+
+        try:
+            from src.analytics.cdt.similarity import build_similarity_matrix
+            return build_similarity_matrix(self.df, method=method)
+        except Exception as e:
+            import warnings
+            warnings.warn(f"Similarity matrix failed: {e}", UserWarning, stacklevel=2)
+            return {"error": f"Similarity matrix failed: {e}"}
+
+    def is_available(self) -> bool:
+        """Check if CDT engine is available (all dependencies installed)."""
+        return all(self._deps_available.values())
+
+    def get_status(self) -> dict[str, Any]:
+        """Get engine status for UI display."""
+        return {
+            "available": self.is_available(),
+            "engine": "CDTEngine",
+            "tier": "C",
+            "description": "Customer Decision Tree construction",
+            "dependencies": ["networkx", "scipy", "sklearn"],
+            "missing_deps": self._get_missing_deps(),
+        }
+
+
+def get_cdt_engine(df: pd.DataFrame) -> CDTEngine:
+    """Factory function to create CDTEngine for a dataset."""
+    return CDTEngine(df)
     for child in root.children[:]:
         prune_tree(child, threshold, similarity_matrix)
     if root.children and all(c.is_leaf for c in root.children):

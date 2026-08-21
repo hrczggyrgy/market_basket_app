@@ -36,6 +36,7 @@ htmlcov/
 
 # Type checking
 .mypy_cache/
+.mypy_stubs/
 .dmypy.json
 dmypy.json
 
@@ -52,6 +53,7 @@ dmypy.json
 
 # Large data files (not for version control)
 *.csv
+data/
 !sample_data/*.csv
 
 # Logs

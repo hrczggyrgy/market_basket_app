@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from src.analytics.profile_service import get_profile, get_profile_service, init_profile_service
+from src.analytics.profile_service import get_profile_service, init_profile_service
+from src.analytics.switching import compute_switching_status
 from src.analytics.transference import (
     compute_demand_transference_matrix,
-    delist_impact_analysis,
 )
-from src.analytics.switching import compute_switching_status
 
 
 def _get_revenue_at_risk(sku: str, revenue_by_product: pd.Series) -> float:
@@ -93,35 +92,37 @@ def _classify_evidence_level(
     revenue_at_risk: float,
     estimated_recovery: float,
     sdp: float | None = None,
-) -> str:
-    """Classify evidence level as HIGH, MEDIUM, or INSUFFICIENT.
+) -> int:
+    """Classify evidence level as integer 1-5.
 
-    Falls back to 'Insufficient evidence' when switching data is weak.
+    1 = exploratory, 2 = descriptive, 3 = predictive, 4 = quasi-causal, 5 = causal
+
+    Falls back to 1 (exploratory) when switching data is weak.
     """
-    # If switching status indicates insufficient data, return INSUFFICIENT
+    # If switching status indicates insufficient data, return 1 (exploratory)
     if switching_status in ("insufficient_customers", "insufficient_transitions", "insufficient_observations"):
-        return "Insufficient evidence"
+        return 1
 
     # If revenue at risk is very low or recovery is negligible, evidence is weak
     if revenue_at_risk <= 0:
-        return "Insufficient evidence"
+        return 1
 
     # Check if recovery rate is meaningful
     recovery_rate = _get_recovery_rate(revenue_at_risk, estimated_recovery)
     if recovery_rate < 0.1:  # Less than 10% recovery
-        return "Insufficient evidence"
+        return 1
 
     # If we have switching data and meaningful recovery, evidence is sufficient
     if switching_status == "estimated":
         if recovery_rate >= 0.3:
-            return "High evidence"
+            return 4  # quasi-causal
         elif recovery_rate >= 0.1:
-            return "Medium evidence"
+            return 3  # predictive
         else:
-            return "Insufficient evidence"
+            return 2  # descriptive
 
     # Default: if we have some data but not enough for "estimated"
-    return "Insufficient evidence"
+    return 2  # descriptive
 
 
 def _get_keep_delist_recommendation(
@@ -353,7 +354,7 @@ def render_delist_simulator(
         st.metric("Estimated Recovery", f"${result['estimated_recovery']:,.0f}")
 
     # Recovery rate
-    st.metric("Recovery Rate", result["recovery_rate_pct"], help=f"Recovery at risk / Revenue at risk")
+    st.metric("Recovery Rate", result["recovery_rate_pct"], help="Recovery at risk / Revenue at risk")
 
     # Top substitutes
     st.write("**Top 3 Substitutes with Revenue Flows**")

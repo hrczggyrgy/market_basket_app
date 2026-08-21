@@ -15,14 +15,12 @@ price action, promo action per SKU).
 from __future__ import annotations
 
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.analytics.profile_service import init_profile_service, get_profile, ProfileService
 from src.analytics.insights import generate_promotion_insights
-from src.analytics.insights.promotion import classify_promo_score
 from src.analytics.opportunities import generate_promotion_opportunities
+from src.analytics.profile_service import ProfileService, init_profile_service
 from src.analytics.promo_core import (
     compute_cannibalization_analysis,
     compute_incrementality_waterfall,
@@ -30,10 +28,12 @@ from src.analytics.promo_core import (
     detect_promotions,
     pre_post_promo_comparison,
     promo_roi_analysis,
-    promotion_timing_analysis,
 )
-from src.ui.components_utils import render_metric_row, render_insight_cards, render_opportunity_table
-from src.ui.plots import PALETTE, empty_state, new_fig, render_bar_with_ci, show
+from src.ui.components_utils import (
+    render_insight_cards,
+    render_opportunity_table,
+)
+from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
 
 _SCORE_META = {
@@ -202,7 +202,7 @@ def _compute_calendar_heatmap(
     Returns DataFrame with columns:
       stockcode, week, discount_depth, incremental_lift_pct, roi_pct, actual_revenue, baseline_revenue
     """
-    from src.analytics.promo_core import mark_promo_transactions, compute_promo_baseline
+    from src.analytics.promo_core import compute_promo_baseline, mark_promo_transactions
 
     # Mark promo transactions
     df_marked = mark_promo_transactions(df.copy(), promo_periods)
@@ -579,7 +579,9 @@ def _render_observed_vs_estimated(waterfall: pd.DataFrame, lift: pd.DataFrame) -
     fig.add_trace(
         go.Bar(
             x=top["stockcode"],
-            y=top.get("estimated_incremental_revenue", 0).apply(lambda x: x / max(top["baseline_revenue"].max() if "baseline_revenue" in top.columns else 1, 1) * 100, 0),
+            y=top["estimated_incremental_revenue"].apply(
+                lambda x: x / (top["baseline_revenue"].max() if "baseline_revenue" in top.columns else 1) * 100
+            ) if "estimated_incremental_revenue" in top.columns else [0] * len(top),
             name="Estimated incremental %",
             marker={"color": PALETTE[0]},
             hovertemplate="%{x}<br>Estimated incremental: %{y:.1f}%<extra></extra>",
@@ -588,9 +590,10 @@ def _render_observed_vs_estimated(waterfall: pd.DataFrame, lift: pd.DataFrame) -
     fig.add_hline(y=0, line_dash="dash", line_color="gray")
     fig.update_layout(
         barmode="group",
-        xaxis={"title": "", "tickangle": -45},
+        xaxis={"title": ""},
         yaxis={"title": "Lift %"},
     )
+    fig.update_xaxes(tickangle=-45)
     show(fig)
 
     st.caption(
@@ -613,19 +616,21 @@ def _render_calendar_heatmap(weekly_df: pd.DataFrame) -> None:
     plot_df = weekly_df[weekly_df["stockcode"].isin(top_skus)]
 
     # Create a heatmap: x=week, y=stockcode, color=discount_depth, size/intensity=incremental_lift_pct
+    pivot_table = plot_df.pivot_table(
+        values="incremental_lift_pct",
+        index="stockcode",
+        columns="week",
+        aggfunc="mean",
+        fill_value=0,
+    ).reindex(top_skus)
+
     fig = go.Figure(
         data=go.Heatmap(
-            z=plot_df.pivot_table(
-                values="incremental_lift_pct",
-                index="stockcode",
-                columns="week",
-                aggfunc="mean",
-                fill_value=0,
-            ).reindex(top_skus),
+            z=pivot_table.values,
             x=plot_df["week"].unique() if "week" in plot_df.columns else [],
             y=top_skus,
             colorscale=[[0, "#ffffff"], [0.3, "#FFE6E6"], [0.7, "#FF6B6B"], [1.0, "#FF2E2E"]],
-            hovertemplate="SKU: %{y}<br>Week: %{x}<br>Incremental Lift: %{z:.1f}%<br>Discount Depth:定位中<extra></extra>",
+            hovertemplate="SKU: %{y}<br>Week: %{x}<br>Incremental Lift: %{z:.1f}%<extra></extra>",
         )
     )
 
@@ -651,7 +656,8 @@ def _render_calendar_heatmap(weekly_df: pd.DataFrame) -> None:
             disc_fig.add_trace(
                 go.Bar(x=[sc], y=[avg_disc], name=sc, marker_color=PALETTE[top_skus.index(sc) % len(PALETTE)])
             )
-        disc_fig.update_layout(barmode="group", xaxis={"title": "SKU", "tickangle": -45}, yaxis={"title": "Avg Discount %"})
+        disc_fig.update_layout(barmode="group", xaxis={"title": "SKU"}, yaxis={"title": "Avg Discount %"})
+        disc_fig.update_xaxes(tickangle=-45)
         st.plotly_chart(disc_fig, use_container_width=True)
 
 
