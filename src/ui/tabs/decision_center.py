@@ -359,7 +359,6 @@ def _render_manager_action_queue(analysis: DecisionCenterAnalysis, profile: Prof
         })
 
     if display_rows:
-        import streamlit as st
         df_display = pd.DataFrame(display_rows)
         st.dataframe(
             df_display,
