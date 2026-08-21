@@ -18,6 +18,7 @@ from lifetimes.utils import ConvergenceError, summary_data_from_transaction_data
 from scipy.stats import pearsonr, spearmanr
 
 from src.analytics.basket_metrics import compute_customer_entropy
+from src.analytics.data import revenue_column
 from src.analytics.schemas import CLV_CUSTOMER, CLV_DIAGNOSTICS, CLV_PREDICTIONS, check
 
 _SEGMENTS = ["Bronze", "Silver", "Gold", "Platinum"]
@@ -41,7 +42,7 @@ def predict_clv_bg_nbd(
     """
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
-    df["revenue"] = df["price"] * df["quantity"]
+    df["revenue"] = revenue_column(df)
     df = df[df["revenue"] > 0]
 
     # Collapse line items to one purchase event per basket.
@@ -416,7 +417,7 @@ def compute_clv_customer_df(
     """
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
-    df["revenue"] = df["price"] * df["quantity"]
+    df["revenue"] = revenue_column(df)
     df = df[df["revenue"] > 0]
 
     if predictions is None:
@@ -478,3 +479,116 @@ def compute_clv_customer_df(
     ]
     result = result[cols].sort_values("clv_12m", ascending=False).reset_index(drop=True)
     return check(result, CLV_CUSTOMER)
+
+
+class CLVEngine:
+    """CLV Engine - isolated behind explicit Tier C trigger.
+    
+    Only runs on explicit user action ("Run CLV" button).
+    Gracefully handles missing optional dependencies (lifetimes).
+    """
+
+    def __init__(self, df: pd.DataFrame) -> None:
+        self.df = df.copy()
+        self.df["date"] = pd.to_datetime(self.df["date"])
+        self.df["revenue"] = revenue_column(self.df)
+        self.df = self.df[self.df["revenue"] > 0]
+        self._lifetimes_available = self._check_lifetimes()
+
+    def _check_lifetimes(self) -> bool:
+        """Check if lifetimes library is available."""
+        try:
+            import lifetimes  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+    def _friendly_error(self, missing_dep: str) -> pd.DataFrame:
+        """Return a friendly error DataFrame instead of raising ImportError."""
+        import warnings
+        warnings.warn(
+            f"CLV analysis requires '{missing_dep}' package. "
+            f"Install with: pip install {missing_dep}",
+            UserWarning,
+            stacklevel=2,
+        )
+        return pd.DataFrame({
+            "error": [f"Missing dependency: {missing_dep}. Install with: pip install {missing_dep}"]
+        })
+
+    def predict(
+        self,
+        prediction_horizon_days: int = 90,
+        freq: str = "D",
+        min_repeat_customers: int = 10,
+        discount_rate_pct: float = 0.0,
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Run CLV prediction with graceful degradation.
+        
+        Returns (clv_predictions, clv_diagnostics) both contract-validated.
+        If lifetimes is not available, returns friendly error DataFrames.
+        """
+        if not self._lifetimes_available:
+            error_df = self._friendly_error("lifetimes")
+            return error_df, error_df
+
+        try:
+            return predict_clv_bg_nbd(
+                self.df,
+                prediction_horizon_days=prediction_horizon_days,
+                freq=freq,
+                min_repeat_customers=min_repeat_customers,
+                discount_rate_pct=discount_rate_pct,
+            )
+        except Exception as e:
+            import warnings
+            warnings.warn(f"CLV prediction failed: {e}", UserWarning, stacklevel=2)
+            error_df = pd.DataFrame({"error": [f"CLV prediction failed: {e}"]})
+            return error_df, error_df
+
+    def compute_customer_view(
+        self,
+        prediction_horizon_days: int = 90,
+        freq: str = "D",
+        discount_rate_pct: float = 0.0,
+        predictions: pd.DataFrame | None = None,
+    ) -> pd.DataFrame:
+        """Compute customer CLL view with behavior metrics.
+        
+        Returns contract-validated CLV_CUSTOMER DataFrame.
+        If lifetimes is not available or prediction fails, returns friendly error.
+        """
+        if not self._lifetimes_available:
+            return self._friendly_error("lifetimes")
+
+        try:
+            return compute_clv_customer_df(
+                self.df,
+                prediction_horizon_days=prediction_horizon_days,
+                freq=freq,
+                discount_rate_pct=discount_rate_pct,
+                predictions=predictions,
+            )
+        except Exception as e:
+            import warnings
+            warnings.warn(f"CLV customer view failed: {e}", UserWarning, stacklevel=2)
+            return self._friendly_error("lifetimes")
+
+    def is_available(self) -> bool:
+        """Check if CLV engine is available (all dependencies installed)."""
+        return self._lifetimes_available
+
+    def get_status(self) -> dict[str, Any]:
+        """Get engine status for UI display."""
+        return {
+            "available": self._lifetimes_available,
+            "engine": "CLVEngine",
+            "tier": "C",
+            "description": "BG/NBD + Gamma-Gamma CLV prediction",
+            "dependencies": ["lifetimes"],
+        }
+
+
+def get_clv_engine(df: pd.DataFrame) -> CLVEngine:
+    """Factory function to create CLVEngine for a dataset."""
+    return CLVEngine(df)

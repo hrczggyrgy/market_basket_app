@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import linregress
 
+from src.analytics.data import revenue_column
 from src.analytics.schemas import (
     COHORT_DECAY,
     COHORT_LTV,
@@ -52,7 +53,7 @@ def compute_cohort_sizes(df: pd.DataFrame, cohort_period: str = "M") -> pd.DataF
     first = df.groupby("customer_id")["cohort"].min().rename("first_cohort")
     df = df.join(first, on="customer_id")
     df["first_cohort"] = df["first_cohort"].astype(df["cohort"].dtype)
-    revenue = df["price"] * df["quantity"]
+    revenue = revenue_column(df)
     table = pd.DataFrame(
         {
             "cohort": df.groupby("first_cohort")["customer_id"].nunique().index.astype(str),
@@ -68,7 +69,7 @@ def period_over_period_comparison(df: pd.DataFrame, period: str = "W") -> pd.Dat
     """Period-over-period growth of revenue, transactions, and AOV."""
     df = df.copy()
     df["period"] = _cohort_period(df, period)
-    revenue = df["price"] * df["quantity"]
+    revenue = revenue_column(df)
     agg = pd.DataFrame(
         {
             "revenue": revenue.groupby(df["period"]).sum(),
@@ -89,7 +90,7 @@ def year_over_year_comparison(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df["year"] = df["date"].dt.year
     df["week"] = df["date"].dt.isocalendar().week
-    df["revenue"] = df["price"] * df["quantity"]
+    df["revenue"] = revenue_column(df)
     grouped = (
         df.groupby(["year", "week"])
         .agg(
@@ -123,7 +124,7 @@ def compute_cohort_ltv_curve(df: pd.DataFrame, cohort_period: str = "M") -> pd.D
     df["first_cohort"] = df["first_cohort"].astype(df["cohort"].dtype)
     df["period_index"] = (df["period"] - df["first_cohort"]).apply(lambda p: p.n)
     df = df[df["period_index"].ge(0)]
-    revenue = df["price"] * df["quantity"]
+    revenue = revenue_column(df)
     customers = df.groupby("first_cohort")["customer_id"].nunique()
     cumulative = (
         revenue.groupby([df["first_cohort"], df["period_index"]])
@@ -194,7 +195,7 @@ def compute_role_retention(
 
     df = df.copy()
     df["cohort"] = _cohort_period(df, cohort_period)
-    df["revenue"] = df["price"] * df["quantity"]
+    df["revenue"] = revenue_column(df)
     df["role"] = df["category"].map(cat_to_role).fillna("Unknown")
 
     # Dominant category by revenue in each basket

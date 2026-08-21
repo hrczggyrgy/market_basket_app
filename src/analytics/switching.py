@@ -21,6 +21,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from src.analytics.data import revenue_column
 from src.analytics.schemas import (
     CATEGORY_SWITCHING,
     LOYALTY_METRICS,
@@ -371,7 +372,7 @@ def get_top_switching_paths(
 def get_customer_loyalty_metrics(df: pd.DataFrame) -> pd.DataFrame:
     """Per-customer repeat-purchase and switching behavior."""
     txn = df.groupby(["customer_id", "transaction_id"])["stockcode"].agg(set).reset_index()
-    txn["basket_size"] = txn["stockcode"].map(len)
+    txn["basket_size"] = txn["stockcode"].astype(str).map(len)
     cust_txn = txn.groupby("customer_id").agg(
         n_transactions=("transaction_id", "nunique"),
         avg_basket_size=("basket_size", "mean"),
@@ -691,11 +692,7 @@ def compute_substitution_strength(
         )
 
     # Total revenue per product
-    rev = (
-        df.groupby("stockcode")
-        .apply(lambda x: (x["price"] * x["quantity"]).sum())
-        .rename("revenue")
-    )
+    rev = revenue_column(df).groupby(df["stockcode"]).sum().rename("revenue")
 
     # Merge with SDP
     sdp_lookup = (
@@ -863,9 +860,7 @@ def compute_high_value_switching(
                 frm, to = row["from_product"], row["to_product"]
                 high_value_customers_switched = int(row["count"])
                 # Revenue at risk for this segment
-                seg_rev = seg_hv.groupby("stockcode").apply(
-                    lambda x: (x["price"] * x["quantity"]).sum()
-                )
+                seg_rev = revenue_column(seg_hv).groupby(seg_hv["stockcode"]).sum()
                 rev_at_risk = seg_rev.get(frm, 0.0) * (
                     row["count"]
                     / max(seg_matrix[seg_matrix["from_product"] == frm]["count"].sum(), 1)
@@ -896,7 +891,7 @@ def compute_high_value_switching(
         for _, row in hv_matrix.iterrows():
             frm, to = row["from_product"], row["to_product"]
             high_value_customers_switched = int(row["count"])
-            hv_rev = hv_df.groupby("stockcode").apply(lambda x: (x["price"] * x["quantity"]).sum())
+            hv_rev = revenue_column(hv_df).groupby(hv_df["stockcode"]).sum()
             rev_at_risk = hv_rev.get(frm, 0.0) * (
                 row["count"] / max(hv_matrix[hv_matrix["from_product"] == frm]["count"].sum(), 1)
             )

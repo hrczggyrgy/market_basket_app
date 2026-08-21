@@ -8,6 +8,7 @@ from scipy.stats import variation
 from sklearn.cluster import KMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
 
+from src.analytics.data import revenue_column
 from src.analytics.schemas import (
     ASSORTMENT_EFFICIENCY,
     CATEGORY_GROWTH_MATRIX,
@@ -28,7 +29,7 @@ def compute_category_kpis(df: pd.DataFrame, n_periods: int = 8) -> pd.DataFrame:
             pd.DataFrame(columns=list(CATEGORY_KPIS.columns)), CATEGORY_KPIS, allow_empty=True
         )
     df = df.copy()
-    revenue = df["price"] * df["quantity"]
+    revenue = revenue_column(df)
     n_baskets = df["transaction_id"].nunique()
     df["_period"] = df["date"].dt.to_period("W").astype(str)
     prior_periods = sorted(df["_period"].unique())[-n_periods - 1 : -1]
@@ -95,7 +96,8 @@ def infer_categories_nlp(
             allow_empty=True,
         )
     lookup = df[["stockcode", product_col]].drop_duplicates(subset="stockcode").copy()
-    texts = lookup[product_col].fillna("").astype(str)
+    # Handle categorical dtype: convert to string first
+    texts = lookup[product_col].astype(str).fillna("")
     vectorizer = TfidfVectorizer(stop_words="english", max_features=2000)
     features = vectorizer.fit_transform(texts)
     k = min(n_categories, max(2, features.shape[0]))
@@ -251,7 +253,7 @@ def compute_category_roles(
             category_source = "provided"
 
     df = df.copy()
-    revenue = df["price"] * df["quantity"]
+    revenue = revenue_column(df)
     df["revenue"] = revenue
     all_categories = df["category"].unique()
 
@@ -389,7 +391,7 @@ def compute_category_trend(
         )
 
     df = transactions_df.copy()
-    df["_revenue"] = df["price"] * df["quantity"]
+    df["_revenue"] = revenue_column(df)
     df["_period"] = df["date"].dt.to_period(freq).astype(str)
 
     per_period = df.groupby("_period")
@@ -439,7 +441,7 @@ def compute_assortment_efficiency(
         )
 
     df = transactions_df.copy()
-    df["_revenue"] = df["price"] * df["quantity"]
+    df["_revenue"] = revenue_column(df)
 
     total_skus = int(df["stockcode"].nunique())
     total_revenue = float(df["_revenue"].sum())
@@ -585,7 +587,7 @@ def compute_category_manager_scorecard(
         )
 
     df = transactions_df.copy()
-    df["_revenue"] = df["price"] * df["quantity"]
+    df["_revenue"] = revenue_column(df)
 
     kpis = compute_category_kpis(df, n_periods=8)
     roles = compute_category_roles(df)

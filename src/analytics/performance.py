@@ -7,6 +7,7 @@ import pandas as pd
 from scipy.stats import variation
 
 from src.analytics.config import get_config
+from src.analytics.data import revenue_column
 from src.analytics.schemas import (
     ABC_CLASSES,
     LIFECYCLE,
@@ -22,7 +23,7 @@ from src.analytics.schemas import (
 
 def compute_product_metrics(df: pd.DataFrame) -> pd.DataFrame:
     """Core per-product metrics."""
-    revenue = df["price"] * df["quantity"]
+    revenue = revenue_column(df)
     n_baskets = df["transaction_id"].nunique()
     table = pd.DataFrame(
         {
@@ -42,7 +43,7 @@ def compute_product_metrics(df: pd.DataFrame) -> pd.DataFrame:
 def abc_analysis(df: pd.DataFrame) -> pd.DataFrame:
     """ABC classification by cumulative revenue share (A <= 70%, B <= 90%, C rest)."""
     revenue = (
-        (df["price"] * df["quantity"]).groupby(df["stockcode"]).sum().sort_values(ascending=False)
+        revenue_column(df).groupby(df["stockcode"]).sum().sort_values(ascending=False)
     )
     cumulative = revenue.cumsum() / revenue.sum()
     # Clip to [0, 1] to handle floating-point precision issues on the last row
@@ -85,7 +86,7 @@ def xyz_analysis(df: pd.DataFrame, period: str = "W") -> pd.DataFrame:
     df = df.copy()
     df["_period"] = df["date"].dt.to_period(period).astype(str)
     units = df["quantity"]
-    revenue = df["price"] * df["quantity"]
+    revenue = revenue_column(df)
     pivot = units.groupby([df["stockcode"], df["_period"]]).sum().unstack(fill_value=0)
     # Per-SKU span: from first to last observed period (handles product
     # launches/end-of-life without counting pre-launch zeros).
@@ -167,7 +168,7 @@ def product_lifecycle_stage(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
     df["_period"] = df["date"].dt.to_period("W").astype(str)
-    revenue = df["price"] * df["quantity"]
+    revenue = revenue_column(df)
 
     periods = sorted(df["_period"].unique())
     if len(periods) < 2:

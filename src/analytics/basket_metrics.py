@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import entropy, variation
 
+from src.analytics.data import revenue_column
 from src.analytics.schemas import (
     BASKET_COMPOSITION,
     BASKET_OVER_TIME,
@@ -21,8 +22,8 @@ def compute_basket_penetration(df: pd.DataFrame) -> pd.DataFrame:
     """Per-product basket penetration and revenue share."""
     baskets = df["transaction_id"].nunique()
     grouped = df.groupby("stockcode")
-    revenue = (df["price"] * df["quantity"]).sum()
-    revenue_by = (df["price"] * df["quantity"]).groupby(df["stockcode"]).sum()
+    revenue = revenue_column(df).sum()
+    revenue_by = revenue_column(df).groupby(df["stockcode"]).sum()
     table = pd.DataFrame(
         {
             "stockcode": grouped.size().index,
@@ -40,7 +41,7 @@ def basket_penetration_over_time(df: pd.DataFrame, period: str = "W") -> pd.Data
     df = df.copy()
     df["period"] = df["date"].dt.to_period(period)
     grouped = df.groupby("period")
-    total_rev = (df["price"] * df["quantity"]).groupby(df["period"]).sum()
+    total_rev = revenue_column(df).groupby(df["period"]).sum()
     table = pd.DataFrame(
         {
             "period": grouped["transaction_id"].nunique().index.astype(str),
@@ -218,7 +219,7 @@ def compute_basket_metrics(df: pd.DataFrame) -> pd.DataFrame:
     These canonical definitions ensure consistency across all analytics.
     """
     df = df.copy()
-    df["revenue"] = df["price"] * df["quantity"]
+    df["revenue"] = revenue_column(df)
 
     agg = (
         df.groupby("transaction_id")

@@ -9,6 +9,7 @@ import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
+from src.analytics.data import revenue_column
 from src.analytics.schemas import RFM_FEATURES, RFM_SEGMENTS, check
 from src.analytics.segmentation.core import _label_rfm_clusters
 
@@ -32,7 +33,7 @@ def compute_rfm_features(
     """
     df = transactions_df.copy()
     df["date"] = pd.to_datetime(df["date"])
-    df["revenue"] = df["price"] * df["quantity"]
+    df["revenue"] = revenue_column(df)
 
     # Apply temporal holdout if as_of_date provided
     if as_of_date is not None:
