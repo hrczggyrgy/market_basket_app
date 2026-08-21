@@ -60,6 +60,21 @@ DECISION_COLORS = {
 
 _DECISION_ORDER = ["invest", "protect", "price_lever", "review", "insufficient_evidence"]
 
+# Shared strategy definitions for pricing matrices
+STRATEGY_COLORS = {
+    "Base-price focus": "#59A14F",
+    "Strategic promo": "#4E79A7",
+    "Margin opportunity": "#F28E2B",
+    "Selective promo": "#E15759",
+}
+
+STRATEGY_LABELS = {
+    "Base-price focus": "Base-price focus\n(High KVI, inelastic)",
+    "Strategic promo": "Strategic promo\n(High KVI, elastic)",
+    "Margin opportunity": "Margin opportunity\n(Low KVI, inelastic)",
+    "Selective promo": "Selective promo\n(Low KVI, elastic)",
+}
+
 
 def _render_scorecard(analysis: PricingAnalysis) -> None:
     if not isinstance(analysis, PricingAnalysis):
@@ -796,7 +811,6 @@ def _render_price_ladder(analysis: PricingAnalysis) -> None:
     st.subheader(":material/ladder: Layer 3 — Price Ladder")
 
     kvi = analysis.kvi
-    dm = analysis.decision_matrix
     elast = analysis.elasticity
     conf_map = {}
     if not analysis.confidence.empty:
@@ -809,12 +823,12 @@ def _render_price_ladder(analysis: PricingAnalysis) -> None:
         return
 
     # Compute price ladder tiers based on KVI score and elasticity
-    kvi_total = kvi["total_revenue"].sum()
+    kvi["total_revenue"].sum()
     work = kvi.copy()
 
     # Add elasticity and confidence info
     if elast is not None and not elast.empty:
-        elast_dict = dict(zip(elast["stockcode"], elast["elasticity"]))
+        elast_dict = dict(zip(elast["stockcode"], elast["elasticity"], strict=False))
         work["elasticity"] = work["stockcode"].map(elast_dict).fillna(np.nan)
     else:
         work["elasticity"] = np.nan
@@ -905,7 +919,7 @@ def _render_price_ladder(analysis: PricingAnalysis) -> None:
             })
 
     if tier_rows:
-        for i, row_data in enumerate(tier_rows):
+        for _i, row_data in enumerate(tier_rows):
             # Color code by tier
             tier_colors = {"Premium": PALETTE[0], "Mid": PALETTE[2], "Value": PALETTE[3], "Entry": PALETTE[4]}
             fig.add_trace(
@@ -978,21 +992,6 @@ def _render_price_promo_matrix(analysis: PricingAnalysis) -> None:
     dm = dm.copy()
     dm["strategy"] = dm.apply(_assign_strategy, axis=1)
 
-    # Strategy color map
-    strategy_colors = {
-        "Base-price focus": "#59A14F",      # Green - stable, protect
-        "Strategic promo": "#4E79A7",       # Blue - strategic, defend
-        "Margin opportunity": "#F28E2B",    # Orange - optimize margin
-        "Selective promo": "#E15759",       # Red - targeted promo
-    }
-
-    strategy_labels = {
-        "Base-price focus": "Base-price focus\n(High KVI, inelastic)",
-        "Strategic promo": "Strategic promo\n(High KVI, elastic)",
-        "Margin opportunity": "Margin opportunity\n(Low KVI, inelastic)",
-        "Selective promo": "Selective promo\n(Low KVI, elastic)",
-    }
-
     fig = new_fig(height=450)
 
     # 2x2 matrix: x = elasticity, y = KVI
@@ -1007,15 +1006,7 @@ def _render_price_promo_matrix(analysis: PricingAnalysis) -> None:
     fig.add_vrect(x0=elast_med, x1=float(dm["abs_elasticity"].max() * 1.15), fillcolor="rgba(83, 161, 77, 0.1)", line_color="#59A14F", layer="below")
     fig.add_vrect(x0=0.0, x1=elast_med, fillcolor="rgba(225, 87, 89, 0.1)", line_color="#E15759", layer="below")
 
-    # Plot SKUs by strategy
-    strategy_colors = {
-        "Base-price focus": "#59A14F",
-        "Strategic promo": "#4E79A7",
-        "Margin opportunity": "#F28E2B",
-        "Selective promo": "#E15759",
-    }
-
-    for strategy, color in strategy_colors.items():
+    for strategy, color in STRATEGY_COLORS.items():
         strategy_skus = dm[dm["strategy"] == strategy]
         if strategy_skus.empty:
             continue
@@ -1030,8 +1021,8 @@ def _render_price_promo_matrix(analysis: PricingAnalysis) -> None:
                     "color": color,
                     "line": {"width": 1, "color": "#333333"},
                 },
-                name=strategy_labels[strategy],
-                hovertemplate=f"{strategy_labels[strategy]}<br>|e|: %{{x:.2f}}<br>KVI: %{{y:.2f}}<br>Stockcode: %{{text}}<extra></extra>",
+                name=STRATEGY_LABELS[strategy],
+                hovertemplate=f"{STRATEGY_LABELS[strategy]}<br>|e|: %{{x:.2f}}<br>KVI: %{{y:.2f}}<br>Stockcode: %{{text}}<extra></extra>",
             )
         )
 
@@ -1106,7 +1097,7 @@ def _render_price_promo_strategy_matrix(analysis: PricingAnalysis) -> None:
 
     work = dm.copy()
     if kvi is not None and not kvi.empty:
-        kvi_map = dict(zip(kvi["stockcode"], kvi["kvi_score"]))
+        kvi_map = dict(zip(kvi["stockcode"], kvi["kvi_score"], strict=False))
         work["kvi_score"] = work["stockcode"].map(kvi_map).fillna(0.0)
     work["kvi_status"] = work["kvi_score"].apply(_kvi_status)
 
@@ -1126,13 +1117,6 @@ def _render_price_promo_strategy_matrix(analysis: PricingAnalysis) -> None:
 
     work["strategy"] = work.apply(_assign_strategy, axis=1)
 
-    strategy_colors = {
-        "Base-price focus": "#59A14F",
-        "Strategic promo": "#4E79A7",
-        "Margin opportunity": "#F28E2B",
-        "Selective promo": "#E15759",
-    }
-
     kvi_status_colors = {
         "High": PALETTE[0],
         "Medium": PALETTE[3],
@@ -1146,7 +1130,7 @@ def _render_price_promo_strategy_matrix(analysis: PricingAnalysis) -> None:
     fig.add_vrect(x0=elast_med, x1=float(work["abs_elasticity"].max() * 1.15), fillcolor="rgba(83, 161, 77, 0.1)", line_color="#59A14F", layer="below")
     fig.add_vrect(x0=0.0, x1=elast_med, fillcolor="rgba(225, 87, 89, 0.1)", line_color="#E15759", layer="below")
 
-    for strategy, scolor in strategy_colors.items():
+    for strategy, _scolor in STRATEGY_COLORS.items():
         sdf = work[work["strategy"] == strategy]
         if sdf.empty:
             continue
@@ -1165,9 +1149,9 @@ def _render_price_promo_strategy_matrix(analysis: PricingAnalysis) -> None:
                     "opacity": 0.8,
                     "line": {"width": 1, "color": "#333333"},
                 },
-                name=strategy_labels[strategy],
+                name=STRATEGY_LABELS[strategy],
                 hovertemplate=
-                    f"<b>{strategy_labels[strategy]}</b>"
+                    f"<b>{STRATEGY_LABELS[strategy]}</b>"
                     "<br>|e|: %{x:.2f}"
                     "<br>KVI: %{y:.2f}"
                     "<br>Stockcode: %{text}"
@@ -1197,28 +1181,28 @@ def _render_price_promo_strategy_matrix(analysis: PricingAnalysis) -> None:
     with st.expander("McKinsey pricing & promotion strategies", expanded=False):
         st.markdown(
             """
-        **Base-price focus** — Inelastic, high-KVI SKUs  
-        These are your strategic traffic drivers where demand is relatively insensitive to price.  
-        • Protect everyday price; avoid needless discounting.  
-        • Price changes should be minimal and justified by cost changes or margin targets.  
-        • Focus on supply-chain efficiency and value communication rather than promotions.  
+        **Base-price focus** — Inelastic, high-KVI SKUs
+        These are your strategic traffic drivers where demand is relatively insensitive to price.
+        • Protect everyday price; avoid needless discounting.
+        • Price changes should be minimal and justified by cost changes or margin targets.
+        • Focus on supply-chain efficiency and value communication rather than promotions.
 
-        **Strategic promo** — Elastic, high-KVI SKUs  
-        These are price-sensitive traffic drivers where small price changes generate large volume shifts.  
-        • Defend price position through strategic positioning, not deep discounting.  
-        • Use modest, well-timed promotions to reinforce shelf presence.  
-        • Test price-response curves before committing to sustained discounting.  
+        **Strategic promo** — Elastic, high-KVI SKUs
+        These are price-sensitive traffic drivers where small price changes generate large volume shifts.
+        • Defend price position through strategic positioning, not deep discounting.
+        • Use modest, well-timed promotions to reinforce shelf presence.
+        • Test price-response curves before committing to sustained discounting.
 
-        **Margin opportunity** — Inelastic, low-KVI SKUs  
-        These SKUs have limited strategic importance but can carry margin with limited volume risk.  
-        • Optimize margin through subtle price adjustments or cost-management initiatives.  
-        • Not a candidate for promotional discounting; focus on operational efficiency.  
-        • Review assortment depth last if margin targets are unmet.  
+        **Margin opportunity** — Inelastic, low-KVI SKUs
+        These SKUs have limited strategic importance but can carry margin with limited volume risk.
+        • Optimize margin through subtle price adjustments or cost-management initiatives.
+        • Not a candidate for promotional discounting; focus on operational efficiency.
+        • Review assortment depth last if margin targets are unmet.
 
-        **Selective promo** — Elastic, low-KVI SKUs  
-        These are candidate promotional levers where deeper discounts can drive meaningful volume.  
-        • Safe to test deeper discounts to drive volume or clear inventory.  
-        • Use as tactical, time-limited promotions rather than everyday strategy.  
+        **Selective promo** — Elastic, low-KVI SKUs
+        These are candidate promotional levers where deeper discounts can drive meaningful volume.
+        • Safe to test deeper discounts to drive volume or clear inventory.
+        • Use as tactical, time-limited promotions rather than everyday strategy.
         • Monitor cannibalization and incremental lift carefully.
         """
         )
@@ -1326,14 +1310,13 @@ def _render_manager_table(analysis: PricingAnalysis, profile_service: ProfileSer
             expected_units = int(elast_row["avg_weekly_qty"])
         elif kvi_row is not None and pd.notna(kvi_row.get("basket_penetration", np.nan)):
             # Estimate units from basket penetration
-            n_baskets = 1000  # placeholder; in reality from data
             expected_units = int(kvi_row["total_revenue"] / current_price * kvi_row.get("basket_penetration", 0) * 100)
 
         # Revenue impact
         revenue_impact = 0.0
         if dm_row is not None and elast_row is not None:
             # Simulate -5% price change impact
-            base_rev = float(elast_row.get("total_revenue", 0)) if hasattr(elast_row, "get") else 0
+            float(elast_row.get("total_revenue", 0)) if hasattr(elast_row, "get") else 0
             # More realistically:
             rev_change_pct = elasticity * (-0.05)  # -5% price cut
             revenue_impact = current_price * expected_units * rev_change_pct / 100 if expected_units > 0 else 0
@@ -1348,7 +1331,6 @@ def _render_manager_table(analysis: PricingAnalysis, profile_service: ProfileSer
             risk = "Medium — low strategic importance"
 
         # Action options
-        action_options = ["Act", "Do not act"]
         default_action = "Act" if risk != "High" else "Do not act"
 
         # Get profile service data if available
@@ -1379,7 +1361,7 @@ def _render_manager_table(analysis: PricingAnalysis, profile_service: ProfileSer
         df = pd.DataFrame(rows)
 
         # Render as a structured table with action indicators
-        for i, row in df.iterrows():
+        for _i, row in df.iterrows():
             with st.container(border=True):
                 col1, col2, col3, col4, col5, col6, col7, col8, col9, col10 = st.columns([0.8, 0.5, 0.5, 0.7, 0.8, 0.8, 0.7, 0.8, 0.6, 0.7])
 
