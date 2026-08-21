@@ -126,12 +126,11 @@ def _render_rule_opportunity_matrix(
                 }
             )
 
-    # Display quadrants
-    col_labels = {
-        "scale": ":green[Scale — High lift + High incremental value]",
-        "optimize": ":orange[Optimize — High lift + Medium incremental value]",
-        "rethink": ":blue[Rethink — Medium lift + High incremental value]",
-        "stop": ":red[Stop — Low lift + Low incremental value]",
+    q_labels = {
+        "scale": "High lift + High incremental value — Scale these rules.",
+        "optimize": "High lift + Medium incremental value — Optimize for more impact.",
+        "rethink": "Low lift + High incremental value — Rethink antecedent/consequent.",
+        "stop": "Low lift + Low incremental value — Stop pursuing.",
     }
 
     for q_name in ["scale", "optimize", "rethink", "stop"]:
@@ -212,8 +211,8 @@ def _render_cross_sell_opportunity_matrix(
         return
 
     # Build basket matrix and revenue lookup
-    basket = get_basket_matrix(df)
-    product_lookup = get_product_lookup(df)
+    get_basket_matrix(df)
+    get_product_lookup(df)
 
     # Compute revenue by product
     revenue_by_product: dict[str, float] = {}
@@ -666,6 +665,30 @@ def render(df: pd.DataFrame) -> None:
         st.divider()
         top_n_network = st.slider("Network: top rules by lift", 10, 100, 40)
         _render_rule_network(df, filtered, top_n=top_n_network)
+
+
+def _render_strength_stability_scatter(filtered: pd.DataFrame, table: pd.DataFrame) -> None:
+    """Render rule strength vs stability scatter."""
+    st.subheader(":material/scatter_plot: Rule Strength vs Stability")
+    st.info("Strength vs Stability scatter plot - coming soon")
+
+
+def _render_lift_ci_chart(filtered: pd.DataFrame, table: pd.DataFrame, top_n: int = 15) -> None:
+    """Render lift confidence interval chart."""
+    st.subheader(":material/bar_chart: Lift Confidence Intervals")
+    st.info("Lift CI chart - coming soon")
+
+
+def _render_anchor_drilldown(df: pd.DataFrame, filtered: pd.DataFrame, table: pd.DataFrame) -> None:
+    """Render anchor product drill-down."""
+    st.subheader(":material/search: Anchor Product Drill-Down")
+    st.info("Anchor drill-down - coming soon")
+
+
+def _render_rule_network(df: pd.DataFrame, filtered: pd.DataFrame, top_n: int) -> None:
+    """Render rule network graph."""
+    st.subheader(":material/network: Rule Network")
+    st.info("Rule network graph - coming soon")
 
 
 MODE_SPEC: ModeSpec = ModeSpec(

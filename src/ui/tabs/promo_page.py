@@ -51,6 +51,25 @@ _SCORE_QUADRANT = {
 }
 
 # ---------------------------------------------------------------------------
+# Shared strategy definitions for pricing matrices (also used in pricing_page)
+# ---------------------------------------------------------------------------
+
+STRATEGY_COLORS = {
+    "Base-price focus": "#59A14F",
+    "Strategic promo": "#4E79A7",
+    "Margin opportunity": "#F28E2B",
+    "Selective promo": "#E15759",
+}
+
+STRATEGY_LABELS = {
+    "Base-price focus": "Base-price focus\n(High KVI, inelastic)",
+    "Strategic promo": "Strategic promo\n(High KVI, elastic)",
+    "Margin opportunity": "Margin opportunity\n(Low KVI, inelastic)",
+    "Selective promo": "Selective promo\n(Low KVI, elastic)",
+}
+
+
+# ---------------------------------------------------------------------------
 # Layer 1: Promotion Effectiveness Matrix (4 quadrants, bubble=promo revenue)
 # ---------------------------------------------------------------------------
 
@@ -302,7 +321,7 @@ def _compute_discount_response_curve(promos: pd.DataFrame, baseline_df: pd.DataF
             # Merge with waterfall/incremental data
             incremental_units_list = []
             for _, promo_row in bucket_promos.iterrows():
-                sc = promo_row["stockcode"]
+                promo_row["stockcode"]
                 # Find in baseline/waterfall
                 inc = 0.0
                 # Try to find incremental data for this SKU
@@ -335,7 +354,6 @@ def _compute_manager_table(
     Columns: promo | SKU | discount | baseline | promo_sales | incremental_sales |
              cannibalization | roi | confidence | recommendation
     """
-    rows = []
 
     # Merge waterfall + promos + cannibalization
     w = waterfall.copy() if waterfall is not None and not waterfall.empty else pd.DataFrame()
@@ -402,7 +420,7 @@ def _compute_manager_table(
         # Fallback: derive from ROI and incremental sales
         roi_pct = row.get("roi_pct", 0.0) or 0.0
         inc_sales = row.get("incremental_sales", 0.0) or 0.0
-        base_sales = row.get("baseline_revenue", 0.0) / max(row.get("baseline_price", 1.0), 1.0)
+        row.get("baseline_revenue", 0.0) / max(row.get("baseline_price", 1.0), 1.0)
 
         if inc_sales > 0 and roi_pct >= 50.0:
             return "scale"
@@ -956,17 +974,9 @@ def _render_price_promo_strategy_matrix(analysis, promo_waterfall=None):
         st.info("No decision matrix data for strategy matrix.")
         return
 
-    def _kvi_status(kvi_score):
-        if kvi_score >= 0.67:
-            return "High"
-        elif kvi_score >= 0.33:
-            return "Medium"
-        else:
-            return "Low"
-
     work = dm.copy()
     if kvi is not None and not kvi.empty:
-        kvi_map = dict(zip(kvi["stockcode"], kvi["kvi_score"]))
+        kvi_map = dict(zip(kvi["stockcode"], kvi["kvi_score"], strict=False))
         work["kvi_score"] = work["stockcode"].map(kvi_map).fillna(0.0)
     work["kvi_status"] = work["kvi_score"].apply(_kvi_status)
 
@@ -986,13 +996,6 @@ def _render_price_promo_strategy_matrix(analysis, promo_waterfall=None):
 
     work["strategy"] = work.apply(_assign_strategy, axis=1)
 
-    strategy_colors = {
-        "Base-price focus": "#59A14F",
-        "Strategic promo": "#4E79A7",
-        "Margin opportunity": "#F28E2B",
-        "Selective promo": "#E15759",
-    }
-
     kvi_status_colors = {
         "High": PALETTE[0],
         "Medium": PALETTE[3],
@@ -1006,7 +1009,7 @@ def _render_price_promo_strategy_matrix(analysis, promo_waterfall=None):
     fig.add_vrect(x0=elast_med, x1=float(work["abs_elasticity"].max() * 1.15), fillcolor="rgba(83, 161, 77, 0.1)", line_color="#59A14F", layer="below")
     fig.add_vrect(x0=0.0, x1=elast_med, fillcolor="rgba(225, 87, 89, 0.1)", line_color="#E15759", layer="below")
 
-    for strategy, scolor in strategy_colors.items():
+    for strategy, _scolor in STRATEGY_COLORS.items():
         sdf = work[work["strategy"] == strategy]
         if sdf.empty:
             continue
@@ -1025,9 +1028,9 @@ def _render_price_promo_strategy_matrix(analysis, promo_waterfall=None):
                     "opacity": 0.8,
                     "line": {"width": 1, "color": "#333333"},
                 },
-                name=strategy_labels[strategy],
+                name=STRATEGY_LABELS[strategy],
                 hovertemplate=
-                    "<b>{strategy_labels[strategy]</b>"
+                    "<b>{STRATEGY_LABELS[strategy]}</b>"
                     "<br>|e|: %{x:.2f}"
                     "<br>KVI: %{y:.2f}"
                     "<br>Stockcode: %{text}"

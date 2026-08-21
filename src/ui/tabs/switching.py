@@ -25,6 +25,8 @@ from src.analytics.switching import (
     compute_substitution_strength,
     compute_switch_in_out_rates,
     compute_switching_matrix,
+    get_customer_loyalty_metrics,
+    get_top_switching_paths,
 )
 from src.analytics.transference import (
     compute_demand_transference_matrix,
@@ -197,7 +199,7 @@ def _render_revenue_at_risk_matrix(
 
     # Compute SDP
     sdp_df = compute_substitutable_demand_percentage(demand_transference_df, df)
-    sdp_lookup = dict(zip(sdp_df["stockcode"], sdp_df["sdp"]))
+    sdp_lookup = dict(zip(sdp_df["stockcode"], sdp_df["sdp"], strict=False))
 
     # Build per-product data
     products = rev.index.tolist()
@@ -210,7 +212,7 @@ def _render_revenue_at_risk_matrix(
 
     # Classify each product into quadrant
     quadrant_labels = []
-    for r, s in zip(revenue_vals, sdp_vals):
+    for r, s in zip(revenue_vals, sdp_vals, strict=False):
         quadrant_labels.append(_classify_quadrant(r, s, rev_median, sdp_median))
 
     # Create scatter plot with quadrant coloring
@@ -317,7 +319,6 @@ def _render_sankey_revenue_flows(
         return
 
     rev = _revenue_by_product(df)
-    product_revenue = rev
 
     # Get delist impact products (bottom by net revenue impact, i.e., most at-risk for delist)
     if delist_impact_df is not None and not delist_impact_df.empty:
@@ -373,7 +374,7 @@ def _render_sankey_revenue_flows(
 
     # Compute values
     # Source nodes: delisted product revenue
-    source_values = [float(rev.get(p, 0.0)) for p in delist_products]
+    [float(rev.get(p, 0.0)) for p in delist_products]
     # Target nodes: substitute revenue inflow
     target_values = {}
     for p in substitute_products:
@@ -479,7 +480,7 @@ def _render_customer_switching_matrix(
     # Use CLV-based filtering: identify top customers and filter matrix
     from src.analytics.switching import get_customer_loyalty_metrics
 
-    loyalty = get_customer_loyalty_metrics(df)
+    get_customer_loyalty_metrics(df)
 
     # Identify high-value customers (top 20% by total spend)
     customer_revenue = (
@@ -487,7 +488,7 @@ def _render_customer_switching_matrix(
         .apply(lambda x: float((x["price"] * x["quantity"]).sum()), include_groups=False)
         .rename("customer_revenue")
     )
-    rev_total = customer_revenue.sum()
+    customer_revenue.sum()
     rev_threshold = customer_revenue.quantile(0.8)  # top 20%
     high_value_customers = set(customer_revenue[customer_revenue >= rev_threshold].index)
 

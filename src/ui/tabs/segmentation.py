@@ -16,7 +16,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.analytics.profile_service import init_profile_service
+from src.analytics.profile_service import get_profile_service, init_profile_service
 from src.analytics.segmentation import (
     behavioral_segmentation,
     compute_rfm_features,
@@ -174,7 +174,6 @@ def _segment_economics_waterfall(seg: pd.DataFrame, transactions_df: pd.DataFram
         sdf = segment_econ[segment_econ["segment"] == seg_name].iloc[0]
         # Waterfall: customers → orders/customer → basket value → revenue
         # Use additive waterfall: start from 0, add each component
-        base = 0
         customer_val = sdf["customers"]
         orders_val = sdf["orders_per_customer"]
         basket_val = sdf["avg_basket_value"]
@@ -332,7 +331,7 @@ def _segment_migration_map(seg: pd.DataFrame, transactions_df: pd.DataFrame) -> 
 
     # Only include flows between the 4 lifecycle stages
     valid_links = []
-    for s, t, v in zip(sources, targets, values):
+    for s, t, v in zip(sources, targets, values, strict=False):
         if s in valid_stages and t in valid_stages:
             valid_links.append((label_to_idx[s], label_to_idx[t], v))
 
@@ -350,9 +349,9 @@ def _segment_migration_map(seg: pd.DataFrame, transactions_df: pd.DataFrame) -> 
                     "thickness": 20,
                 },
                 link={
-                    "source": [l[0] for l in valid_links],
-                    "target": [l[1] for l in valid_links],
-                    "value": [l[2] for l in valid_links],
+                    "source": [link[0] for link in valid_links],
+                    "target": [link[1] for link in valid_links],
+                    "value": [link[2] for link in valid_links],
                     "color": "rgba(255, 140, 0, 0.4)",
                 },
             )
@@ -441,7 +440,7 @@ def _segment_category_heatmap(seg: pd.DataFrame, transactions_df: pd.DataFrame) 
         customer_pivot = seg_cat.pivot_table(
             index="segment", columns=cat_col, values="customers", aggfunc="sum", fill_value=0
         )
-        tx_pivot = seg_cat.pivot_table(
+        seg_cat.pivot_table(
             index="segment", columns=cat_col, values="transactions", aggfunc="sum", fill_value=0
         )
 
@@ -758,13 +757,13 @@ def render(df: pd.DataFrame) -> None:
     seg_rfm = rfm_segmentation(rfm, method="kmeans", n_segments=5)
 
     # Behavioral segments
-    behav = behavioral_segmentation(df, n_clusters=4)
+    behavioral_segmentation(df, n_clusters=4)
 
     # Value-based segments
-    val = value_based_segmentation(df)
+    value_based_segmentation(df)
 
     # Compute migration once for reuse
-    migration = compute_segment_migration(df, n_clusters=4)
+    compute_segment_migration(df, n_clusters=4)
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         ":material/trending_up: Value × Growth",
