@@ -212,7 +212,7 @@ def render_evidence_badge(
         else:
             badge_label = level_data["label"]
             badge_color = level_data["color"]
-            evidence_level_label = evidence_data["label"]
+            evidence_data["label"]
 
             # Build tooltip/description
             tooltip_parts = [
