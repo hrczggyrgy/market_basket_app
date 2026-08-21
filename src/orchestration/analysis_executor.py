@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from src.orchestration.analysis_registry import AnalysisSpec, get
+from src.orchestration.analysis_registry import AnalysisSpec
 from src.orchestration.result_store import (
     get,
     get_default,
@@ -93,15 +93,13 @@ class AnalysisExecutor:
         deps = spec.dependencies
         # Topological sort not needed at this level; just ensure each dep is executed
         # The caller (AnalysisOrchestrator) handles the full ordering
+        import contextlib
+
         for dep_key in deps:
             if dep_key not in self._results:
                 # Execute dependency with empty params (or default)
-                try:
+                with contextlib.suppress(Exception):
                     self.execute(dep_key, {})
-                except Exception:
-                    # Dependency might not be runnable without data/context;
-                    # let the engine handle it
-                    pass
 
     def _run_engine(self, spec: AnalysisSpec, params: dict[str, Any]) -> Any:
         """Run the analysis engine for the given spec.

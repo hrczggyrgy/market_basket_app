@@ -24,15 +24,12 @@ ADVANCED = "ADVANCED"
 
 
 # Minimum data points required per tier
+_MIN_DATA_FOR_TIER = {"A": 10, "B": 100, "C": 1000}
+
+
 def _min_data_for_tier(tier: str) -> int:
     """Return minimum data points required for a tier."""
-    if tier == "A":
-        return 10
-    elif tier == "B":
-        return 100
-    elif tier == "C":
-        return 1000
-    return 100
+    return _MIN_DATA_FOR_TIER.get(tier, 100)
 
 
 class ReadinessEngine:
