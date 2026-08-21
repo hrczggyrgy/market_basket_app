@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -14,7 +15,6 @@ from src.analytics.category import (
     compute_category_trend,
     enrich_with_categories,
 )
-from src.analytics.pricing import compute_kvi_score
 from src.analytics.profile_service import get_profile, init_profile_service
 from src.ui.plots import PALETTE, empty_state, new_fig, show
 from src.ui.registry import ModeSpec
@@ -143,10 +143,10 @@ def _scorecard_dashboard(strategy_df: pd.DataFrame) -> None:
     ]
 
     # Reshape into 3 columns grid
-    num_fields = len(field_config)
+    len(field_config)
     cols = st.columns(3)
 
-    for i, (field_key, field_label, field_props) in enumerate(field_config):
+    for i, (field_key, field_label, _field_props) in enumerate(field_config):
         with cols[i % 3]:
             # Get the value across all categories, show aggregate
             values = strategy_df[field_key].tolist()
@@ -214,17 +214,16 @@ def _generate_90day_action_plan(strategy_df: pd.DataFrame, profile_svc) -> list[
     # Take top 5 categories for the action plan
     top_cats = scored_cats[:5]
 
-    for priority_score, cat, growth, customer_value, switching_risk, role in top_cats:
+    for _priority_score, _cat, growth, customer_value, switching_risk, role in top_cats:
         # Determine priority, action, value, owner, evidence based on category profile
         # Get profile data for this category
-        profile = {}
         try:
             if profile_svc is not None:
                 # Try to get profile from any SKU in this category
                 # We'll use the strategy_df row data instead
                 pass
         except Exception:
-            profile = {}
+            pass
 
         # Determine priority and action based on role, growth, switching risk
         role_val = role.capitalize()
@@ -417,7 +416,7 @@ def _role_matrix(scorecard: pd.DataFrame, roles_df: pd.DataFrame) -> None:
 
 def _trajectory(scorecard: pd.DataFrame, df: pd.DataFrame) -> None:
     """Category trajectory time-series showing revenue, customers, or transactions
-    with decomposition selection (trend, seasonal, residual = 3 components; 
+    with decomposition selection (trend, seasonal, residual = 3 components;
     combined with 2 additional = 5 total)."""
     st.subheader(":material/vis_line_chart: Category Trajectory")
 
@@ -479,7 +478,7 @@ def _trajectory(scorecard: pd.DataFrame, df: pd.DataFrame) -> None:
             from src.ui.features import get_detected_promotions
             promos = get_detected_promotions(df)
             if not promos.empty:
-                promo_mask = df["stockcode"].isin(
+                df["stockcode"].isin(
                     df[df["category"] == selected_cat]["stockcode"].unique()
                 )
                 # promo weeks set — simplified promo effect below
@@ -521,7 +520,7 @@ def _trajectory(scorecard: pd.DataFrame, df: pd.DataFrame) -> None:
         )
 
     # Decomposition components added based on selection
-    component_colors = [PALETTE[1], PALETTE[2], PALETTE[3], PALETTE[4], PALETTE[0]]
+    [PALETTE[1], PALETTE[2], PALETTE[3], PALETTE[4], PALETTE[0]]
     comp_data = [trend_vals, seasonality_vals, promo_effect_vals, cannibalization_vals, new_cust_vals]
 
     # Align x-axis with actual data
@@ -614,7 +613,7 @@ def _growth_bridge(scorecard: pd.DataFrame, roles_df: pd.DataFrame) -> None:
 
     for cat in categories:
         cat_row = merged[merged["category"] == cat].iloc[0]
-        revenue = float(cat_row.get("total_revenue", 0) or 0)
+        float(cat_row.get("total_revenue", 0) or 0)
         growth_pct = float(cat_row.get("revenue_yoy_growth", 0) or 0)
 
         # Trend: contribution proportional to growth percentage
@@ -622,7 +621,6 @@ def _growth_bridge(scorecard: pd.DataFrame, roles_df: pd.DataFrame) -> None:
         component_data[cat]["trend"] = growth_pct * 0.40  # 40% trend
 
         # Seasonality: based on seasonality diagnostics
-        comp_data = None
         try:
             # We need monthly data - use available proxies
             component_data[cat]["seasonality"] = growth_pct * 0.25  # 25% seasonality
@@ -671,10 +669,10 @@ def _growth_bridge(scorecard: pd.DataFrame, roles_df: pd.DataFrame) -> None:
     component_labels = ["Trend", "Seasonality", "Promo Effect", "Cannibalization", "New Customer Growth"]
     component_colors = [PALETTE[0], PALETTE[1], PALETTE[2], PALETTE[3], PALETTE[4]]
 
-    y_pos = np.arange(len(bridge_df))
+    np.arange(len(bridge_df))
 
-    for i, (comp_key, comp_label, comp_color) in enumerate(
-        zip(component_order, component_labels, component_colors)
+    for _i, (comp_key, comp_label, comp_color) in enumerate(
+        zip(component_order, component_labels, component_colors, strict=False)
     ):
         fig.add_trace(
             go.Bar(
@@ -734,19 +732,6 @@ def _opportunity_map(scorecard: pd.DataFrame, roles_df: pd.DataFrame) -> None:
     )
     merged["evidence_level"] = 3  # default MEDIUM
 
-    # Simple evidence mapping: categories with KVI have higher evidence
-    try:
-        kvi = compute_kvi_score(df) if 'df' in dir() else pd.DataFrame()
-        # If we have profile service, use it
-        # For now, use KVI count as evidence proxy
-        if not kvi.empty:
-            for idx, row in merged.iterrows():
-                cat_kvi = kvi[kvi["category"] == row["category"]]
-                if not cat_kvi.empty:
-                    merged.at[idx, "evidence_level"] = 4  # HIGH
-    except Exception:
-        pass
-
     # Color by role, size by opportunity score, opacity by evidence
     fig = px.scatter(
         merged,
@@ -793,7 +778,7 @@ def _opportunity_map(scorecard: pd.DataFrame, roles_df: pd.DataFrame) -> None:
 # Layer 6 — Strategic Decision Table (linking to Product Decision Profile)
 # ---------------------------------------------------------------------------
 
-def _strategic_table(scorecard: pd.DataFrame, profile_svc) -> None:
+def _strategic_table(scorecard: pd.DataFrame, profile_svc, df: pd.DataFrame) -> None:
     """Strategic decision table with columns:
     Category | Role | Revenue | Growth | Reach | Trip Generation | Attachment | Seasonality | Priority | Action
     Links to Product Decision Profile for each category."""
@@ -1033,7 +1018,7 @@ def render(df: pd.DataFrame) -> None:
     st.markdown("---")
 
     # --- Layer 6: Strategic Decision Table ---
-    _strategic_table(scorecard, profile_svc)
+    _strategic_table(scorecard, profile_svc, df)
 
 
 MODE_SPEC: ModeSpec = ModeSpec(

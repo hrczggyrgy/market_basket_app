@@ -15,15 +15,19 @@ Integrates with Product Decision Profile (profile_service).
 
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 from src.analytics.assortment import (
+    compare_assortment_scenarios,
     optimize_assortment_heuristic,
     optimize_assortment_milp,
 )
+from src.analytics.data import revenue_column
 from src.analytics.pricing.kvi import compute_kvi_score
 from src.analytics.profile_service import (
     ProfileService,
@@ -85,6 +89,7 @@ def _recovery_potential(sku: str, kept: set[str], transfers: dict[str, pd.DataFr
 # ---------------------------------------------------------------------------
 
 def _decision_and_confidence(
+    sku: str,
     profile: dict[str, Any],
     kept: set[str],
     transfers: dict[str, pd.DataFrame],
@@ -98,8 +103,8 @@ def _decision_and_confidence(
     """
     revenue = float(profile.get("revenue", 0.0))
     kvi_score = float(profile.get("kvi_score", 0.5))
-    elasticity = float(profile.get("elasticity", 0.0))
-    sdp = float(profile.get("substitutability", 0.5))
+    float(profile.get("elasticity", 0.0))
+    float(profile.get("substitutability", 0.5))
     reach = _get_reach(profile)
     uniqueness = _get_uniqueness(profile)
 
@@ -228,12 +233,12 @@ def _render_portfolio_matrix(
                     },
                     name=quad,
                     hovertemplate=
-                    f"<b>%{{customdata}}</b>"
-                    f"<br>Revenue share: %{{y:.2%}}"
-                    f"<br>Uniqueness: %{{x:.2f}}"
-                    f"<br>Reach: %{marker.size:.2f}"
-                    f"<extra></extra>",
-                    customdata=subset["stockcode"],
+                    "<b>%{customdata[0]}</b>"
+                    "<br>Revenue share: %{y:.2%}"
+                    "<br>Uniqueness: %{x:.2f}"
+                    "<br>Reach: %{customdata[1]:.2f}"
+                    "<extra></extra>",
+                    customdata=list(zip(subset["stockcode"], subset["reach"], strict=False)),
                 )
             )
 
@@ -304,7 +309,7 @@ def _render_coverage_curve(
     # Minimum coverage threshold line
     # Compute coverage curve: incremental SKUs added by revenue rank
     cum_rev = revenue_per_product.cumsum()
-    cum_coverage = (cum_rev / total_rev).clip(upper=1.0)
+    (cum_rev / total_rev).clip(upper=1.0)
 
     fig = go.Figure()
 
@@ -412,11 +417,10 @@ def _render_delist_waterfall(
     kept_set = set(kept) if kept else set()
 
     # Compute transfers
-    transfers = {}
     try:
         dt_df = compute_demand_transference_matrix(df)
         if dt_df is not None and not dt_df.empty:
-            transfers = {
+            {
                 frm: g for frm, g in dt_df.groupby("from_product")
             }
     except Exception:
@@ -503,9 +507,9 @@ def _render_delist_waterfall(
 
     # Compute kept revenue after all steps
     # Start with total, subtract removed, add back protected KVIs, add white-space
-    kept_rev_after = total_rev - removed_dup_rev - removed_tail_rev_after_protect + white_space_rev
+    total_rev - removed_dup_rev - removed_tail_rev_after_protect + white_space_rev
     # Also add revenue from kept SKUs that were already kept
-    kept_rev_from_selected = sum(revenue_per_product.get(s, 0.0) for s in kept_set if s in revenue_per_product.index)
+    sum(revenue_per_product.get(s, 0.0) for s in kept_set if s in revenue_per_product.index)
 
     # Final recommended: keep existing + add white-space, exclude removed
     final_kept = kept_set - dup_skus - set(remaining_low_value) + set(kvi_to_protect)
@@ -586,7 +590,7 @@ def _render_coverage_risk_matrix(
         # Simple: current coverage minus this SKU's contribution
         sku_share = revenue_per_product[sku] / total_rev if total_rev > 0 else 0.0
         # Effective coverage after removing this SKU
-        effective_cov = max(0.0, current_coverage_from_metrics(kept_set, revenue_per_product, transfers) - sku_share / 2)  # approximate
+        max(0.0, current_coverage_from_metrics(kept_set, revenue_per_product, transfers) - sku_share / 2)  # approximate
 
         # But we want current overall coverage
         from src.analytics.assortment import _evaluate_solution
@@ -702,7 +706,7 @@ def _render_manager_table(
         sub_cov = recovery / at_risk if at_risk > 0 else 1.0
 
         label, action, confidence = _decision_and_confidence(
-            profile, kept_set, transfers, revenue_per_product
+            sku, profile, kept_set, transfers, revenue_per_product
         )
 
         rows.append(
