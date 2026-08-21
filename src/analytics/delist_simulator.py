@@ -9,6 +9,8 @@ Integrates with Product Decision Profile for SKU decision fields.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 
 from src.analytics.profile_service import get_profile_service, init_profile_service
@@ -143,9 +145,9 @@ def _get_keep_delist_recommendation(
     kvi_score = float(profile.get("kvi_score", 0.5))
     revenue = float(profile.get("revenue", revenue_at_risk))
     substitutability = float(profile.get("substitutability", 0.5))
-    elasticity = float(profile.get("elasticity", 0.0))
-    reach = float(profile.get("customer_reach", 0.0))
-    switching_risk = profile.get("switching_risk", "unknown")
+    float(profile.get("elasticity", 0.0))
+    float(profile.get("customer_reach", 0.0))
+    profile.get("switching_risk", "unknown")
 
     # Data completeness check
     profile_fields = [
@@ -366,7 +368,7 @@ def render_delist_simulator(
 
     # Recommendation
     st.write("**KEEP/DELIST Recommendation**")
-    rec_color = "normal" if result["recommendation"] == "KEEP" else "inverse"
+    "normal" if result["recommendation"] == "KEEP" else "inverse"
     st.markdown(f"**{result['recommendation']}** — {result['recommendation_action']}")
     st.caption(f"Confidence: {result['confidence']:.1%} | Evidence: {result['evidence_level']}")
 

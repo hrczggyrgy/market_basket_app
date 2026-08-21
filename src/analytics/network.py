@@ -13,7 +13,7 @@ import pandas as pd
 
 class NetworkEngine:
     """Network Engine - isolated behind explicit Tier C trigger.
-    
+
     Only runs on explicit user action ("Run Network Analysis" button).
     Gracefully handles missing optional dependencies (networkx).
     """
@@ -60,7 +60,7 @@ class NetworkEngine:
         min_affinity: float = 0.0,
     ) -> dict[str, Any]:
         """Build co-purchase network from transaction data.
-        
+
         Returns network metrics, centrality scores, and community structure.
         """
         if not self._deps_available.get("networkx", False):
@@ -146,7 +146,7 @@ class NetworkEngine:
         min_transactions: int = 3,
     ) -> dict[str, Any]:
         """Build switching network from customer sequences.
-        
+
         Nodes = products, edges = observed switches with probabilities.
         """
         if not self._deps_available.get("networkx", False):

@@ -14,7 +14,7 @@ import pandas as pd
 
 class MarkovEngine:
     """Markov Engine - isolated behind explicit Tier C trigger.
-    
+
     Only runs on explicit user action ("Run Markov Analysis" button).
     Gracefully handles missing optional dependencies.
     """
@@ -35,7 +35,7 @@ class MarkovEngine:
         add_absorbing_state: bool = True,
     ) -> pd.DataFrame:
         """Build Markov transition matrix from customer sequences.
-        
+
         Returns row-normalized transition probability matrix P(to | from).
         Includes optional absorbing "no_switch" state.
         """
@@ -60,7 +60,7 @@ class MarkovEngine:
         tolerance: float = 1e-10,
     ) -> pd.Series:
         """Compute steady-state distribution of Markov chain.
-        
+
         Solves π = πP for the stationary distribution.
         """
         if transition_matrix.empty:
@@ -87,7 +87,7 @@ class MarkovEngine:
         transient_states: list[str] | None = None,
     ) -> pd.DataFrame:
         """Compute absorption probabilities for Markov chain with absorbing states.
-        
+
         Returns probability of being absorbed in each absorbing state
         starting from each transient state.
         """
@@ -112,15 +112,15 @@ class MarkovEngine:
             return pd.DataFrame()
 
         P = transition_matrix.values
-        n = len(transition_matrix.index)
+        len(transition_matrix.index)
 
         # Reorder: transient first, then absorbing
         state_order = transient + absorbing
-        idx_map = {state: i for i, state in enumerate(state_order)}
+        {state: i for i, state in enumerate(state_order)}
         P_reordered = P[np.ix_(state_order, state_order)]
 
         t = len(transient)
-        r = len(absorbing)
+        len(absorbing)
 
         Q = P_reordered[:t, :t]  # Transient to transient
         R = P_reordered[:t, t:]  # Transient to absorbing
@@ -153,9 +153,9 @@ class MarkovEngine:
             return pd.Series(dtype=float)
 
         P = transition_matrix.values
-        n = len(transition_matrix.index)
+        len(transition_matrix.index)
         state_order = transient + [s for s in transition_matrix.index if s not in transient]
-        idx_map = {state: i for i, state in enumerate(state_order)}
+        {state: i for i, state in enumerate(state_order)}
         P_reordered = P[np.ix_(state_order, state_order)]
 
         t = len(transient)

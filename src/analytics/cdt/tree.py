@@ -693,7 +693,7 @@ def prune_tree(
 
 class CDTEngine:
     """CDT Engine - isolated behind explicit Tier C trigger.
-    
+
     Only runs on explicit user action ("Run CDT" button).
     Gracefully handles missing optional dependencies (networkx, scipy, sklearn).
     """
@@ -761,7 +761,7 @@ class CDTEngine:
         community_method: str = "none",
     ) -> dict[str, Any]:
         """Build CDT with graceful degradation.
-        
+
         Returns dict with 'tree', 'dataframe', 'similarity_matrix', 'dendrogram', 'clusters'.
         If dependencies missing, returns friendly error dict.
         """
@@ -859,32 +859,3 @@ class CDTEngine:
 def get_cdt_engine(df: pd.DataFrame) -> CDTEngine:
     """Factory function to create CDTEngine for a dataset."""
     return CDTEngine(df)
-    for child in root.children[:]:
-        prune_tree(child, threshold, similarity_matrix)
-    if root.children and all(c.is_leaf for c in root.children):
-        combined_score = (
-            compute_within_group_similarity(
-                [p for c in root.children for p in c.products],
-                similarity_matrix if similarity_matrix is not None else pd.DataFrame(),
-            )
-            if similarity_matrix is not None
-            else 0.0
-        )
-        if combined_score < threshold:
-            combined: list[str] = []
-            attrs: list[str | None] = []
-            vals: list[str | None] = []
-            for c in root.children:
-                combined.extend(c.products)
-                attrs.extend([c.attribute] * max(len(c.products), 1))
-                vals.extend([c.attribute_value] * max(len(c.products), 1))
-            root.children = []
-            root.is_leaf = True
-            root.products = combined
-            root.similarity_within = (
-                compute_within_group_similarity(combined, similarity_matrix)
-                if similarity_matrix is not None
-                else 0.0
-            )
-            root.size = len(combined)
-    return root

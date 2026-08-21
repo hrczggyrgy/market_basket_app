@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 from scipy.stats import variation
@@ -741,7 +743,7 @@ def _compute_strategy_field(role: str, row: pd.Series, profile: dict | None = No
         # Fallback: derive from elasticity if available
         try:
             from src.analytics.pricing.elasticity import estimate_loglog_elasticity
-            elast_df = estimate_loglog_elasticity(pd.DataFrame(), min_periods=5)
+            estimate_loglog_elasticity(pd.DataFrame(), min_periods=5)
             # If we can't get elasticity, keep review
         except Exception:
             pass

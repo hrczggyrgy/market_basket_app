@@ -14,6 +14,7 @@ only when ``x_i = 0`` and ``x_j = 1``.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -527,7 +528,7 @@ def evaluate_selected_scenarios(
 
 class AssortmentEngine:
     """Assortment Engine - isolated behind explicit Tier C trigger.
-    
+
     Only runs on explicit user action ("Run Assortment Scenario" button).
     Gracefully handles missing optional dependencies (scipy.optimize.milp).
     """
@@ -574,7 +575,7 @@ class AssortmentEngine:
         recovery_margin: float = 0.3,
     ) -> pd.DataFrame:
         """Run heuristic assortment optimization with graceful degradation.
-        
+
         Returns ASSORTMENT_SOLUTION DataFrame.
         If dependencies missing, returns friendly error DataFrame.
         """
@@ -601,7 +602,7 @@ class AssortmentEngine:
         time_limit_seconds: int = 30,
     ) -> tuple[list[str], dict[str, Any]]:
         """Run MILP assortment optimization with graceful degradation.
-        
+
         Returns (selected_skus, solve_info).
         If dependencies missing, returns friendly error.
         """

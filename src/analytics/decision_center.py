@@ -113,7 +113,7 @@ def run_decision_center(
             continue
 
         # Read from ResultStore
-        cache_key = make_key(dataset_id, key, spec.version, hp)
+        make_key(dataset_id, key, spec.version, hp)
         if not store.has(dataset_id, key, spec.version, hp):
             # Result not cached; for tier A this should be rare
             # since they recompute instantly, but we gracefully skip
@@ -150,13 +150,12 @@ def run_decision_center(
                 domains.append("promotion")
             if not result.get("opportunities", pd.DataFrame()).empty:
                 opp_parts.append(result["opportunities"].head(8))
-        elif key == "cross_sell":
-            if not result.empty:
-                insight_parts.append(result)
-                domains.append("cross_sell")
-                # Cross-sell opportunities
-                if not result.get("opportunities", pd.DataFrame()).empty:
-                    opp_parts.append(result["opportunities"].head(8))
+        elif key == "cross_sell" and not result.empty:
+            insight_parts.append(result)
+            domains.append("cross_sell")
+            # Cross-sell opportunities
+            if not result.get("opportunities", pd.DataFrame()).empty:
+                opp_parts.append(result["opportunities"].head(8))
 
     # Filter out empty DataFrames to avoid FutureWarning
     insight_parts = [part for part in insight_parts if not part.empty]

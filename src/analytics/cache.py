@@ -54,7 +54,7 @@ def cached_pricing_analysis(
     result = run_pricing_analysis(df, min_periods=min_periods, min_price_variation=min_price_variation, kvi_method=kvi_method)
     df_hash = _df_hash(df)
     ph = param_hash({"df_hash": df_hash, "min_periods": min_periods, "min_price_variation": min_price_variation, "kvi_method": kvi_method}, schema_version=_schema_version)
-    key = make_key("default", "pricing", "1.0.0", ph)
+    make_key("default", "pricing", "1.0.0", ph)
     set_result("default", "pricing", "1.0.0", ph, result)
     return result
 
@@ -73,7 +73,7 @@ def cached_enrich_categories(
     result = enrich_with_categories(df)
     df_hash = _df_hash(df)
     ph = param_hash({"df_hash": df_hash}, schema_version=_schema_version)
-    key = make_key("default", "enrich_categories", "1.0.0", ph)
+    make_key("default", "enrich_categories", "1.0.0", ph)
     set_result("default", "enrich_categories", "1.0.0", ph, result)
     return result
 
@@ -94,7 +94,7 @@ def cached_basket_metrics(
 
     df_hash = _df_hash(df)
     ph = param_hash({"df_hash": df_hash}, schema_version=_schema_version)
-    key = make_key("default", "basket_metrics", "1.0.0", ph)
+    make_key("default", "basket_metrics", "1.0.0", ph)
     set_result("default", "basket_metrics", "1.0.0", ph, result)
 
     return result
@@ -118,7 +118,7 @@ def cached_cohort_analysis(
 
     df_hash = _df_hash(df)
     ph = param_hash({"df_hash": df_hash}, schema_version=_schema_version)
-    key = make_key("default", "cohort_analysis", "1.0.0", ph)
+    make_key("default", "cohort_analysis", "1.0.0", ph)
     set_result("default", "cohort_analysis", "1.0.0", ph, result)
 
     return result
@@ -149,7 +149,7 @@ def cached_segmentation(
 
     df_hash = _df_hash(df)
     ph = param_hash({"df_hash": df_hash}, schema_version=_schema_version)
-    key = make_key("default", "segmentation", "1.0.0", ph)
+    make_key("default", "segmentation", "1.0.0", ph)
     set_result("default", "segmentation", "1.0.0", ph, result)
 
     return result
@@ -173,7 +173,7 @@ def cached_switching(
 
     df_hash = _df_hash(df)
     ph = param_hash({"df_hash": df_hash}, schema_version=_schema_version)
-    key = make_key("default", "switching", "1.0.0", ph)
+    make_key("default", "switching", "1.0.0", ph)
     set_result("default", "switching", "1.0.0", ph, result)
 
     return result
@@ -205,7 +205,7 @@ def cached_transference(
 
     df_hash = _df_hash(df)
     ph = param_hash({"df_hash": df_hash}, schema_version=_schema_version)
-    key = make_key("default", "transference", "1.0.0", ph)
+    make_key("default", "transference", "1.0.0", ph)
     set_result("default", "transference", "1.0.0", ph, result)
 
     return result
@@ -219,7 +219,7 @@ def cached_copurchase(
     max_pairs: int = 1000,
 ) -> dict[str, pd.DataFrame]:
     """Compatibility shim - uses ResultStore instead of Streamlit caching.
-    
+
     Fast co-purchase affinity analysis (Tier B). Does NOT run FP-Growth.
     For association rules, use cached_rules() which is Tier C (on demand).
     """
@@ -235,7 +235,7 @@ def cached_copurchase(
 
     df_hash = _df_hash(df)
     ph = param_hash({"df_hash": df_hash, "top_n_products": top_n_products, "min_cooccurrence": min_cooccurrence, "max_pairs": max_pairs}, schema_version=_schema_version)
-    key = make_key("default", "copurchase", "1.0.0", ph)
+    make_key("default", "copurchase", "1.0.0", ph)
     set_result("default", "copurchase", "1.0.0", ph, result)
 
     return result
@@ -250,7 +250,7 @@ def cached_rules(
     min_confidence: float = 0.1,
 ) -> dict[str, pd.DataFrame]:
     """Compatibility shim - uses ResultStore instead of Streamlit caching.
-    
+
     FP-Growth + Association Rules (Tier C - on demand only).
     Run only when user explicitly requests rules analysis.
     """
@@ -263,7 +263,7 @@ def cached_rules(
 
     df_hash = _df_hash(df)
     ph = param_hash({"df_hash": df_hash, "min_support": min_support, "max_len": max_len, "max_skus": max_skus, "min_confidence": min_confidence}, schema_version=_schema_version)
-    key = make_key("default", "rules", "1.0.0", ph)
+    make_key("default", "rules", "1.0.0", ph)
     set_result("default", "rules", "1.0.0", ph, result)
 
     return result
@@ -277,7 +277,7 @@ def cached_rules_bootstrap(
     seed: int = 42,
 ) -> pd.DataFrame:
     """Compatibility shim - uses ResultStore instead of Streamlit caching.
-    
+
     Bootstrap lift CI for association rules (Tier C - on demand only).
     Run only when user explicitly requests robustness calculation.
     """
@@ -287,7 +287,7 @@ def cached_rules_bootstrap(
 
     df_hash = _df_hash(df)
     ph = param_hash({"df_hash": df_hash, "n_resamples": n_resamples, "seed": seed}, schema_version=_schema_version)
-    key = make_key("default", "rules_bootstrap", "1.0.0", ph)
+    make_key("default", "rules_bootstrap", "1.0.0", ph)
     set_result("default", "rules_bootstrap", "1.0.0", ph, result)
 
     return result
@@ -298,7 +298,7 @@ def cached_promotion(
     df: pd.DataFrame,
 ) -> dict[str, pd.DataFrame]:
     """Compatibility shim - uses ResultStore instead of Streamlit caching.
-    
+
     Fast promotional analytics layer (Tier B): promo detection, baseline, ROI.
     For causal incrementality, use cached_promotion_advanced() which is Tier C (on demand).
     """
@@ -315,7 +315,7 @@ def cached_promotion(
 
     df_hash = _df_hash(df)
     ph = param_hash({"df_hash": df_hash}, schema_version=_schema_version)
-    key = make_key("default", "promotion", "1.0.0", ph)
+    make_key("default", "promotion", "1.0.0", ph)
     set_result("default", "promotion", "1.0.0", ph, result)
 
     return result
@@ -326,7 +326,7 @@ def cached_promotion_advanced(
     df: pd.DataFrame,
 ) -> dict[str, pd.DataFrame]:
     """Compatibility shim - uses ResultStore instead of Streamlit caching.
-    
+
     Advanced promotional analytics layer (Tier C - on demand only): causal incrementality,
     cross-SKU effects, event study, bootstrap CI.
     Run only when user explicitly requests advanced promo analysis.
@@ -361,7 +361,7 @@ def cached_promotion_advanced(
 
     df_hash = _df_hash(df)
     ph = param_hash({"df_hash": df_hash}, schema_version=_schema_version)
-    key = make_key("default", "promotion_advanced", "1.0.0", ph)
+    make_key("default", "promotion_advanced", "1.0.0", ph)
     set_result("default", "promotion_advanced", "1.0.0", ph, result)
 
     return result
@@ -376,7 +376,7 @@ def cached_clv(
     discount_rate_pct: float = 0.0,
 ) -> dict[str, pd.DataFrame]:
     """Compatibility shim - uses ResultStore instead of Streamlit caching.
-    
+
     CLV prediction (Tier C - on demand only): BG/NBD + Gamma-Gamma.
     Run only when user explicitly requests CLV analysis.
     """
@@ -399,7 +399,7 @@ def cached_clv(
         "min_repeat_customers": min_repeat_customers,
         "discount_rate_pct": discount_rate_pct,
     }, schema_version=_schema_version)
-    key = make_key("default", "clv", "1.0.0", ph)
+    make_key("default", "clv", "1.0.0", ph)
     set_result("default", "clv", "1.0.0", ph, result)
 
     return result
@@ -413,7 +413,7 @@ def cached_clv_customer(
     discount_rate_pct: float = 0.0,
 ) -> pd.DataFrame:
     """Compatibility shim - uses ResultStore instead of Streamlit caching.
-    
+
     CLV customer view with behavior metrics (Tier C - on demand only).
     Run only when user explicitly requests CLV customer analysis.
     """
@@ -433,7 +433,7 @@ def cached_clv_customer(
         "freq": freq,
         "discount_rate_pct": discount_rate_pct,
     }, schema_version=_schema_version)
-    key = make_key("default", "clv_customer", "1.0.0", ph)
+    make_key("default", "clv_customer", "1.0.0", ph)
     set_result("default", "clv_customer", "1.0.0", ph, result)
 
     return result
@@ -454,7 +454,7 @@ def cached_cdt(
     community_method: str = "none",
 ) -> dict[str, Any]:
     """Compatibility shim - uses ResultStore instead of Streamlit caching.
-    
+
     CDT analysis (Tier C - on demand only): Customer Decision Tree construction.
     Run only when user explicitly requests CDT analysis.
     """
@@ -488,7 +488,7 @@ def cached_cdt(
         "resolution": resolution,
         "community_method": community_method,
     }, schema_version=_schema_version)
-    key = make_key("default", "cdt", "1.0.0", ph)
+    make_key("default", "cdt", "1.0.0", ph)
     set_result("default", "cdt", "1.0.0", ph, result)
 
     return result
@@ -503,7 +503,7 @@ def cached_assortment(
     recovery_margin: float = 0.3,
 ) -> dict[str, Any]:
     """Compatibility shim - uses ResultStore instead of Streamlit caching.
-    
+
     Assortment optimization (Tier C - on demand only): heuristic + MILP.
     Run only when user explicitly requests assortment analysis.
     """
@@ -525,7 +525,7 @@ def cached_assortment(
         "min_category_coverage": min_category_coverage,
         "recovery_margin": recovery_margin,
     }, schema_version=_schema_version)
-    key = make_key("default", "assortment", "1.0.0", ph)
+    make_key("default", "assortment", "1.0.0", ph)
     set_result("default", "assortment", "1.0.0", ph, {"solution": result})
 
     return {"solution": result}

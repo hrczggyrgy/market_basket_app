@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 import warnings
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -483,7 +484,7 @@ def compute_clv_customer_df(
 
 class CLVEngine:
     """CLV Engine - isolated behind explicit Tier C trigger.
-    
+
     Only runs on explicit user action ("Run CLV" button).
     Gracefully handles missing optional dependencies (lifetimes).
     """
@@ -524,7 +525,7 @@ class CLVEngine:
         discount_rate_pct: float = 0.0,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """Run CLV prediction with graceful degradation.
-        
+
         Returns (clv_predictions, clv_diagnostics) both contract-validated.
         If lifetimes is not available, returns friendly error DataFrames.
         """
@@ -554,7 +555,7 @@ class CLVEngine:
         predictions: pd.DataFrame | None = None,
     ) -> pd.DataFrame:
         """Compute customer CLL view with behavior metrics.
-        
+
         Returns contract-validated CLV_CUSTOMER DataFrame.
         If lifetimes is not available or prediction fails, returns friendly error.
         """
